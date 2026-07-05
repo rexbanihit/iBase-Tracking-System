@@ -1,0 +1,407 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>iBase — Secure (Firebase)</title>
+<style>
+  :root{
+    --bg:#0b1220; --bg2:#0f1a2e; --card:#111c31; --card2:#16233c;
+    --border:#26344f; --text:#e6edf6; --text2:#aab8cc; --text3:#8798b0; --text4:#6f8098;
+    --key:#38bdf8; --ok:#34d399; --warn:#fbbf24; --bad:#f87171; --purple:#a78bfa;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--text);font-family:'DM Sans','Segoe UI',system-ui,sans-serif;font-size:14px}
+  input,select,button{font-family:inherit}
+  .wrap{max-width:1100px;margin:0 auto;padding:22px}
+  .card{background:var(--card);border:1px solid var(--border);border-radius:14px;padding:20px;margin-bottom:16px}
+  .row{display:flex;gap:10px;flex-wrap:wrap;align-items:center}
+  label{font-size:11px;color:var(--text4);font-weight:700;text-transform:uppercase;letter-spacing:.5px;display:block;margin-bottom:4px}
+  .inp{background:var(--bg);border:1px solid var(--border);border-radius:8px;color:var(--text);padding:8px 10px;font-size:13px;width:100%}
+  .btn{background:var(--key);border:none;border-radius:8px;color:#04283b;font-weight:800;padding:8px 14px;cursor:pointer;font-size:13px}
+  .btn.ghost{background:transparent;border:1px solid var(--border);color:var(--text2)}
+  .btn.danger{background:#3a1d1d;color:#fca5a5}
+  .btn:disabled{opacity:.5;cursor:not-allowed}
+  .chip{font-size:10px;font-weight:800;padding:2px 9px;border-radius:999px;border:1px solid}
+  table{width:100%;border-collapse:collapse}
+  th{ text-align:left;padding:8px 10px;font-size:10.5px;font-weight:800;color:var(--text4);text-transform:uppercase;letter-spacing:.5px;border-bottom:1px solid var(--border)}
+  td{padding:8px 10px;font-size:13px;border-bottom:1px solid var(--card2)}
+  .muted{color:var(--text4);font-size:12px}
+  h1{font-size:20px;margin:0}
+  h2{font-size:14px;margin:0 0 12px;color:var(--text2);text-transform:uppercase;letter-spacing:.5px}
+  .toast{position:fixed;right:18px;bottom:18px;max-width:420px;background:var(--card2);border:1px solid var(--border);border-radius:10px;padding:12px 14px;box-shadow:0 8px 30px rgba(0,0,0,.4);z-index:50}
+  code{background:var(--bg);padding:1px 5px;border-radius:5px;color:var(--key);font-size:12px}
+</style>
+
+<!-- Firebase SDK (loaded from Google's CDN by each user's browser) -->
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-auth-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore-compat.js"></script>
+
+<!-- React (any CDN is fine — this only runs in the user's browser) -->
+<script src="https://cdnjs.cloudflare.com/ajax/libs/react/18.2.0/umd/react.production.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.production.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.23.2/babel.min.js"></script>
+</head>
+<body>
+<div id="root"></div>
+
+<!-- =======================================================================
+     STEP 1 — PASTE YOUR FIREBASE CONFIG HERE
+     Firebase Console → Project settings (gear) → "Your apps" → Web app → Config.
+     NOTE: unlike your old shared token, the "apiKey" below is NOT a secret. It
+     only identifies your project. Real security comes from Authentication +
+     the Security Rules on the server — not from hiding this config.
+======================================================================== -->
+<script>
+  const firebaseConfig = {
+  apiKey: "AIzaSyCfqj0hNsixJuvKAvCCDBl0B6rUxdA6KW0",
+  authDomain: "ibase-373e6.firebaseapp.com",
+  projectId: "ibase-373e6",
+  storageBucket: "ibase-373e6.firebasestorage.app",
+  messagingSenderId: "153032625736",
+  appId: "1:153032625736:web:4864bc0eaa2e706e9f527d"
+};
+  firebase.initializeApp(firebaseConfig);
+</script>
+
+<script type="text/babel">
+const { useState, useEffect, useRef } = React;
+const auth = firebase.auth();
+const db   = firebase.firestore();
+const FieldValue = firebase.firestore.FieldValue;
+
+// Catalog of brands the org uses. In the full system this comes from your
+// Brands & Instruments data; here it drives the permission checkboxes + demo.
+const BRANDS = ["Sebia", "Mindray", "Boditech", "Siemens", "Roche"];
+
+// Build a complete, safe permissions object. "brands: null" means ALL brands.
+function blankPermissions() {
+  return {
+    dashboard: { view: true,  edit: false },
+    labs:      { view: true,  edit: false },
+    inventory: { view: true,  edit: false, subs: {
+      machines: { view: true, edit: false, brands: null },
+      spares:   { view: true, edit: false, brands: null },
+    }},
+    overtime:  { view: true,  edit: false },
+  };
+}
+
+function Toast({ msg, kind, onClose }) {
+  useEffect(() => { const t = setTimeout(onClose, 6000); return () => clearTimeout(t); }, []);
+  const color = kind === "error" ? "var(--bad)" : kind === "ok" ? "var(--ok)" : "var(--key)";
+  return (
+    <div className="toast">
+      <div style={{ display:"flex", gap:10, alignItems:"flex-start" }}>
+        <span style={{ color, fontWeight:800 }}>{kind === "error" ? "⛔" : kind === "ok" ? "✓" : "ℹ"}</span>
+        <div style={{ fontSize:12.5, color:"var(--text2)", whiteSpace:"pre-wrap" }}>{msg}</div>
+        <button className="btn ghost" style={{ padding:"2px 8px", marginLeft:"auto" }} onClick={onClose}>✕</button>
+      </div>
+    </div>
+  );
+}
+
+// ---------- Login ----------
+function Login({ notify }) {
+  const [email, setEmail] = useState("");
+  const [pw, setPw] = useState("");
+  const [busy, setBusy] = useState(false);
+  async function submit() {
+    setBusy(true);
+    try { await auth.signInWithEmailAndPassword(email.trim(), pw); }
+    catch (e) { notify(e.message, "error"); }
+    finally { setBusy(false); }
+  }
+  return (
+    <div className="wrap" style={{ maxWidth:420, marginTop:"9vh" }}>
+      <div className="card">
+        <h1 style={{ marginBottom:4 }}>iBase</h1>
+        <div className="muted" style={{ marginBottom:18 }}>Secure sign-in · authenticated by Firebase</div>
+        <label>Email</label>
+        <input className="inp" value={email} onChange={e=>setEmail(e.target.value)} placeholder="you@company.com" style={{ marginBottom:12 }} />
+        <label>Password</label>
+        <input className="inp" type="password" value={pw} onChange={e=>setPw(e.target.value)} onKeyDown={e=>e.key==="Enter"&&submit()} style={{ marginBottom:16 }} />
+        <button className="btn" disabled={busy} onClick={submit} style={{ width:"100%" }}>{busy ? "Signing in…" : "Sign In"}</button>
+        <div className="muted" style={{ marginTop:14, lineHeight:1.5 }}>
+          Passwords are hashed and verified by Google's servers — this app never sees or stores them.
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ---------- Create sub-user (admin only) ----------
+// Uses a SECONDARY Firebase app so creating the account doesn't sign the admin
+// out. The new profile/permissions doc is then written by the ADMIN, so the
+// Security Rules allow it (a normal user could never write this).
+function CreateUser({ notify, onDone }) {
+  const [email, setEmail] = useState("");
+  const [pw, setPw] = useState("");
+  const [name, setName] = useState("");
+  const [role, setRole] = useState("FSE");
+  const [engineerName, setEngineerName] = useState("");
+  const [machEdit, setMachEdit] = useState(false);
+  const [allBrands, setAllBrands] = useState(true);
+  const [brands, setBrands] = useState([]);
+  const [busy, setBusy] = useState(false);
+
+  function toggleBrand(b) { setBrands(x => x.includes(b) ? x.filter(y=>y!==b) : [...x, b]); }
+
+  async function create() {
+    if (!email.trim() || pw.length < 6) { notify("Enter an email and a password of at least 6 characters.", "error"); return; }
+    setBusy(true);
+    let secondary;
+    try {
+      secondary = firebase.initializeApp(firebaseConfig, "creator_" + Date.now());
+      const cred = await secondary.auth().createUserWithEmailAndPassword(email.trim(), pw);
+      const uid = cred.user.uid;
+      await secondary.auth().signOut();
+
+      const perms = blankPermissions();
+      perms.inventory.edit = machEdit;
+      perms.inventory.subs.machines.edit = machEdit;
+      perms.inventory.subs.machines.brands = (machEdit && !allBrands) ? brands : null;
+
+      await db.collection("users").doc(uid).set({
+        email: email.trim(), displayName: name.trim(), isAdmin: false,
+        role, engineerName: engineerName.trim(),
+        permissions: perms, createdAt: FieldValue.serverTimestamp(),
+      });
+      notify("Created " + email.trim() + ".", "ok");
+      setEmail(""); setPw(""); setName(""); setEngineerName(""); setMachEdit(false); setAllBrands(true); setBrands([]);
+      onDone && onDone();
+    } catch (e) { notify(e.message, "error"); }
+    finally { if (secondary) await secondary.delete(); setBusy(false); }
+  }
+
+  return (
+    <div className="card">
+      <h2>➕ Create a user</h2>
+      <div className="row" style={{ marginBottom:10 }}>
+        <div style={{ flex:"1 1 200px" }}><label>Email</label><input className="inp" value={email} onChange={e=>setEmail(e.target.value)} /></div>
+        <div style={{ flex:"1 1 160px" }}><label>Temp password</label><input className="inp" value={pw} onChange={e=>setPw(e.target.value)} placeholder="≥ 6 chars" /></div>
+        <div style={{ flex:"1 1 160px" }}><label>Full name</label><input className="inp" value={name} onChange={e=>setName(e.target.value)} /></div>
+      </div>
+      <div className="row" style={{ marginBottom:10 }}>
+        <div style={{ flex:"1 1 160px" }}><label>Role</label>
+          <select className="inp" value={role} onChange={e=>setRole(e.target.value)}>
+            {["FSE","HR","Accounting","Warehouse Staff","Office Staff"].map(r=><option key={r}>{r}</option>)}
+          </select>
+        </div>
+        <div style={{ flex:"1 1 200px" }}><label>Linked employee name</label><input className="inp" value={engineerName} onChange={e=>setEngineerName(e.target.value)} placeholder="e.g. Rex Banihit" /></div>
+      </div>
+      <div style={{ background:"var(--card2)", borderRadius:10, padding:12, border:"1px solid var(--border)" }}>
+        <label style={{ display:"inline-flex", gap:6, textTransform:"none", fontSize:13, cursor:"pointer" }}>
+          <input type="checkbox" checked={machEdit} onChange={e=>setMachEdit(e.target.checked)} /> Can edit Machine Inventory
+        </label>
+        {machEdit && (
+          <div style={{ marginTop:8, paddingLeft:8 }}>
+            <label style={{ display:"inline-flex", gap:6, textTransform:"none", fontSize:12.5, cursor:"pointer" }}>
+              <input type="checkbox" checked={allBrands} onChange={e=>setAllBrands(e.target.checked)} /> All brands
+            </label>
+            {!allBrands && (
+              <div className="row" style={{ marginTop:6, gap:"4px 14px" }}>
+                {BRANDS.map(b=>(
+                  <label key={b} style={{ display:"inline-flex", gap:5, textTransform:"none", fontSize:12.5, cursor:"pointer" }}>
+                    <input type="checkbox" checked={brands.includes(b)} onChange={()=>toggleBrand(b)} /> {b}
+                  </label>
+                ))}
+              </div>
+            )}
+          </div>
+        )}
+      </div>
+      <button className="btn" disabled={busy} onClick={create} style={{ marginTop:12 }}>{busy ? "Creating…" : "Create user"}</button>
+      <div className="muted" style={{ marginTop:8 }}>These permissions are enforced by the server. The checkboxes only decide what to store — the Security Rules decide what's allowed.</div>
+    </div>
+  );
+}
+
+// ---------- Users list (admin only) ----------
+function UsersList({ notify }) {
+  const [users, setUsers] = useState([]);
+  const [tick, setTick] = useState(0);
+  useEffect(() => {
+    const unsub = db.collection("users").onSnapshot(
+      s => setUsers(s.docs.map(d => ({ id: d.id, ...d.data() }))),
+      e => notify(e.message, "error")
+    );
+    return () => unsub();
+  }, [tick]);
+  return (
+    <div className="card">
+      <h2>👥 Users ({users.length})</h2>
+      <table>
+        <thead><tr><th>Email</th><th>Name</th><th>Role</th><th>Admin</th><th>Machine edit</th><th>Brands</th></tr></thead>
+        <tbody>
+          {users.map(u => {
+            const m = u.permissions && u.permissions.inventory && u.permissions.inventory.subs && u.permissions.inventory.subs.machines;
+            const edit = u.isAdmin ? "all" : (m && m.edit ? "yes" : "—");
+            const brands = u.isAdmin ? "all" : (m && m.edit ? (m.brands === null ? "all" : (m.brands || []).join(", ") || "(none)") : "—");
+            return (
+              <tr key={u.id}>
+                <td>{u.email}</td><td>{u.displayName||"—"}</td><td>{u.role||"—"}</td>
+                <td>{u.isAdmin ? <span className="chip" style={{ color:"var(--warn)", borderColor:"var(--warn)" }}>ADMIN</span> : "—"}</td>
+                <td>{edit}</td><td className="muted">{brands}</td>
+              </tr>
+            );
+          })}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
+// ---------- Inventory (real data domain, per-brand server-enforced) ----------
+function Inventory({ profile, notify }) {
+  const [items, setItems] = useState([]);
+  const [brand, setBrand] = useState(BRANDS[0]);
+  const [model, setModel] = useState("");
+  const [serial, setSerial] = useState("");
+
+  const isAdmin = profile.isAdmin;
+  const mp = profile.permissions && profile.permissions.inventory;
+  const canView = isAdmin || (mp && mp.view);
+  const machEdit = isAdmin || (mp && mp.edit && mp.subs.machines.edit);
+  const allowedBrands = isAdmin ? null : (machEdit ? mp.subs.machines.brands : []); // null = all
+  const brandOk = (b) => allowedBrands === null || (allowedBrands || []).includes(b);
+
+  useEffect(() => {
+    if (!canView) return;
+    const unsub = db.collection("inventory").orderBy("createdAt", "desc").onSnapshot(
+      s => setItems(s.docs.map(d => ({ id: d.id, ...d.data() }))),
+      e => notify("Read blocked by server: " + e.message, "error")
+    );
+    return () => unsub();
+  }, [canView]);
+
+  async function addItem(forceBrand) {
+    const b = forceBrand || brand;
+    try {
+      await db.collection("inventory").add({
+        brand: b, machineModel: model.trim() || "(model)", serialNo: serial.trim() || ("SN" + Date.now()),
+        condition: "BRAND NEW", status: "Available", createdAt: FieldValue.serverTimestamp(),
+        createdBy: profile.email,
+      });
+      notify("Added a " + b + " item.", "ok");
+      setModel(""); setSerial("");
+    } catch (e) {
+      notify("SERVER REFUSED the write (this is #4 working):\n" + e.message, "error");
+    }
+  }
+  async function del(it) {
+    try { await db.collection("inventory").doc(it.id).delete(); notify("Deleted.", "ok"); }
+    catch (e) { notify("SERVER REFUSED the delete:\n" + e.message, "error"); }
+  }
+
+  if (!canView) return <div className="card"><h2>📦 Inventory</h2><div className="muted">Your account doesn't have permission to view inventory.</div></div>;
+
+  const disallowed = BRANDS.find(b => !brandOk(b)); // a brand this user may NOT edit, for the demo
+
+  return (
+    <div className="card">
+      <h2>📦 Machine Inventory ({items.length})</h2>
+
+      {machEdit && (
+        <div className="row" style={{ marginBottom:12, alignItems:"flex-end" }}>
+          <div style={{ flex:"0 0 150px" }}><label>Brand</label>
+            <select className="inp" value={brand} onChange={e=>setBrand(e.target.value)}>
+              {BRANDS.map(b => <option key={b} value={b} disabled={!brandOk(b)}>{b}{brandOk(b) ? "" : " (locked)"}</option>)}
+            </select>
+          </div>
+          <div style={{ flex:"1 1 140px" }}><label>Model</label><input className="inp" value={model} onChange={e=>setModel(e.target.value)} /></div>
+          <div style={{ flex:"1 1 140px" }}><label>Serial</label><input className="inp" value={serial} onChange={e=>setSerial(e.target.value)} /></div>
+          <button className="btn" disabled={!brandOk(brand)} onClick={()=>addItem()}>Add</button>
+        </div>
+      )}
+
+      {machEdit && disallowed && (
+        <div style={{ background:"var(--card2)", border:"1px dashed var(--warn)", borderRadius:10, padding:12, marginBottom:12 }}>
+          <div style={{ fontSize:12.5, color:"var(--text2)", marginBottom:8 }}>
+            🔬 <b>Prove the server is in charge.</b> Your account isn't allowed to edit <code>{disallowed}</code>. The button below deliberately tries to add a <code>{disallowed}</code> item anyway — the browser check is bypassed, but the <b>server</b> will reject it.
+          </div>
+          <button className="btn danger" onClick={()=>addItem(disallowed)}>Try to add a {disallowed} item (should be refused)</button>
+        </div>
+      )}
+
+      <table>
+        <thead><tr><th>Brand</th><th>Model</th><th>Serial</th><th>Condition</th><th>Status</th><th></th></tr></thead>
+        <tbody>
+          {items.length === 0 && <tr><td colSpan={6} className="muted">No items yet.</td></tr>}
+          {items.map(it => (
+            <tr key={it.id}>
+              <td>{it.brand}</td><td>{it.machineModel}</td>
+              <td style={{ fontFamily:"monospace", color:"var(--key)", fontSize:12 }}>{it.serialNo}</td>
+              <td>{it.condition}</td><td>{it.status}</td>
+              <td>{(isAdmin || brandOk(it.brand)) && machEdit
+                ? <button className="btn danger" style={{ padding:"3px 9px" }} onClick={()=>del(it)}>🗑</button>
+                : <span title="Not editable by your account" style={{ color:"var(--text4)" }}>🔒</span>}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
+// ---------- Shell ----------
+function App() {
+  const [user, setUser] = useState(undefined);   // Firebase auth user | null | undefined(loading)
+  const [profile, setProfile] = useState(undefined);
+  const [toast, setToast] = useState(null);
+  const notify = (msg, kind) => setToast({ msg, kind });
+
+  useEffect(() => auth.onAuthStateChanged(setUser), []);
+  useEffect(() => {
+    if (!user) { setProfile(user === null ? null : undefined); return; }
+    const unsub = db.collection("users").doc(user.uid).onSnapshot(
+      d => setProfile(d.exists ? { id: d.id, ...d.data() } : null),
+      () => setProfile(null)
+    );
+    return () => unsub();
+  }, [user]);
+
+  if (user === undefined) return <div className="wrap"><div className="muted" style={{ marginTop:40 }}>Loading…</div></div>;
+  if (user === null) return <React.Fragment><Login notify={notify} />{toast && <Toast {...toast} onClose={()=>setToast(null)} />}</React.Fragment>;
+
+  return (
+    <React.Fragment>
+      <div style={{ borderBottom:"1px solid var(--border)", background:"var(--bg2)" }}>
+        <div className="wrap" style={{ display:"flex", alignItems:"center", gap:12, paddingTop:14, paddingBottom:14 }}>
+          <h1>iBase <span className="muted" style={{ fontSize:12 }}>· Firebase-secured</span></h1>
+          <div style={{ marginLeft:"auto" }} className="row">
+            <span className="muted">{user.email}{profile && profile.isAdmin ? " · admin" : profile && profile.role ? " · " + profile.role : ""}</span>
+            <button className="btn ghost" onClick={()=>auth.signOut()}>Sign out</button>
+          </div>
+        </div>
+      </div>
+
+      <div className="wrap">
+        {profile === undefined && <div className="muted">Loading your profile…</div>}
+        {profile === null && (
+          <div className="card">
+            <h2>No profile yet</h2>
+            <div className="muted" style={{ lineHeight:1.6 }}>
+              You're signed in, but there's no profile document for your account, so the server grants you nothing.<br/>
+              If you're the first administrator, create your profile once in the Firestore console (see the setup guide): collection <code>users</code>, document ID = your UID <code>{user.uid}</code>, fields <code>isAdmin</code> (boolean, true), <code>email</code>, <code>displayName</code>.
+            </div>
+          </div>
+        )}
+        {profile && (
+          <React.Fragment>
+            {profile.isAdmin && <CreateUser notify={notify} />}
+            {profile.isAdmin && <UsersList notify={notify} />}
+            <Inventory profile={profile} notify={notify} />
+          </React.Fragment>
+        )}
+      </div>
+      {toast && <Toast {...toast} onClose={()=>setToast(null)} />}
+    </React.Fragment>
+  );
+}
+
+ReactDOM.createRoot(document.getElementById("root")).render(<App />);
+</script>
+</body>
+</html>
