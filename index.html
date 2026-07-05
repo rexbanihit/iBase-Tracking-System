@@ -795,6 +795,17 @@ function usePresence(user, profile) {
     if (!rtdbOk) return;
     let cancelled = false;
     const myRef = rtdb.ref("presence/" + SESSION_ID);
+    // Presence + live cursors are a LOGIN-SCREEN feature only. As soon as this
+    // person signs in, wipe their shared nodes so they vanish from everyone
+    // else's cosmic field, and don't advertise presence at all while signed in.
+    if (user) {
+      try {
+        myRef.remove();
+        rtdb.ref("cursors/" + SESSION_ID).remove();
+        rtdb.ref("clicks/" + SESSION_ID).remove();
+      } catch (e) {}
+      return;
+    }
     (async () => {
       try {
         if (!joinedRef.current) {
@@ -864,9 +875,9 @@ function usePresence(user, profile) {
     };
   }, [rtdbOk]);
 
-  // stream my cursor (throttled: >=80ms apart and >4px moved; only when visible)
+  // stream my cursor (throttled) — ONLY while on the login screen (signed out).
   useEffect(() => {
-    if (!rtdbOk) return;
+    if (!rtdbOk || user) return;
     let last = 0,
       lx = -1,
       ly = -1;
@@ -894,7 +905,7 @@ function usePresence(user, profile) {
     };
     window.addEventListener("mousemove", onMove);
     return () => window.removeEventListener("mousemove", onMove);
-  }, [rtdbOk]);
+  }, [rtdbOk, !!user]);
   const setShowName = v => {
     setShowNameState(v);
     try {
@@ -902,7 +913,7 @@ function usePresence(user, profile) {
     } catch (e) {}
   };
   const sendClick = (x, y) => {
-    if (!rtdbOk) return;
+    if (!rtdbOk || user) return;
     // Defer the network write off the click frame so the LOCAL burst paints
     // instantly (the local effect never waits on the round-trip).
     var payload = {
@@ -916,17 +927,26 @@ function usePresence(user, profile) {
       } catch (e) {}
     }, 0);
   };
-  const count = Object.keys(viewers).length;
+  // On the READ side, a signed-in viewer should see NOBODY's live cursors/effects.
+  // Expose only login-screen viewers (signedIn !== true) and suppress everything
+  // once I'm signed in.
+  const loginViewers = {};
+  Object.entries(viewers).forEach(([id, v]) => {
+    if (v && v.signedIn !== true) loginViewers[id] = v;
+  });
+  const iAmSignedIn = !!user;
+  const count = Object.keys(loginViewers).length;
   return {
-    viewers,
-    cursors,
-    clicks,
+    viewers: iAmSignedIn ? {} : loginViewers,
+    cursors: iAmSignedIn ? {} : cursors,
+    clicks: iAmSignedIn ? {} : clicks,
     myColor,
     showName,
     setShowName,
     sendClick,
     count,
-    enabled: rtdbOk
+    enabled: rtdbOk,
+    signedIn: iAmSignedIn
   };
 }
 
@@ -4641,12 +4661,13 @@ function App() {
   // (per-frame read, no React re-render churn).
   const remotePointersRef = useRef([]);
   useEffect(() => {
-    remotePointersRef.current = Object.keys(presence.cursors).filter(id => id !== SESSION_ID && presence.viewers[id]).map(id => ({
+    // No shared pointers once signed in (presence is a login-screen feature).
+    remotePointersRef.current = presence.signedIn ? [] : Object.keys(presence.cursors).filter(id => id !== SESSION_ID && presence.viewers[id]).map(id => ({
       x: presence.cursors[id].x,
       y: presence.cursors[id].y,
       color: (presence.viewers[id] || {}).color
     }));
-  }, [presence.cursors, presence.viewers]);
+  }, [presence.cursors, presence.viewers, presence.signedIn]);
   // my unique color, readable per-frame by the canvas
   const myColorRef = useRef(null);
   useEffect(() => {
@@ -4771,11 +4792,7 @@ function App() {
       alignItems: "center",
       flexWrap: "wrap"
     }
-  }, /*#__PURE__*/React.createElement(ViewersPill, {
-    presence: presence
-  }), /*#__PURE__*/React.createElement(NameToggle, {
-    presence: presence
-  }), /*#__PURE__*/React.createElement(HeaderClock, null), /*#__PURE__*/React.createElement(ThemePicker, {
+  }, /*#__PURE__*/React.createElement(HeaderClock, null), /*#__PURE__*/React.createElement(ThemePicker, {
     theme: theme,
     setTheme: setTheme
   }), /*#__PURE__*/React.createElement("span", {
@@ -4839,10 +4856,7 @@ function App() {
       letterSpacing: 2,
       textTransform: "uppercase"
     }
-  }, "Designed & Developed by Rex Banihit"), /*#__PURE__*/React.createElement(LiveCursors, {
-    viewers: presence.viewers,
-    cursors: presence.cursors
-  }), toast && /*#__PURE__*/React.createElement(Toast, {
+  }, "Designed & Developed by Rex Banihit"), toast && /*#__PURE__*/React.createElement(Toast, {
     ...toast,
     onClose: () => setToast(null)
   }));
