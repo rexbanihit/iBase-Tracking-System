@@ -466,7 +466,10 @@ function fmtManilaTime(d) {
 //    blocks the login card on top of it.
 function CosmicLoginBG({
   theme,
-  remotePointersRef
+  remotePointersRef,
+  myColorRef,
+  remoteClicksRef,
+  onLocalClick
 }) {
   const canvasRef = React.useRef(null);
   const dark = theme !== "light";
@@ -598,7 +601,8 @@ function CosmicLoginBG({
         ctx.globalAlpha = 1;
       }
       if (!reduce) {
-        spawn(mouse.x, mouse.y, mouse.active ? 7 : 2, mouse.active ? 0.8 : 0.35);
+        var myCol = myColorRef && myColorRef.current;
+        spawn(mouse.x, mouse.y, mouse.active ? 7 : 2, mouse.active ? 0.8 : 0.35, myCol ? spriteFor(myCol) : null);
         if (Math.random() < 0.15) spawn(Math.random() * W, Math.random() * H, 1, 0.3);
       }
 
@@ -608,6 +612,22 @@ function CosmicLoginBG({
         for (var rp = 0; rp < rps.length; rp++) {
           var R = rps[rp];
           if (typeof R.x === "number") spawn(R.x * W, R.y * H, 2, 0.5, spriteFor(R.color || "#38bdf8"));
+        }
+      }
+
+      // consume clicks broadcast by other viewers -> attractors in THEIR colors
+      var rcq = remoteClicksRef && remoteClicksRef.current;
+      if (rcq && rcq.length) {
+        while (rcq.length) {
+          var rc = rcq.shift();
+          attractors.push({
+            x: rc.x * W,
+            y: rc.y * H,
+            born: performance.now(),
+            si: spriteFor(rc.color || "#38bdf8")
+          });
+          if (!reduce) spawn(rc.x * W, rc.y * H, 26, 2.2, spriteFor(rc.color || "#38bdf8"));
+          if (attractors.length > 8) attractors.shift();
         }
       }
       for (var ai = attractors.length - 1; ai >= 0; ai--) if (now - attractors[ai].born > 9000) attractors.splice(ai, 1);
@@ -664,7 +684,7 @@ function CosmicLoginBG({
           age = (now - ac.born) / 9000,
           rr = 11 + Math.sin(now * 0.006) * 2;
         ctx.globalAlpha = (1 - age) * (dark ? 0.9 : 0.85);
-        ctx.drawImage(sprites[sprites.length - 1], ac.x - rr, ac.y - rr, rr * 2, rr * 2);
+        ctx.drawImage(sprites[ac.si != null ? ac.si : sprites.length - 1], ac.x - rr, ac.y - rr, rr * 2, rr * 2);
       }
       ctx.globalAlpha = 1;
     }
@@ -677,12 +697,18 @@ function CosmicLoginBG({
     }
     function onDown(e) {
       var r = canvas.getBoundingClientRect();
+      var x = e.clientX - r.left,
+        y = e.clientY - r.top;
+      var myCol2 = myColorRef && myColorRef.current;
       attractors.push({
-        x: e.clientX - r.left,
-        y: e.clientY - r.top,
-        born: performance.now()
+        x: x,
+        y: y,
+        born: performance.now(),
+        si: myCol2 ? spriteFor(myCol2) : null
       });
-      if (attractors.length > 4) attractors.shift();
+      if (attractors.length > 8) attractors.shift();
+      if (!reduce) spawn(x, y, 26, 2.2, myCol2 ? spriteFor(myCol2) : null); // click burst in my color
+      if (onLocalClick && W > 0 && H > 0) onLocalClick(x / W, y / H); // broadcast to all viewers
     }
     var idle = setInterval(function () {
       if (performance.now() - mouse.moved > 600) mouse.active = false;
@@ -775,6 +801,7 @@ function usePresence(user, profile) {
           joinedRef.current = true;
           myRef.onDisconnect().remove();
           rtdb.ref("cursors/" + SESSION_ID).onDisconnect().remove();
+          rtdb.ref("clicks/" + SESSION_ID).onDisconnect().remove();
         }
         const displayName = user ? showName ? profile && profile.displayName || user.email : "Anonymous" : "Guest";
         await myRef.set({
@@ -797,6 +824,7 @@ function usePresence(user, profile) {
       try {
         rtdb.ref("presence/" + SESSION_ID).remove();
         rtdb.ref("cursors/" + SESSION_ID).remove();
+        rtdb.ref("clicks/" + SESSION_ID).remove();
       } catch (e) {}
     };
     window.addEventListener("beforeunload", bye);
@@ -806,16 +834,20 @@ function usePresence(user, profile) {
     };
   }, [rtdbOk]);
 
-  // subscribe to everyone's presence + cursors
+  // subscribe to everyone's presence + cursors + clicks
+  const [clicks, setClicks] = useState({});
   useEffect(() => {
     if (!rtdbOk) return;
     const pRef = rtdb.ref("presence"),
-      cRef = rtdb.ref("cursors");
+      cRef = rtdb.ref("cursors"),
+      kRef = rtdb.ref("clicks");
     const onP = pRef.on("value", s => setViewers(s.val() || {}));
     const onC = cRef.on("value", s => setCursors(s.val() || {}));
+    const onK = kRef.on("value", s => setClicks(s.val() || {}));
     return () => {
       pRef.off("value", onP);
       cRef.off("value", onC);
+      kRef.off("value", onK);
     };
   }, [rtdbOk]);
 
@@ -852,13 +884,25 @@ function usePresence(user, profile) {
       localStorage.setItem("ibase_showname", v ? "1" : "0");
     } catch (e) {}
   };
+  const sendClick = (x, y) => {
+    if (!rtdbOk) return;
+    try {
+      rtdb.ref("clicks/" + SESSION_ID).set({
+        x: Math.round(x * 1000) / 1000,
+        y: Math.round(y * 1000) / 1000,
+        n: Date.now()
+      });
+    } catch (e) {}
+  };
   const count = Object.keys(viewers).length;
   return {
     viewers,
     cursors,
+    clicks,
     myColor,
     showName,
     setShowName,
+    sendClick,
     count,
     enabled: rtdbOk
   };
@@ -1359,7 +1403,9 @@ function Login({
   theme,
   setTheme,
   presence,
-  remotePointersRef
+  remotePointersRef,
+  myColorRef,
+  remoteClicksRef
 }) {
   const [email, setEmail] = useState("");
   const [pw, setPw] = useState("");
@@ -1381,7 +1427,10 @@ function Login({
     }
   }, /*#__PURE__*/React.createElement(CosmicLoginBG, {
     theme: theme,
-    remotePointersRef: remotePointersRef
+    remotePointersRef: remotePointersRef,
+    myColorRef: myColorRef,
+    remoteClicksRef: remoteClicksRef,
+    onLocalClick: presence && presence.sendClick
   }), /*#__PURE__*/React.createElement("div", {
     style: {
       position: "fixed",
@@ -1402,13 +1451,14 @@ function Login({
     style: {
       position: "relative",
       zIndex: 2,
-      maxWidth: 420,
+      maxWidth: 360,
       margin: "0 auto",
-      padding: "9vh 16px 0"
+      padding: "8vh 16px 0"
     }
   }, /*#__PURE__*/React.createElement("div", {
     style: {
       ...cardSt,
+      padding: "38px 30px 30px",
       background: "var(--c-card)",
       boxShadow: "0 20px 60px rgba(0,0,0,.35)"
     }
@@ -1417,7 +1467,7 @@ function Login({
       display: "flex",
       justifyContent: "center",
       gap: 5,
-      marginBottom: 10
+      marginBottom: 14
     }
   }, [18, 26, 22].map((h, i) => /*#__PURE__*/React.createElement("span", {
     key: i,
@@ -1430,56 +1480,71 @@ function Login({
     }
   }))), /*#__PURE__*/React.createElement("div", {
     style: {
-      fontSize: 22,
+      fontSize: 23,
       fontWeight: 900,
-      textAlign: "center"
+      textAlign: "center",
+      color: "var(--c-key)"
     }
   }, "iBase"), /*#__PURE__*/React.createElement("div", {
     style: {
-      fontSize: 11,
+      fontSize: 10.5,
       color: "var(--c-text4)",
-      marginBottom: 18,
+      marginBottom: 26,
       textAlign: "center",
-      letterSpacing: 2,
+      letterSpacing: 2.5,
       textTransform: "uppercase"
     }
   }, "Installed Base Management"), /*#__PURE__*/React.createElement("label", {
     style: labelSt
-  }, "Email"), /*#__PURE__*/React.createElement("input", {
+  }, "Username"), /*#__PURE__*/React.createElement("input", {
     style: {
       ...inputSt(),
-      marginBottom: 12
+      marginBottom: 16
     },
     value: email,
     onChange: e => setEmail(e.target.value),
-    placeholder: "you@company.com"
+    placeholder: "Enter email"
   }), /*#__PURE__*/React.createElement("label", {
     style: labelSt
   }, "Password"), /*#__PURE__*/React.createElement("input", {
     style: {
       ...inputSt(),
-      marginBottom: 16
+      marginBottom: 22
     },
     type: "password",
     value: pw,
     onChange: e => setPw(e.target.value),
-    onKeyDown: e => e.key === "Enter" && submit()
+    onKeyDown: e => e.key === "Enter" && submit(),
+    placeholder: "Enter password"
   }), /*#__PURE__*/React.createElement("button", {
     style: {
       ...btnSt("var(--c-key)", "var(--c-bg)"),
-      width: "100%"
+      width: "100%",
+      padding: "11px 14px"
     },
     disabled: busy,
     onClick: submit
   }, busy ? "Signing in…" : "🔓 Sign In"), /*#__PURE__*/React.createElement("div", {
     style: {
-      fontSize: 11,
-      color: "var(--c-text5)",
-      marginTop: 14,
-      lineHeight: 1.5,
+      marginTop: 26,
       textAlign: "center"
     }
-  }, "Passwords are hashed and verified by Google's servers — this app never sees or stores them.", presence && presence.enabled && presence.count > 1 ? " · " + (presence.count - 1) + " other viewer" + (presence.count > 2 ? "s" : "") + " here with you — move your cursor and they'll see your colour stir the stars." : ""))));
+  }, /*#__PURE__*/React.createElement("div", {
+    style: {
+      fontSize: 9.5,
+      color: "var(--c-text5)",
+      letterSpacing: 2,
+      textTransform: "uppercase"
+    }
+  }, "iBase Philippines · Field Service"), /*#__PURE__*/React.createElement("div", {
+    style: {
+      fontSize: 9,
+      color: "var(--c-author)",
+      letterSpacing: 2,
+      textTransform: "uppercase",
+      marginTop: 6
+    }
+  }, "Designed & Developed by Rex Banihit")))));
 }
 
 // ── Dashboard ────────────────────────────────────────────────────────────────
@@ -4560,6 +4625,32 @@ function App() {
       color: (presence.viewers[id] || {}).color
     }));
   }, [presence.cursors, presence.viewers]);
+  // my unique color, readable per-frame by the canvas
+  const myColorRef = useRef(null);
+  useEffect(() => {
+    myColorRef.current = presence.myColor;
+  }, [presence.myColor]);
+  // queue other viewers' clicks (each keyed by session, stamped n) for the canvas to drain
+  const remoteClicksRef = useRef([]);
+  const seenClicksRef = useRef({});
+  useEffect(() => {
+    Object.keys(presence.clicks || {}).forEach(id => {
+      if (id === SESSION_ID) return;
+      const k = presence.clicks[id];
+      if (!k || typeof k.x !== "number") return;
+      if (seenClicksRef.current[id] === k.n) return; // already consumed
+      const fresh = seenClicksRef.current[id] !== undefined || Date.now() - (k.n || 0) < 4000;
+      seenClicksRef.current[id] = k.n;
+      if (!fresh) return; // ignore stale clicks from before we joined
+      const v = presence.viewers[id];
+      remoteClicksRef.current.push({
+        x: k.x,
+        y: k.y,
+        color: v && v.color || "#38bdf8"
+      });
+      if (remoteClicksRef.current.length > 16) remoteClicksRef.current.shift();
+    });
+  }, [presence.clicks, presence.viewers]);
   const signedProfile = profile ? {
     ...profile,
     isAdmin: !!profile.isAdmin
@@ -4598,7 +4689,9 @@ function App() {
     theme: theme,
     setTheme: setTheme,
     presence: presence,
-    remotePointersRef: remotePointersRef
+    remotePointersRef: remotePointersRef,
+    myColorRef: myColorRef,
+    remoteClicksRef: remoteClicksRef
   }), /*#__PURE__*/React.createElement(LiveCursors, {
     viewers: presence.viewers,
     cursors: presence.cursors
