@@ -135,6 +135,7 @@
 <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-auth-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-database-compat.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/react/18.2.0/umd/react.production.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.production.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.23.2/babel.min.js"></script>
@@ -146,6 +147,8 @@
      STEP 1 - PASTE YOUR FIREBASE CONFIG (Project settings > Your apps > Web).
      The apiKey is NOT a secret - security lives in Authentication + the
      server-side Security Rules, not in hiding this config.
+     databaseURL: from Realtime Database (for live presence & cursors).
+     Leave databaseURL as-is to run without the live-presence features.
 ============================================================= -->
 <script>
   var firebaseConfig = {
@@ -154,7 +157,8 @@
     projectId:         "ibase-373e6",
     storageBucket:     "ibase-373e6.firebasestorage.app",
     messagingSenderId: "153032625736",
-    appId:             "1:153032625736:web:4864bc0eaa2e706e9f527d"
+    appId:             "1:153032625736:web:4864bc0eaa2e706e9f527d",
+    databaseURL:       "https://ibase-373e6-default-rtdb.asia-southeast1.firebasedatabase.app/"
   };
   firebase.initializeApp(firebaseConfig);
 </script>
@@ -467,6 +471,353 @@ function fmtManilaTime(d) {
 </script>
 
 <script type="text/babel">
+// ── Interactive "cosmic flow" particle background (Canvas 2D, no external deps) ──
+//    Glowing particles stream from the cursor through a swirling flow field;
+//    left-click drops an attractor that particles orbit. Additively blended over a
+//    starfield for a soft, bloom-like glow. Pure <canvas> — adds no load time and
+//    cannot break app loading. Honors prefers-reduced-motion. The canvas is
+//    pointer-events:none and reads the mouse from window events, so it never
+//    blocks the login card on top of it.
+function CosmicLoginBG({ theme, remotePointersRef }) {
+  const canvasRef = React.useRef(null);
+  const dark = theme !== "light";
+  React.useEffect(function () {
+    var canvas = canvasRef.current;
+    if (!canvas) return;
+    var ctx = canvas.getContext("2d");
+    if (!ctx) return;
+
+    var reduce = false;
+    try { reduce = window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches; } catch (e) {}
+
+    var palette = dark
+      ? ["#38bdf8", "#818cf8", "#e879f9"]
+      : ["#0284c7", "#7c3aed", "#db2777"];
+
+    // Pre-render a soft glow sprite per color (fast drawImage beats per-particle gradients).
+    function makeSprite(color) {
+      var s = 64, off = document.createElement("canvas"); off.width = s; off.height = s;
+      var octx = off.getContext("2d");
+      var g = octx.createRadialGradient(s / 2, s / 2, 0, s / 2, s / 2, s / 2);
+      g.addColorStop(0, color); g.addColorStop(0.22, color); g.addColorStop(1, "rgba(0,0,0,0)");
+      octx.fillStyle = g; octx.beginPath(); octx.arc(s / 2, s / 2, s / 2, 0, Math.PI * 2); octx.fill();
+      return off;
+    }
+    var sprites = palette.map(makeSprite);
+    // per-remote-user colored sprites, created on demand and cached by color
+    var userSprites = {};
+    function spriteFor(color) {
+      if (!userSprites[color]) { userSprites[color] = makeSprite(color); sprites.push(userSprites[color]); userSprites[color].__idx = sprites.length - 1; }
+      return userSprites[color].__idx;
+    }
+
+    var W = 0, H = 0, DPR = 1, MAX = 600;
+    var additive = dark;  // dark theme: glowing neon (additive). light theme: vivid colored ink (normal) so hues stay saturated on white.
+    var baseFill = dark ? "#070b16" : "#f6f8fc";
+    function resize() {
+      DPR = Math.min(window.devicePixelRatio || 1, 1.5);
+      W = canvas.clientWidth || window.innerWidth;
+      H = canvas.clientHeight || window.innerHeight;
+      canvas.width = Math.max(1, Math.floor(W * DPR));
+      canvas.height = Math.max(1, Math.floor(H * DPR));
+      ctx.setTransform(DPR, 0, 0, DPR, 0, 0);
+      MAX = Math.max(500, Math.min(1300, Math.floor((W * H) / 1500)));
+      ctx.globalCompositeOperation = "source-over";
+      ctx.fillStyle = baseFill; ctx.fillRect(0, 0, W, H); // avoid first-frame flash
+      buildStars();
+    }
+
+    var stars = [];
+    function buildStars() {
+      stars = [];
+      var n = Math.max(40, Math.min(150, Math.round((W * H) / 9000)));
+      for (var i = 0; i < n; i++) stars.push({ x: Math.random() * W, y: Math.random() * H, r: Math.random() * 0.7 + 0.25, t: Math.random() * Math.PI * 2, sp: Math.random() * 1.5 + 0.5 });
+    }
+
+    var particles = [];
+    var mouse = { x: 0, y: 0, active: false, moved: 0 };
+    var attractors = [];
+
+    function spawn(x, y, n, spread, si) {
+      for (var i = 0; i < n; i++) {
+        if (particles.length >= MAX) particles.shift();
+        var a = Math.random() * Math.PI * 2, sp = Math.random() * spread;
+        particles.push({ x: x + (Math.random() - 0.5) * 4, y: y + (Math.random() - 0.5) * 4, vx: Math.cos(a) * sp, vy: Math.sin(a) * sp, life: 1, decay: 0.005 + Math.random() * 0.007, size: Math.random() * 2.2 + 1.0, si: si != null ? si : (Math.random() * sprites.length) | 0 });
+      }
+    }
+
+    // Cheap swirling flow field (no simplex-noise dependency needed).
+    function flow(x, y, t) { return (Math.sin(x * 0.0016 + t * 0.0003) + Math.cos(y * 0.0016 - t * 0.00027)) * Math.PI; }
+
+    var t0 = performance.now(), last = t0, raf = 0;
+    mouse.x = window.innerWidth / 2; mouse.y = window.innerHeight / 2;
+
+    function frame(now) {
+      raf = requestAnimationFrame(frame);
+      var t = now - t0;
+
+      ctx.globalCompositeOperation = "source-over";
+      ctx.fillStyle = dark ? "rgba(7,11,22,0.18)" : "rgba(246,248,252,0.22)";
+      ctx.fillRect(0, 0, W, H);
+
+      // faint starfield — small dim pinpoints, dark theme only (kept out of daylight so it stays clean/colorful)
+      if (dark) {
+        ctx.globalCompositeOperation = "lighter";
+        for (var s = 0; s < stars.length; s++) {
+          var st = stars[s]; st.t += 0.02 * st.sp;
+          var tw = 0.35 + 0.5 * (0.5 + 0.5 * Math.sin(st.t));
+          ctx.globalAlpha = 0.45 * tw;
+          ctx.fillStyle = "#8fa8cf";
+          ctx.beginPath(); ctx.arc(st.x, st.y, st.r, 0, Math.PI * 2); ctx.fill();
+        }
+        ctx.globalAlpha = 1;
+      }
+
+      if (!reduce) {
+        spawn(mouse.x, mouse.y, mouse.active ? 7 : 2, mouse.active ? 0.8 : 0.35);
+        if (Math.random() < 0.15) spawn(Math.random() * W, Math.random() * H, 1, 0.3);
+      }
+
+      // Other people's live cursors stir the same field, in THEIR colors.
+      var rps = (remotePointersRef && remotePointersRef.current) || [];
+      if (!reduce) {
+        for (var rp = 0; rp < rps.length; rp++) {
+          var R = rps[rp];
+          if (typeof R.x === "number") spawn(R.x * W, R.y * H, 2, 0.5, spriteFor(R.color || "#38bdf8"));
+        }
+      }
+
+      for (var ai = attractors.length - 1; ai >= 0; ai--) if (now - attractors[ai].born > 9000) attractors.splice(ai, 1);
+
+      ctx.globalCompositeOperation = additive ? "lighter" : "source-over";
+      for (var i = particles.length - 1; i >= 0; i--) {
+        var p = particles[i];
+        var ang = flow(p.x, p.y, t);
+        p.vx += Math.cos(ang) * 0.05; p.vy += Math.sin(ang) * 0.05;
+        var dxm = mouse.x - p.x, dym = mouse.y - p.y, dm = Math.sqrt(dxm * dxm + dym * dym) + 0.001;
+        if (dm < 260) { p.vx += (dxm / dm) * 0.06; p.vy += (dym / dm) * 0.06; }
+        for (var rp2 = 0; rp2 < rps.length; rp2++) {
+          var R2 = rps[rp2];
+          if (typeof R2.x !== "number") continue;
+          var dxr = R2.x * W - p.x, dyr = R2.y * H - p.y, dr = Math.sqrt(dxr * dxr + dyr * dyr) + 0.001;
+          if (dr < 200) { p.vx += (dxr / dr) * 0.05; p.vy += (dyr / dr) * 0.05; }
+        }
+        for (var a2 = 0; a2 < attractors.length; a2++) {
+          var at = attractors[a2], dxa = at.x - p.x, dya = at.y - p.y, da = Math.sqrt(dxa * dxa + dya * dya) + 0.001;
+          var f = Math.min(1.6, 900 / (da * da));
+          p.vx += (dxa / da) * f + (-dya / da) * f * 0.6;
+          p.vy += (dya / da) * f + (dxa / da) * f * 0.6;
+        }
+        p.vx *= 0.94; p.vy *= 0.94; p.x += p.vx; p.y += p.vy; p.life -= p.decay;
+        if (p.life <= 0 || p.x < -40 || p.x > W + 40 || p.y < -40 || p.y > H + 40) { particles.splice(i, 1); continue; }
+        var sz = p.size * (0.6 + p.life * 0.7);
+        ctx.globalAlpha = Math.max(0, Math.min(1, p.life)) * (dark ? 0.9 : 0.92);
+        ctx.drawImage(sprites[p.si], p.x - sz / 2, p.y - sz / 2, sz, sz);
+      }
+      ctx.globalAlpha = 1;
+
+      ctx.globalCompositeOperation = additive ? "lighter" : "source-over";
+      for (var c2 = 0; c2 < attractors.length; c2++) {
+        var ac = attractors[c2], age = (now - ac.born) / 9000, rr = 11 + Math.sin(now * 0.006) * 2;
+        ctx.globalAlpha = (1 - age) * (dark ? 0.9 : 0.85);
+        ctx.drawImage(sprites[sprites.length - 1], ac.x - rr, ac.y - rr, rr * 2, rr * 2);
+      }
+      ctx.globalAlpha = 1;
+    }
+
+    function onMove(e) { var r = canvas.getBoundingClientRect(); mouse.x = e.clientX - r.left; mouse.y = e.clientY - r.top; mouse.active = true; mouse.moved = performance.now(); }
+    function onDown(e) { var r = canvas.getBoundingClientRect(); attractors.push({ x: e.clientX - r.left, y: e.clientY - r.top, born: performance.now() }); if (attractors.length > 4) attractors.shift(); }
+    var idle = setInterval(function () { if (performance.now() - mouse.moved > 600) mouse.active = false; }, 300);
+
+    resize();
+    window.addEventListener("resize", resize);
+    window.addEventListener("mousemove", onMove);
+    window.addEventListener("mousedown", onDown);
+    raf = requestAnimationFrame(frame);
+
+    return function () {
+      cancelAnimationFrame(raf); clearInterval(idle);
+      window.removeEventListener("resize", resize);
+      window.removeEventListener("mousemove", onMove);
+      window.removeEventListener("mousedown", onDown);
+    };
+  }, [theme]);
+
+  return <canvas ref={canvasRef} aria-hidden="true" style={{ position: "absolute", inset: 0, width: "100%", height: "100%", display: "block", pointerEvents: "none" }} />;
+}
+// ── Live presence: who's viewing, unique cursor colors, name/anonymous toggle ──
+// Uses Firebase REALTIME DATABASE (not Firestore) because cursor streams need a
+// bandwidth-priced realtime channel; Firestore would burn the free write quota.
+// If the Realtime Database isn't configured, everything here silently disables
+// and the app behaves exactly as before (rtdbOk === false).
+
+const PRESENCE_COLORS = [
+  "#38bdf8","#a78bfa","#34d399","#fbbf24","#fb7185","#22d3ee","#f97316","#4ade80",
+  "#e879f9","#f43f5e","#60a5fa","#facc15","#2dd4bf","#c084fc","#fb923c","#a3e635",
+  "#f472b6","#818cf8","#10b981","#eab308","#06b6d4","#ef4444"
+];
+const SESSION_ID = "s_" + Date.now().toString(36) + Math.random().toString(36).slice(2, 9);
+let rtdb = null, rtdbOk = false;
+try {
+  if (firebase.database && firebaseConfig.databaseURL && firebaseConfig.databaseURL.indexOf("PASTE_") === -1) {
+    rtdb = firebase.database();
+    rtdbOk = true;
+  }
+} catch (e) { rtdbOk = false; }
+
+// Pick a color no current viewer is using; fall back to a golden-angle hue.
+function pickPresenceColor(existing) {
+  const used = {};
+  Object.values(existing || {}).forEach(p => { if (p && p.color) used[p.color] = 1; });
+  for (const c of PRESENCE_COLORS) if (!used[c]) return c;
+  let h = 0; for (const ch of SESSION_ID) h = (h * 31 + ch.charCodeAt(0)) >>> 0;
+  return "hsl(" + Math.round((h % 360)) + ",85%,62%)";
+}
+
+// React hook: joins presence, streams my cursor, subscribes to everyone else's.
+// Returns { viewers, cursors, myColor, showName, setShowName, count }.
+function usePresence(user, profile) {
+  const [viewers, setViewers] = useState({});
+  const [cursors, setCursors] = useState({});
+  const [myColor, setMyColor] = useState(PRESENCE_COLORS[0]);
+  const [showName, setShowNameState] = useState(() => { try { return localStorage.getItem("ibase_showname") !== "0"; } catch (e) { return true; } });
+  const joinedRef = useRef(false);
+  const colorRef = useRef(null);
+
+  // join / update my presence record
+  useEffect(() => {
+    if (!rtdbOk) return;
+    let cancelled = false;
+    const myRef = rtdb.ref("presence/" + SESSION_ID);
+    (async () => {
+      try {
+        if (!joinedRef.current) {
+          const snap = await rtdb.ref("presence").once("value");
+          if (cancelled) return;
+          colorRef.current = pickPresenceColor(snap.val());
+          setMyColor(colorRef.current);
+          joinedRef.current = true;
+          myRef.onDisconnect().remove();
+          rtdb.ref("cursors/" + SESSION_ID).onDisconnect().remove();
+        }
+        const displayName = user
+          ? (showName ? ((profile && profile.displayName) || user.email) : "Anonymous")
+          : "Guest";
+        await myRef.set({ name: String(displayName).slice(0, 40), color: colorRef.current, signedIn: !!user, at: firebase.database.ServerValue.TIMESTAMP });
+      } catch (e) { /* presence is best-effort */ }
+    })();
+    return () => { cancelled = true; };
+  }, [rtdbOk, user && user.uid, profile && profile.displayName, showName]);
+
+  // leave on unload
+  useEffect(() => {
+    if (!rtdbOk) return;
+    const bye = () => { try { rtdb.ref("presence/" + SESSION_ID).remove(); rtdb.ref("cursors/" + SESSION_ID).remove(); } catch (e) {} };
+    window.addEventListener("beforeunload", bye);
+    return () => { window.removeEventListener("beforeunload", bye); bye(); };
+  }, [rtdbOk]);
+
+  // subscribe to everyone's presence + cursors
+  useEffect(() => {
+    if (!rtdbOk) return;
+    const pRef = rtdb.ref("presence"), cRef = rtdb.ref("cursors");
+    const onP = pRef.on("value", s => setViewers(s.val() || {}));
+    const onC = cRef.on("value", s => setCursors(s.val() || {}));
+    return () => { pRef.off("value", onP); cRef.off("value", onC); };
+  }, [rtdbOk]);
+
+  // stream my cursor (throttled: >=80ms apart and >4px moved; only when visible)
+  useEffect(() => {
+    if (!rtdbOk) return;
+    let last = 0, lx = -1, ly = -1;
+    const onMove = (e) => {
+      const now = Date.now();
+      if (now - last < 80) return;
+      const x = e.clientX / window.innerWidth, y = e.clientY / window.innerHeight;
+      if (Math.abs(e.clientX - lx) < 4 && Math.abs(e.clientY - ly) < 4) return;
+      last = now; lx = e.clientX; ly = e.clientY;
+      if (document.hidden) return;
+      try { rtdb.ref("cursors/" + SESSION_ID).set({ x: Math.round(x * 1000) / 1000, y: Math.round(y * 1000) / 1000, at: firebase.database.ServerValue.TIMESTAMP }); } catch (err) {}
+    };
+    window.addEventListener("mousemove", onMove);
+    return () => window.removeEventListener("mousemove", onMove);
+  }, [rtdbOk]);
+
+  const setShowName = (v) => { setShowNameState(v); try { localStorage.setItem("ibase_showname", v ? "1" : "0"); } catch (e) {} };
+  const count = Object.keys(viewers).length;
+  return { viewers, cursors, myColor, showName, setShowName, count, enabled: rtdbOk };
+}
+
+// Overlay drawing everyone ELSE's live cursor as a glowing colored pointer + label.
+function LiveCursors({ viewers, cursors }) {
+  const others = Object.keys(cursors).filter(id => id !== SESSION_ID && viewers[id]);
+  if (!rtdbOk || others.length === 0) return null;
+  return (
+    <div style={{ position: "fixed", inset: 0, pointerEvents: "none", zIndex: 80, overflow: "hidden" }}>
+      {others.map(id => {
+        const c = cursors[id], v = viewers[id];
+        if (!c || typeof c.x !== "number") return null;
+        const x = c.x * window.innerWidth, y = c.y * window.innerHeight;
+        return (
+          <div key={id} style={{ position: "absolute", left: x, top: y, transform: "translate(-4px,-4px)", transition: "left 90ms linear, top 90ms linear" }}>
+            <svg width="18" height="18" viewBox="0 0 24 24" style={{ filter: "drop-shadow(0 0 6px " + v.color + ")" }}>
+              <path d="M4 2 L20 12 L12 13.5 L9.5 21 Z" fill={v.color} stroke="rgba(0,0,0,0.35)" strokeWidth="1" />
+            </svg>
+            <div style={{ marginTop: 2, marginLeft: 10, fontSize: 10, fontWeight: 800, color: "#fff", background: v.color, padding: "2px 8px", borderRadius: 999, whiteSpace: "nowrap", boxShadow: "0 2px 10px rgba(0,0,0,.35)", opacity: .95 }}>
+              {v.name || "Guest"}
+            </div>
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+// "👥 N viewing" pill + the viewer list on hover.
+function ViewersPill({ presence }) {
+  const [open, setOpen] = useState(false);
+  if (!presence.enabled) return null;
+  const list = Object.entries(presence.viewers);
+  return (
+    <div style={{ position: "relative" }} onMouseEnter={() => setOpen(true)} onMouseLeave={() => setOpen(false)}>
+      <div title="People viewing right now" style={{ display: "flex", alignItems: "center", gap: 7, height: 34, padding: "0 12px", background: "var(--c-card)", border: "1px solid var(--c-border)", borderRadius: 10, cursor: "default" }}>
+        <span style={{ position: "relative", display: "inline-flex" }}>
+          <span style={{ width: 8, height: 8, borderRadius: 99, background: "#34d399", boxShadow: "0 0 8px #34d399" }} />
+        </span>
+        <span style={{ fontSize: 12, fontWeight: 800, color: "var(--c-text2)" }}>👥 {presence.count} viewing</span>
+      </div>
+      {open && list.length > 0 && (
+        <div style={{ position: "absolute", top: 40, right: 0, background: "var(--c-card)", border: "1px solid var(--c-border)", borderRadius: 10, padding: 10, minWidth: 190, zIndex: 95, boxShadow: "0 10px 30px rgba(0,0,0,.4)" }}>
+          {list.map(([id, v]) => (
+            <div key={id} style={{ display: "flex", alignItems: "center", gap: 8, padding: "4px 2px" }}>
+              <span style={{ width: 10, height: 10, borderRadius: 99, background: v.color, boxShadow: "0 0 6px " + v.color }} />
+              <span style={{ fontSize: 12, color: "var(--c-text2)", fontWeight: id === SESSION_ID ? 800 : 500 }}>
+                {v.name || "Guest"}{id === SESSION_ID ? " (you)" : ""}
+              </span>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// 👁 / 🕶 toggle — show my name to others, or stay anonymous.
+function NameToggle({ presence, disabled }) {
+  if (!presence.enabled || disabled) return null;
+  const on = presence.showName;
+  return (
+    <button onClick={() => presence.setShowName(!on)}
+      title={on ? "Others can see your name — click to go anonymous" : "You appear as Anonymous — click to show your name"}
+      style={{ height: 34, padding: "0 12px", borderRadius: 10, cursor: "pointer", fontSize: 12, fontWeight: 700,
+               background: on ? "rgba(52,211,153,.12)" : "var(--c-card)",
+               border: "1px solid " + (on ? "rgba(52,211,153,.45)" : "var(--c-border)"),
+               color: on ? "#34d399" : "var(--c-text3)" }}>
+      {on ? "👁 Visible as you" : "🕶 Anonymous"}
+    </button>
+  );
+}
+
 const { useState, useEffect, useMemo, useRef } = React;
 const auth = firebase.auth();
 const db   = firebase.firestore();
@@ -601,8 +952,8 @@ function HeaderClock() {
   );
 }
 
-// ── Login ────────────────────────────────────────────────────────────────────
-function Login({ notify, theme, setTheme }) {
+// ── Login (cosmic interactive background + live presence) ───────────────────
+function Login({ notify, theme, setTheme, presence, remotePointersRef }) {
   const [email, setEmail] = useState(""); const [pw, setPw] = useState(""); const [busy, setBusy] = useState(false);
   async function submit() {
     setBusy(true);
@@ -611,17 +962,26 @@ function Login({ notify, theme, setTheme }) {
     finally { setBusy(false); }
   }
   return (
-    <div style={{ maxWidth:420, margin:"9vh auto 0", padding:"0 16px" }}>
-      <div style={{ position:"fixed", top:14, right:14, display:"flex", gap:10 }}><HeaderClock /><ThemePicker theme={theme} setTheme={setTheme} /></div>
-      <div style={cardSt}>
-        <div style={{ fontSize:22, fontWeight:900 }}>iBase</div>
-        <div style={{ fontSize:12, color:"var(--c-text4)", marginBottom:18 }}>Installed Base Management · secured by Firebase</div>
-        <label style={labelSt}>Email</label>
-        <input style={{ ...inputSt(), marginBottom:12 }} value={email} onChange={e=>setEmail(e.target.value)} placeholder="you@company.com" />
-        <label style={labelSt}>Password</label>
-        <input style={{ ...inputSt(), marginBottom:16 }} type="password" value={pw} onChange={e=>setPw(e.target.value)} onKeyDown={e=>e.key==="Enter"&&submit()} />
-        <button style={{ ...btnSt("var(--c-key)","var(--c-bg)"), width:"100%" }} disabled={busy} onClick={submit}>{busy ? "Signing in…" : "🔓 Sign In"}</button>
-        <div style={{ fontSize:11, color:"var(--c-text5)", marginTop:14, lineHeight:1.5 }}>Passwords are hashed and verified by Google's servers — this app never sees or stores them.</div>
+    <div style={{ position:"relative", minHeight:"100vh" }}>
+      <CosmicLoginBG theme={theme} remotePointersRef={remotePointersRef} />
+      <div style={{ position:"fixed", top:14, right:14, display:"flex", gap:10, zIndex:3, flexWrap:"wrap", justifyContent:"flex-end" }}>
+        {presence && <ViewersPill presence={presence} />}
+        <HeaderClock /><ThemePicker theme={theme} setTheme={setTheme} />
+      </div>
+      <div style={{ position:"relative", zIndex:2, maxWidth:420, margin:"0 auto", padding:"9vh 16px 0" }}>
+        <div style={{ ...cardSt, background:"var(--c-card)", boxShadow:"0 20px 60px rgba(0,0,0,.35)" }}>
+          <div style={{ display:"flex", justifyContent:"center", gap:5, marginBottom:10 }}>
+            {[18,26,22].map((h,i)=><span key={i} style={{ width:9, height:h, borderRadius:5, background:"linear-gradient(180deg,#38bdf8,#0ea5e9)", alignSelf:"flex-end" }} />)}
+          </div>
+          <div style={{ fontSize:22, fontWeight:900, textAlign:"center" }}>iBase</div>
+          <div style={{ fontSize:11, color:"var(--c-text4)", marginBottom:18, textAlign:"center", letterSpacing:2, textTransform:"uppercase" }}>Installed Base Management</div>
+          <label style={labelSt}>Email</label>
+          <input style={{ ...inputSt(), marginBottom:12 }} value={email} onChange={e=>setEmail(e.target.value)} placeholder="you@company.com" />
+          <label style={labelSt}>Password</label>
+          <input style={{ ...inputSt(), marginBottom:16 }} type="password" value={pw} onChange={e=>setPw(e.target.value)} onKeyDown={e=>e.key==="Enter"&&submit()} />
+          <button style={{ ...btnSt("var(--c-key)","var(--c-bg)"), width:"100%" }} disabled={busy} onClick={submit}>{busy ? "Signing in…" : "🔓 Sign In"}</button>
+          <div style={{ fontSize:11, color:"var(--c-text5)", marginTop:14, lineHeight:1.5, textAlign:"center" }}>Passwords are hashed and verified by Google's servers — this app never sees or stores them.{presence && presence.enabled && presence.count > 1 ? " · " + (presence.count - 1) + " other viewer" + (presence.count > 2 ? "s" : "") + " here with you — move your cursor and they'll see your colour stir the stars." : ""}</div>
+        </div>
       </div>
     </div>
   );
@@ -1696,6 +2056,17 @@ function App() {
     return () => unsub();
   }, [user]);
 
+  // Live presence: viewer count, unique colors, name toggle, remote cursors.
+  const presence = usePresence(user || null, profile || null);
+  // Feed remote pointers (positions + colors) to the cosmic canvas via a ref
+  // (per-frame read, no React re-render churn).
+  const remotePointersRef = useRef([]);
+  useEffect(() => {
+    remotePointersRef.current = Object.keys(presence.cursors)
+      .filter(id => id !== SESSION_ID && presence.viewers[id])
+      .map(id => ({ x: presence.cursors[id].x, y: presence.cursors[id].y, color: (presence.viewers[id] || {}).color }));
+  }, [presence.cursors, presence.viewers]);
+
   const signedProfile = profile ? { ...profile, isAdmin: !!profile.isAdmin } : null;
   const labs = useCol("labs", !!signedProfile && (pCanTab(signedProfile,"labs","view") || pCanTab(signedProfile,"overtime","view") || pCanTab(signedProfile,"dashboard","view")), notify);
   const users = useCol("users", !!signedProfile && signedProfile.isAdmin, notify);
@@ -1712,7 +2083,13 @@ function App() {
   useEffect(() => { if (TABS.length && !TABS.find(t=>t.id===tab)) setTab(TABS[0].id); }, [TABS.map(t=>t.id).join("|")]);
 
   if (user === undefined) return <div style={{ padding:40, color:"var(--c-text4)" }}>Loading…</div>;
-  if (user === null) return <React.Fragment><Login notify={notify} theme={theme} setTheme={setTheme} />{toast && <Toast {...toast} onClose={()=>setToast(null)} />}</React.Fragment>;
+  if (user === null) return (
+    <React.Fragment>
+      <Login notify={notify} theme={theme} setTheme={setTheme} presence={presence} remotePointersRef={remotePointersRef} />
+      <LiveCursors viewers={presence.viewers} cursors={presence.cursors} />
+      {toast && <Toast {...toast} onClose={()=>setToast(null)} />}
+    </React.Fragment>
+  );
 
   return (
     <React.Fragment>
@@ -1728,6 +2105,8 @@ function App() {
             ))}
           </div>
           <div style={{ marginLeft:"auto", display:"flex", gap:10, alignItems:"center", flexWrap:"wrap" }}>
+            <ViewersPill presence={presence} />
+            <NameToggle presence={presence} />
             <HeaderClock />
             <ThemePicker theme={theme} setTheme={setTheme} />
             <span style={{ fontSize:12, color:"var(--c-text4)" }}>{user.email}</span>
@@ -1757,6 +2136,7 @@ function App() {
         )}
       </div>
       <div style={{ textAlign:"center", padding:"10px 0 26px", fontSize:10, color:"var(--c-author)", letterSpacing:2, textTransform:"uppercase" }}>Designed & Developed by Rex Banihit</div>
+      <LiveCursors viewers={presence.viewers} cursors={presence.cursors} />
       {toast && <Toast {...toast} onClose={()=>setToast(null)} />}
     </React.Fragment>
   );
