@@ -1213,7 +1213,17 @@ const cardSt = {
 };
 
 // The system owner (developer). Mirrors the hardcoded owner in the server rules.
-const OWNER_UID = "pCaPXMqV2FXuuPLXGjfeP9qlbwl2";
+const OWNER_UID = "pCaPXMqV2FXuuPLXGjfeP9qlbwl2"; // legacy pin (pre-recreation)
+const OWNER_EMAIL = "rexbanihit@gmail.com"; // the durable owner identity
+
+// THE one owner check, used everywhere (badge, cards, filters, gates).
+// Ownership is keyed to the owner EMAIL so it survives account re-creation;
+// the legacy UID is still honored for anything that referenced it.
+function isOwnerAcct(x) {
+  if (!x) return false;
+  const em = String(x.email || "").trim().toLowerCase();
+  return em === OWNER_EMAIL || x.id === OWNER_UID || x.uid === OWNER_UID;
+}
 
 // Alphabetical, case-insensitive sort for every selection list in the app.
 function sortAlpha(arr, key) {
@@ -6407,7 +6417,7 @@ function SettingsTab({
   tabsCfg,
   notify
 }) {
-  const iAmOwner = profile.id === OWNER_UID || auth.currentUser && auth.currentUser.uid === OWNER_UID;
+  const iAmOwner = isOwnerAcct(profile) || isOwnerAcct(auth.currentUser);
   const brands = sortAlpha(catalog && catalog.brands || []);
   const roleOptions = sortAlpha(Array.from(new Set([...ENGINEER_ROLES, ...(catalog && catalog.roles || []), ...users.map(u => String(u.role || "").trim()).filter(Boolean)])));
   const [newBrand, setNewBrand] = useState("");
@@ -6436,13 +6446,13 @@ function SettingsTab({
       textTransform: "uppercase",
       marginBottom: 10
     }
-  }, "👥 Users (", users.filter(u => u.id !== OWNER_UID && !u.isAdmin).length, ")"), sortAlpha(users.filter(u => u.id !== OWNER_UID && !u.isAdmin), u => u.email).map(u => /*#__PURE__*/React.createElement(UserRow, {
+  }, "👥 Users (", users.filter(u => !isOwnerAcct(u) && !u.isAdmin).length, ")"), sortAlpha(users.filter(u => !isOwnerAcct(u) && !u.isAdmin), u => u.email).map(u => /*#__PURE__*/React.createElement(UserRow, {
     key: u.id,
     u: u,
     brands: brands,
     notify: notify,
     me: profile
-  })), users.filter(u => u.id !== OWNER_UID && !u.isAdmin).length === 0 && /*#__PURE__*/React.createElement("div", {
+  })), users.filter(u => !isOwnerAcct(u) && !u.isAdmin).length === 0 && /*#__PURE__*/React.createElement("div", {
     style: {
       fontSize: 12.5,
       color: "var(--c-text4)"
@@ -6838,7 +6848,7 @@ function LinkedName({
   useEffect(() => {
     setVal(u.engineerName || "");
   }, [u.id, u.engineerName]);
-  const mayEdit = me.id === OWNER_UID ? u.id !== OWNER_UID : !u.isAdmin;
+  const mayEdit = isOwnerAcct(me) ? !isOwnerAcct(u) : !u.isAdmin;
   async function save(newVal) {
     try {
       await db.collection("users").doc(u.id).update({
@@ -6935,8 +6945,8 @@ function AdminManager({
   brands,
   notify
 }) {
-  const admins = sortAlpha(users.filter(u => u.isAdmin && u.id !== OWNER_UID), u => u.email);
-  const regulars = sortAlpha(users.filter(u => !u.isAdmin && u.id !== OWNER_UID), u => u.email);
+  const admins = sortAlpha(users.filter(u => u.isAdmin && !isOwnerAcct(u)), u => u.email);
+  const regulars = sortAlpha(users.filter(u => !u.isAdmin && !isOwnerAcct(u)), u => u.email);
   const [pick, setPick] = useState("");
   async function promote() {
     const u = regulars.find(x => x.id === pick);
@@ -7131,8 +7141,8 @@ function UserRow({
   useEffect(() => {
     setPerms(normPerms(u.permissions));
   }, [u.id]);
-  const isOwnerRow = u.id === OWNER_UID;
-  const iAmOwner = me.id === OWNER_UID;
+  const isOwnerRow = isOwnerAcct(u);
+  const iAmOwner = isOwnerAcct(me);
   // Server rules enforce all of this; the UI just mirrors them:
   const canEditRow = !isOwnerRow && !u.isAdmin; // non-admin profiles
   const canDeleteRow = !isOwnerRow && (iAmOwner || !u.isAdmin) && u.id !== me.id;
@@ -7567,7 +7577,7 @@ function App() {
       textTransform: "uppercase",
       letterSpacing: 1.5
     }
-  }, "Installed Base · ", user.uid === OWNER_UID ? "Sole Owner" : signedProfile && signedProfile.isAdmin ? "Administrator · " + (signedProfile.displayName || user.email || "").split("@")[0] : signedProfile && signedProfile.role || "Field User")), /*#__PURE__*/React.createElement("div", {
+  }, "Installed Base · ", isOwnerAcct(user) ? "Sole Owner" : signedProfile && signedProfile.isAdmin ? "Administrator · " + (signedProfile.displayName || user.email || "").split("@")[0] : signedProfile && signedProfile.role || "Field User")), /*#__PURE__*/React.createElement("div", {
     style: {
       marginLeft: "auto",
       display: "flex",
@@ -7615,7 +7625,7 @@ function App() {
   }), /*#__PURE__*/React.createElement(HeaderClock, null), /*#__PURE__*/React.createElement(ThemePicker, {
     theme: theme,
     setTheme: setTheme
-  }), user.uid === OWNER_UID ? /*#__PURE__*/React.createElement("span", {
+  }), isOwnerAcct(user) ? /*#__PURE__*/React.createElement("span", {
     title: "You are the sole owner of this system — this badge appears for no one else",
     style: {
       display: "inline-flex",
