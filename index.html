@@ -1237,11 +1237,41 @@ async function binIt(kind, label, payload, byEmail) {
   logAudit(null, "delete." + kind, String(label || "").slice(0, 200));
 }
 
-// PM flag from a machine's nextPM date
+// PM flag derived LIVE from the latest PM evidence — the later of the machine's
+// lastPM date and its most recent logged PM visit (via pmAnchor), then next PM
+// recomputed from the interval. This mirrors iBase v126 exactly, so the flag can
+// never be stale even if the stored nextPM wasn't refreshed.
+function pmComputedNext(m) {
+  if (!m) return "";
+  // latest PM evidence = later of lastPM and the newest PM-type visit date
+  let latestPM = String(m.lastPM || "").slice(0, 10);
+  (Array.isArray(m.visits) ? m.visits : []).forEach(v => {
+    if (String(v.type || "").trim().toUpperCase() === "PM" && v.date) {
+      const d = String(v.date).slice(0, 10);
+      if (d > latestPM) latestPM = d;
+    }
+  });
+  // anchor also respects a later re-installation (pmAnchor handles that)
+  const anchorM = {
+    ...m,
+    lastPM: latestPM || m.lastPM
+  };
+  const nx = typeof nextPMDate === "function" ? nextPMDate(pmAnchor(anchorM), m.pmInterval) : null;
+  return nx || String(m.nextPM || "").slice(0, 10); // fall back to stored nextPM
+}
 function pmFlag(m) {
-  const d = String(m && m.nextPM || "").slice(0, 10);
+  if (m && isPull(m)) return "OK";
+  const d = pmComputedNext(m);
   if (!d) return "OK";
   const t = today();
+  const interval = m && m.pmInterval;
+  if (interval === "weekly") {
+    const days = Math.round((new Date(d) - new Date(t)) / 86400000);
+    if (isNaN(days)) return "OK";
+    if (days < 0) return "Overdue";
+    if (days <= 7) return "Due This Week";
+    return "OK";
+  }
   if (d < t) return "Overdue";
   const [ty, tm] = t.split("-").map(Number),
     [y, mo] = d.split("-").map(Number);
@@ -1250,8 +1280,18 @@ function pmFlag(m) {
   if (y === nm[0] && mo === nm[1]) return "Due Next Month";
   return "OK";
 }
+// Who installed a machine: the engineer on the earliest Installation visit,
+// else "-" when no installer information is available.
+function machineInstaller(m) {
+  if (!m) return "-";
+  const installs = (Array.isArray(m.visits) ? m.visits : []).filter(v => String(v.type || "").trim().toLowerCase() === "installation" && v.engineer).sort((a, b) => String(a.date || "").localeCompare(String(b.date || "")));
+  if (installs.length && String(installs[0].engineer || "").trim()) return installs[0].engineer.trim();
+  if (m.installedBy && String(m.installedBy).trim()) return String(m.installedBy).trim();
+  return "-";
+}
 const FLAG_COLORS = {
   "Overdue": "#ef4444",
+  "Due This Week": "#f97316",
   "Due This Month": "#f97316",
   "Due Next Month": "#f59e0b",
   "OK": "#38bdf8"
@@ -2032,6 +2072,40 @@ function Modal({
     }
   }, "✕")), children));
 }
+
+// Limited-edit modal: update ONLY the Last PM date (service staff). Recomputes
+// the next PM from the interval and stamps who/when.
+function UpdatePMModal({
+  machine,
+  onClose,
+  onSave
+}) {
+  const [d, setD] = useState(machine.lastPM || today());
+  return /*#__PURE__*/React.createElement(Modal, {
+    title: "Update Last PM — " + (machine.serialNo || ""),
+    onClose: onClose
+  }, /*#__PURE__*/React.createElement("div", {
+    style: {
+      fontSize: 12,
+      color: "var(--c-text4)",
+      marginBottom: 12
+    }
+  }, "Set the date this machine's most recent preventive maintenance was performed. The next PM date and the PM flag update automatically. Your name and the time are recorded."), /*#__PURE__*/React.createElement("label", {
+    style: labelSt
+  }, "Last PM date"), /*#__PURE__*/React.createElement("input", {
+    type: "date",
+    style: {
+      ...inputSt(),
+      marginBottom: 16
+    },
+    value: d,
+    onChange: e => setD(e.target.value)
+  }), /*#__PURE__*/React.createElement("button", {
+    style: btnSt("var(--c-key)", "var(--c-bg)"),
+    disabled: !d,
+    onClick: () => onSave(d)
+  }, "Save Last PM"));
+}
 function LabDetail({
   lab,
   labs,
@@ -2040,11 +2114,15 @@ function LabDetail({
   onBack
 }) {
   const engineerOptions = React.useMemo(() => Array.from(new Set([...(typeof window !== "undefined" && window.__ibaseEngineers || []), ...(labs || []).flatMap(l => (l.machines || []).flatMap(m => (m.visits || []).flatMap(v => [v.engineer, v.engineer2, v.engineer3])))].map(x => String(x || "").trim()).filter(Boolean))).sort(), [labs]);
-  const canEdit = pCanTab(profile, "labs", "edit");
+  // "Service" rights (labs.edit): add a visit, update Last PM — NOT structural.
+  // "Manage" rights (admins only): add/edit/delete laboratories and machines.
+  const canService = pCanTab(profile, "labs", "edit");
+  const canManage = !!profile.isAdmin;
   const [addingM, setAddingM] = useState(false);
   const [editingM, setEditingM] = useState(null);
   const [visitFor, setVisitFor] = useState(null);
   const [editingLab, setEditingLab] = useState(false);
+  const [pmFor, setPmFor] = useState(null);
   async function saveMachines(machines, okMsg) {
     try {
       await db.collection("labs").doc(lab.id).update({
@@ -2095,16 +2173,16 @@ function LabDetail({
       fontSize: 12,
       color: "var(--c-text4)"
     }
-  }, "📍 ", lab.location || "—"), canEdit && /*#__PURE__*/React.createElement("button", {
+  }, "📍 ", lab.location || "—"), canManage && /*#__PURE__*/React.createElement("button", {
     style: {
       ...btnSt("var(--c-border)", "var(--c-text2)"),
       marginLeft: "auto"
     },
     onClick: () => setEditingLab(true)
-  }, "✏️ Edit lab"), canEdit && /*#__PURE__*/React.createElement("button", {
+  }, "✏️ Edit lab"), canManage && /*#__PURE__*/React.createElement("button", {
     style: btnSt("var(--c-key)", "var(--c-bg)"),
     onClick: () => setAddingM(true)
-  }, "+ Add Machine"), canEdit && /*#__PURE__*/React.createElement("button", {
+  }, "+ Add Machine"), canManage && /*#__PURE__*/React.createElement("button", {
     style: btnSt("#3a1d1d", "#fca5a5"),
     onClick: async () => {
       if (!confirm("Move the ENTIRE laboratory \"" + lab.name + "\" (with its " + (lab.machines || []).length + " machine record(s)) to the Bin?")) return;
@@ -2131,7 +2209,7 @@ function LabDetail({
       width: "100%",
       borderCollapse: "collapse"
     }
-  }, /*#__PURE__*/React.createElement("thead", null, /*#__PURE__*/React.createElement("tr", null, ["Instrument", "Serial No", "Installed", "Next PM", "PM Flag", "Status", "Visits", ""].map(h => /*#__PURE__*/React.createElement("th", {
+  }, /*#__PURE__*/React.createElement("thead", null, /*#__PURE__*/React.createElement("tr", null, ["Instrument", "Serial No", "Installed", "Installed by", "Next PM", "PM Flag", "Status", "Visits", ""].map(h => /*#__PURE__*/React.createElement("th", {
     key: h,
     style: thSt
   }, h)))), /*#__PURE__*/React.createElement("tbody", null, (lab.machines || []).map(m => {
@@ -2150,8 +2228,22 @@ function LabDetail({
     }, m.serialNo), /*#__PURE__*/React.createElement("td", {
       style: tdSt
     }, m.installDate ? fmtDate(m.installDate) : "—"), /*#__PURE__*/React.createElement("td", {
+      style: {
+        ...tdSt,
+        fontSize: 12
+      }
+    }, machineInstaller(m)), /*#__PURE__*/React.createElement("td", {
       style: tdSt
-    }, m.nextPM ? fmtDate(m.nextPM) : "—"), /*#__PURE__*/React.createElement("td", {
+    }, (() => {
+      const n = pmComputedNext(m);
+      return n ? fmtDate(n) : "—";
+    })(), m.pmUpdatedBy ? /*#__PURE__*/React.createElement("div", {
+      style: {
+        fontSize: 9,
+        color: "var(--c-text5)"
+      },
+      title: "Last PM updated by " + m.pmUpdatedBy + (m.pmUpdatedAt ? " on " + String(m.pmUpdatedAt).slice(0, 10) : "")
+    }, "✎ ", String(m.pmUpdatedBy).split("@")[0], m.pmUpdatedAt ? " · " + String(m.pmUpdatedAt).slice(0, 10) : "") : null), /*#__PURE__*/React.createElement("td", {
       style: tdSt
     }, /*#__PURE__*/React.createElement("span", {
       style: {
@@ -2169,14 +2261,22 @@ function LabDetail({
       style: tdSt
     }, (m.visits || []).length), /*#__PURE__*/React.createElement("td", {
       style: tdSt
-    }, canEdit && /*#__PURE__*/React.createElement("button", {
+    }, canService && /*#__PURE__*/React.createElement("button", {
       style: {
         ...btnSt("var(--c-key)", "var(--c-bg)"),
         padding: "4px 9px",
         fontSize: 11
       },
       onClick: () => setVisitFor(m)
-    }, "+ Visit"), " ", canEdit && /*#__PURE__*/React.createElement("button", {
+    }, "+ Visit"), " ", canService && /*#__PURE__*/React.createElement("button", {
+      title: "Update Last PM date",
+      style: {
+        ...btnSt("var(--c-border)", "var(--c-text2)"),
+        padding: "4px 9px",
+        fontSize: 11
+      },
+      onClick: () => setPmFor(m)
+    }, "🛡 PM"), " ", canManage && /*#__PURE__*/React.createElement("button", {
       title: "Edit machine",
       style: {
         ...btnSt("var(--c-border)", "var(--c-text2)"),
@@ -2184,7 +2284,7 @@ function LabDetail({
         fontSize: 11
       },
       onClick: () => setEditingM(m)
-    }, "✏️"), " ", canEdit && /*#__PURE__*/React.createElement("button", {
+    }, "✏️"), " ", canManage && /*#__PURE__*/React.createElement("button", {
       title: "Delete machine",
       style: {
         ...btnSt("#3a1d1d", "#fca5a5"),
@@ -2259,16 +2359,37 @@ function LabDetail({
       fontSize: 11.5,
       color: "var(--c-text4)"
     }
-  }, v.loggedBy || "—", v.loggedAt ? " · " + String(v.loggedAt).slice(0, 10) : "")))))), addingM && /*#__PURE__*/React.createElement(MachineModal, {
+  }, v.loggedBy || "—", v.loggedAt ? " · " + String(v.loggedAt).slice(0, 10) : "")))))), canManage && addingM && /*#__PURE__*/React.createElement(MachineModal, {
     onClose: () => setAddingM(false),
     onSave: async m => {
       if (await saveMachines([...(lab.machines || []), m], "Machine added.")) setAddingM(false);
     }
-  }), editingM && /*#__PURE__*/React.createElement(MachineModal, {
+  }), canManage && editingM && /*#__PURE__*/React.createElement(MachineModal, {
     initial: editingM,
     onClose: () => setEditingM(null),
     onSave: async m => {
       if (await saveMachines((lab.machines || []).map(x => x.id === m.id ? m : x), "Machine updated.")) setEditingM(null);
+    }
+  }), canService && pmFor && /*#__PURE__*/React.createElement(UpdatePMModal, {
+    machine: pmFor,
+    onClose: () => setPmFor(null),
+    onSave: async newLastPM => {
+      const machines = (lab.machines || []).map(m => {
+        if (m.id !== pmFor.id) return m;
+        let nm = {
+          ...m,
+          lastPM: newLastPM,
+          pmUpdatedBy: profile.email,
+          pmUpdatedAt: auditNow()
+        };
+        const nx = nextPMDate(pmAnchor(nm), nm.pmInterval);
+        if (nx) nm.nextPM = nx;
+        return nm;
+      });
+      if (await saveMachines(machines, "Last PM updated — schedule recomputed.")) {
+        logAudit(profile, "machine.lastPM", pmFor.instrument + " · " + pmFor.serialNo + " @ " + lab.name + " → " + newLastPM);
+        setPmFor(null);
+      }
     }
   }), visitFor && /*#__PURE__*/React.createElement(VisitModal, {
     machine: visitFor,
@@ -2300,7 +2421,7 @@ function LabDetail({
         setVisitFor(null);
       }
     }
-  }), editingLab && /*#__PURE__*/React.createElement(LabModal, {
+  }), canManage && editingLab && /*#__PURE__*/React.createElement(LabModal, {
     initial: lab,
     onSave: renameLab,
     onClose: () => setEditingLab(false)
@@ -2331,6 +2452,7 @@ function MachineModal({
     serialNo: initial.serialNo || "",
     installDate: initial.installDate || "",
     unknownDate: !initial.installDate,
+    installedBy: initial.installedBy || "",
     lastPM: initial.lastPM || "",
     pmInterval: initial.pmInterval || "",
     nextPM: initial.nextPM || "",
@@ -2340,6 +2462,7 @@ function MachineModal({
     serialNo: "",
     installDate: "",
     unknownDate: false,
+    installedBy: "",
     lastPM: "",
     pmInterval: "",
     nextPM: "",
@@ -2396,6 +2519,17 @@ function MachineModal({
     onChange: e => set("unknownDate", e.target.checked)
   }), " Don't know the installation date (old record)"), /*#__PURE__*/React.createElement("label", {
     style: labelSt
+  }, "Installed by (optional)"), /*#__PURE__*/React.createElement("input", {
+    list: "ibase-eng-list",
+    style: {
+      ...inputSt(),
+      marginBottom: 10
+    },
+    value: f.installedBy || "",
+    onChange: e => set("installedBy", e.target.value),
+    placeholder: "Engineer who installed — leave blank for “-”"
+  }), /*#__PURE__*/React.createElement("label", {
+    style: labelSt
   }, "Last PM date"), /*#__PURE__*/React.createElement("input", {
     type: "date",
     style: {
@@ -2440,6 +2574,7 @@ function MachineModal({
       instrument: f.instrument.trim(),
       serialNo: f.serialNo.trim(),
       installDate: f.unknownDate ? "" : f.installDate,
+      installedBy: f.installedBy.trim(),
       lastPM: f.lastPM,
       pmInterval: f.pmInterval,
       nextPM: f.nextPM,
@@ -2449,6 +2584,7 @@ function MachineModal({
       instrument: f.instrument.trim(),
       serialNo: f.serialNo.trim(),
       installDate: f.unknownDate ? "" : f.installDate,
+      installedBy: f.installedBy.trim(),
       lastPM: f.lastPM,
       pmInterval: f.pmInterval,
       nextPM: f.nextPM,
@@ -3857,26 +3993,451 @@ function logAudit(profile, action, detail) {
 }
 
 // ── Analytics (v126 parity): per-engineer stats + activity heatmap ──────────
+// ── Lightweight SVG charts (no external library) ────────────────────────────
+const CHART_PALETTE = ["#38bdf8", "#a78bfa", "#34d399", "#fbbf24", "#fb7185", "#22d3ee", "#f97316", "#4ade80", "#e879f9", "#60a5fa", "#f472b6", "#a3e635"];
+
+// Toggle control: Bar / Line / Pie (mirrors v126 ChartToggle)
+function ChartToggle({
+  value,
+  onChange,
+  options
+}) {
+  const opts = options || [["bar", "▦ Bar"], ["line", "↗ Line"], ["pie", "◉ Pie"]];
+  return /*#__PURE__*/React.createElement("div", {
+    style: {
+      display: "inline-flex",
+      gap: 2,
+      background: "var(--c-bg)",
+      border: "1px solid var(--c-border)",
+      borderRadius: 8,
+      padding: 2
+    }
+  }, opts.map(([id, label]) => /*#__PURE__*/React.createElement("button", {
+    key: id,
+    onClick: () => onChange(id),
+    style: {
+      border: "none",
+      cursor: "pointer",
+      borderRadius: 6,
+      padding: "4px 10px",
+      fontSize: 11,
+      fontWeight: 700,
+      background: value === id ? "var(--c-key)" : "transparent",
+      color: value === id ? "var(--c-bg)" : "var(--c-text3)"
+    }
+  }, label)));
+}
+function CardWithToggle({
+  title,
+  chartType,
+  setChartType,
+  options,
+  children
+}) {
+  return /*#__PURE__*/React.createElement("div", {
+    style: {
+      ...cardSt,
+      marginBottom: 0
+    }
+  }, /*#__PURE__*/React.createElement("div", {
+    style: {
+      display: "flex",
+      alignItems: "center",
+      marginBottom: 12,
+      gap: 10
+    }
+  }, /*#__PURE__*/React.createElement("div", {
+    style: {
+      fontSize: 13,
+      fontWeight: 800
+    }
+  }, title), setChartType && /*#__PURE__*/React.createElement("div", {
+    style: {
+      marginLeft: "auto"
+    }
+  }, /*#__PURE__*/React.createElement(ChartToggle, {
+    value: chartType,
+    onChange: setChartType,
+    options: options
+  }))), children);
+}
+
+// data = [{ label, value, color? }]
+function PieSVG({
+  data,
+  donut
+}) {
+  const total = data.reduce((s, d) => s + d.value, 0);
+  const R = 82,
+    cx = 100,
+    cy = 100;
+  const inner = donut ? 46 : 0;
+  if (total === 0) return /*#__PURE__*/React.createElement("div", {
+    style: {
+      color: "var(--c-text4)",
+      fontSize: 12,
+      padding: "30px 0",
+      textAlign: "center"
+    }
+  }, "No data in range.");
+  let angle = -Math.PI / 2; // start at top
+  const arcs = data.filter(d => d.value > 0).map((d, i) => {
+    const frac = d.value / total;
+    const a2 = angle + frac * 2 * Math.PI;
+    const large = frac > 0.5 ? 1 : 0;
+    const x1 = cx + R * Math.cos(angle),
+      y1 = cy + R * Math.sin(angle);
+    const x2 = cx + R * Math.cos(a2),
+      y2 = cy + R * Math.sin(a2);
+    const color = d.color || CHART_PALETTE[i % CHART_PALETTE.length];
+    let path;
+    if (frac >= 0.9999) {
+      // full circle
+      path = `M ${cx - R} ${cy} A ${R} ${R} 0 1 1 ${cx + R} ${cy} A ${R} ${R} 0 1 1 ${cx - R} ${cy} Z`;
+    } else {
+      path = `M ${cx} ${cy} L ${x1} ${y1} A ${R} ${R} 0 ${large} 1 ${x2} ${y2} Z`;
+    }
+    angle = a2;
+    return {
+      path,
+      color,
+      d
+    };
+  });
+  return /*#__PURE__*/React.createElement("div", {
+    style: {
+      display: "flex",
+      gap: 18,
+      alignItems: "center",
+      flexWrap: "wrap"
+    }
+  }, /*#__PURE__*/React.createElement("svg", {
+    viewBox: "0 0 200 200",
+    style: {
+      width: 200,
+      height: 200,
+      flexShrink: 0
+    }
+  }, arcs.map((a, i) => /*#__PURE__*/React.createElement("path", {
+    key: i,
+    d: a.path,
+    fill: a.color,
+    stroke: "var(--c-card)",
+    strokeWidth: "1.5"
+  })), donut && /*#__PURE__*/React.createElement("circle", {
+    cx: cx,
+    cy: cy,
+    r: inner,
+    fill: "var(--c-card)"
+  }), donut && /*#__PURE__*/React.createElement("text", {
+    x: cx,
+    y: cy - 4,
+    textAnchor: "middle",
+    style: {
+      fontSize: 22,
+      fontWeight: 900,
+      fill: "var(--c-text)"
+    }
+  }, total), donut && /*#__PURE__*/React.createElement("text", {
+    x: cx,
+    y: cy + 14,
+    textAnchor: "middle",
+    style: {
+      fontSize: 9,
+      fill: "var(--c-text4)",
+      textTransform: "uppercase",
+      letterSpacing: 1
+    }
+  }, "total")), /*#__PURE__*/React.createElement("div", {
+    style: {
+      display: "flex",
+      flexDirection: "column",
+      gap: 6,
+      minWidth: 140
+    }
+  }, data.filter(d => d.value > 0).map((d, i) => /*#__PURE__*/React.createElement("div", {
+    key: d.label,
+    style: {
+      display: "flex",
+      alignItems: "center",
+      gap: 8,
+      fontSize: 12
+    }
+  }, /*#__PURE__*/React.createElement("span", {
+    style: {
+      width: 11,
+      height: 11,
+      borderRadius: 3,
+      background: d.color || CHART_PALETTE[i % CHART_PALETTE.length],
+      flexShrink: 0
+    }
+  }), /*#__PURE__*/React.createElement("span", {
+    style: {
+      color: "var(--c-text2)"
+    }
+  }, d.label), /*#__PURE__*/React.createElement("span", {
+    style: {
+      marginLeft: "auto",
+      fontWeight: 800
+    }
+  }, d.value), /*#__PURE__*/React.createElement("span", {
+    style: {
+      color: "var(--c-text5)",
+      fontSize: 11,
+      width: 38,
+      textAlign: "right"
+    }
+  }, Math.round(d.value / total * 100), "%")))));
+}
+function BarSVG({
+  data
+}) {
+  const max = Math.max(1, ...data.map(d => d.value));
+  const W = 380,
+    H = 200,
+    pad = 28,
+    barGap = 10;
+  const n = data.length || 1;
+  const bw = Math.max(6, (W - pad * 2 - barGap * (n - 1)) / n);
+  return /*#__PURE__*/React.createElement("svg", {
+    viewBox: `0 0 ${W} ${H}`,
+    style: {
+      width: "100%",
+      maxWidth: W,
+      height: H
+    }
+  }, [0, 0.25, 0.5, 0.75, 1].map((g, i) => {
+    const y = pad + (H - pad * 2) * (1 - g);
+    return /*#__PURE__*/React.createElement("g", {
+      key: i
+    }, /*#__PURE__*/React.createElement("line", {
+      x1: pad,
+      y1: y,
+      x2: W - pad,
+      y2: y,
+      stroke: "var(--c-border)",
+      strokeWidth: "1",
+      strokeDasharray: "2 3"
+    }), /*#__PURE__*/React.createElement("text", {
+      x: pad - 6,
+      y: y + 3,
+      textAnchor: "end",
+      style: {
+        fontSize: 9,
+        fill: "var(--c-text5)"
+      }
+    }, Math.round(max * g)));
+  }), data.map((d, i) => {
+    const x = pad + i * (bw + barGap);
+    const h = (H - pad * 2) * (d.value / max);
+    const y = H - pad - h;
+    const color = d.color || CHART_PALETTE[i % CHART_PALETTE.length];
+    return /*#__PURE__*/React.createElement("g", {
+      key: d.label
+    }, /*#__PURE__*/React.createElement("rect", {
+      x: x,
+      y: y,
+      width: bw,
+      height: h,
+      rx: 3,
+      fill: color
+    }, /*#__PURE__*/React.createElement("title", null, d.label, ": ", d.value)), /*#__PURE__*/React.createElement("text", {
+      x: x + bw / 2,
+      y: y - 4,
+      textAnchor: "middle",
+      style: {
+        fontSize: 10,
+        fontWeight: 700,
+        fill: "var(--c-text3)"
+      }
+    }, d.value || ""), /*#__PURE__*/React.createElement("text", {
+      x: x + bw / 2,
+      y: H - pad + 12,
+      textAnchor: "middle",
+      style: {
+        fontSize: 8.5,
+        fill: "var(--c-text4)"
+      }
+    }, String(d.label).length > 8 ? String(d.label).slice(0, 7) + "…" : d.label));
+  }));
+}
+function LineSVG({
+  data
+}) {
+  const max = Math.max(1, ...data.map(d => d.value));
+  const W = 380,
+    H = 200,
+    pad = 28;
+  const n = data.length;
+  const xFor = i => n <= 1 ? W / 2 : pad + (W - pad * 2) * (i / (n - 1));
+  const yFor = v => pad + (H - pad * 2) * (1 - v / max);
+  const pts = data.map((d, i) => [xFor(i), yFor(d.value)]);
+  const path = pts.map((p, i) => (i ? "L" : "M") + p[0].toFixed(1) + " " + p[1].toFixed(1)).join(" ");
+  const area = pts.length ? path + ` L ${pts[pts.length - 1][0]} ${H - pad} L ${pts[0][0]} ${H - pad} Z` : "";
+  return /*#__PURE__*/React.createElement("svg", {
+    viewBox: `0 0 ${W} ${H}`,
+    style: {
+      width: "100%",
+      maxWidth: W,
+      height: H
+    }
+  }, [0, 0.5, 1].map((g, i) => {
+    const y = pad + (H - pad * 2) * (1 - g);
+    return /*#__PURE__*/React.createElement("line", {
+      key: i,
+      x1: pad,
+      y1: y,
+      x2: W - pad,
+      y2: y,
+      stroke: "var(--c-border)",
+      strokeWidth: "1",
+      strokeDasharray: "2 3"
+    });
+  }), area && /*#__PURE__*/React.createElement("path", {
+    d: area,
+    fill: "#38bdf822"
+  }), path && /*#__PURE__*/React.createElement("path", {
+    d: path,
+    fill: "none",
+    stroke: "#38bdf8",
+    strokeWidth: "2.2",
+    strokeLinejoin: "round"
+  }), pts.map((p, i) => /*#__PURE__*/React.createElement("g", {
+    key: i
+  }, /*#__PURE__*/React.createElement("circle", {
+    cx: p[0],
+    cy: p[1],
+    r: "3.2",
+    fill: "#38bdf8"
+  }, /*#__PURE__*/React.createElement("title", null, data[i].label, ": ", data[i].value)), /*#__PURE__*/React.createElement("text", {
+    x: p[0],
+    y: H - pad + 12,
+    textAnchor: "middle",
+    style: {
+      fontSize: 8.5,
+      fill: "var(--c-text4)"
+    }
+  }, data[i].label))));
+}
+
+// Render a toggleable chart from one dataset.
+function FlexChart({
+  type,
+  data,
+  donut
+}) {
+  if (type === "pie") return /*#__PURE__*/React.createElement(PieSVG, {
+    data: data,
+    donut: donut
+  });
+  if (type === "line") return /*#__PURE__*/React.createElement(LineSVG, {
+    data: data
+  });
+  return /*#__PURE__*/React.createElement(BarSVG, {
+    data: data
+  });
+}
+
+// ── Analytics (v126 parity): KPIs, filters, toggleable charts, heatmap ──────
 function AnalyticsTab({
   labs
 }) {
+  const [brand, setBrand] = useState("All");
+  const [instrument, setInstrument] = useState("All");
+  const [engineer, setEngineer] = useState("All");
+  const [from, setFrom] = useState("");
+  const [to, setTo] = useState("");
   const [months, setMonths] = useState(12);
-  // flatten visits with lab/machine context; analytics gate = isNonAnalyticsVisit
-  const rows = useMemo(() => labs.flatMap(l => (l.machines || []).flatMap(m => (m.visits || []).filter(v => !isNonAnalyticsVisit(v)).map(v => ({
-    ...v,
-    _lab: l.name,
-    _sn: m.serialNo
-  })))), [labs]);
-  const engineers = useMemo(() => {
-    const s = {};
-    rows.forEach(v => ["engineer", "engineer2", "engineer3"].forEach(k => {
-      const n = String(v[k] || "").trim();
-      if (n) s[n] = 1;
+  // per-card chart type toggles
+  const [statusChart, setStatusChart] = useState("pie");
+  const [typeChart, setTypeChart] = useState("bar");
+  const [engChart, setEngChart] = useState("bar");
+  const [trendChart, setTrendChart] = useState("line");
+  const allMachines = useMemo(() => labs.flatMap(l => (l.machines || []).map(m => ({
+    ...m,
+    _lab: l.name
+  }))), [labs]);
+  const brandOpts = useMemo(() => Array.from(new Set(allMachines.map(m => String(m.instrument || "").split(" ")[0]).filter(Boolean))).sort(), [allMachines]);
+  const instrumentOpts = useMemo(() => Array.from(new Set(allMachines.map(m => String(m.instrument || "").trim()).filter(Boolean))).sort(), [allMachines]);
+
+  // visit rows respecting filters + analytics exclusions
+  const rows = useMemo(() => labs.flatMap(l => (l.machines || []).flatMap(m => {
+    if (instrument !== "All" && String(m.instrument || "").trim() !== instrument) return [];
+    if (brand !== "All" && !String(m.instrument || "").toLowerCase().startsWith(String(brand).toLowerCase())) return [];
+    return (m.visits || []).filter(v => !isNonAnalyticsVisit(v)).map(v => ({
+      ...v,
+      _lab: l.name,
+      _sn: m.serialNo,
+      _instrument: m.instrument
     }));
-    return Object.keys(s).sort();
-  }, [rows]);
-  const forEng = n => rows.filter(v => [v.engineer, v.engineer2, v.engineer3].some(x => String(x || "").trim() === n));
-  // heatmap window: last N months
+  })), [labs, brand, instrument]);
+  const engineerOpts = useMemo(() => Array.from(new Set(rows.flatMap(v => [v.engineer, v.engineer2, v.engineer3]).map(x => String(x || "").trim()).filter(Boolean))).sort(), [rows]);
+  const inRange = v => {
+    const dk = String(v.date || "").slice(0, 10);
+    if (from && dk < from) return false;
+    if (to && dk > to) return false;
+    if (engineer !== "All" && ![v.engineer, v.engineer2, v.engineer3].some(x => String(x || "").trim() === engineer)) return false;
+    return true;
+  };
+  const fRows = rows.filter(inRange);
+  const anyFilter = brand !== "All" || instrument !== "All" || engineer !== "All" || from || to;
+
+  // KPI numbers
+  const machinesInScope = allMachines.filter(m => {
+    if (instrument !== "All" && String(m.instrument || "").trim() !== instrument) return false;
+    if (brand !== "All" && !String(m.instrument || "").toLowerCase().startsWith(String(brand).toLowerCase())) return false;
+    return !isPull(m);
+  });
+  const mTot = machinesInScope.length;
+  const overdue = machinesInScope.filter(m => pmFlag(m) === "Overdue").length;
+  const pmTot = fRows.filter(v => String(v.type || "").toLowerCase() === "pm").length;
+  const corrTot = fRows.filter(v => String(v.type || "").toLowerCase() === "corrective").length;
+  const labTot = new Set(machinesInScope.map(m => m._lab)).size;
+  const compliance = Math.round((mTot - overdue) / Math.max(mTot, 1) * 100);
+  const ratio = corrTot ? (pmTot / corrTot).toFixed(1) : "∞";
+  const avgPM = mTot ? (pmTot / mTot).toFixed(1) : 0;
+
+  // datasets
+  const statusData = useMemo(() => {
+    const c = {
+      "OK": 0,
+      "Due Next Month": 0,
+      "Due This Month": 0,
+      "Due This Week": 0,
+      "Overdue": 0
+    };
+    machinesInScope.forEach(m => {
+      const f = pmFlag(m);
+      c[f] = (c[f] || 0) + 1;
+    });
+    return Object.keys(c).filter(k => c[k] > 0).map(k => ({
+      label: k,
+      value: c[k],
+      color: FLAG_COLORS[k]
+    }));
+  }, [machinesInScope]);
+  const typeData = useMemo(() => {
+    const c = {};
+    fRows.forEach(v => {
+      const t = v.type || "Other";
+      c[t] = (c[t] || 0) + 1;
+    });
+    return Object.entries(c).sort((a, b) => b[1] - a[1]).map(([label, value]) => ({
+      label,
+      value
+    }));
+  }, [fRows]);
+  const engData = useMemo(() => {
+    const c = {};
+    fRows.forEach(v => ["engineer", "engineer2", "engineer3"].forEach(k => {
+      const n = String(v[k] || "").trim();
+      if (n) c[n] = (c[n] || 0) + 1;
+    }));
+    return Object.entries(c).sort((a, b) => b[1] - a[1]).slice(0, 12).map(([label, value]) => ({
+      label,
+      value
+    }));
+  }, [fRows]);
   const monthKeys = useMemo(() => {
     const out = [];
     const d = new Date();
@@ -3886,13 +4447,20 @@ function AnalyticsTab({
     }
     return out;
   }, [months]);
+  const trendData = useMemo(() => monthKeys.map(mk => ({
+    label: fmtDate(mk + "-01").slice(0, 3),
+    value: fRows.filter(v => String(v.date || "").slice(0, 7) === mk).length
+  })), [fRows, monthKeys]);
+
+  // heatmap (engineer × month)
+  const heatEngs = useMemo(() => Array.from(new Set(fRows.flatMap(v => [v.engineer, v.engineer2, v.engineer3]).map(x => String(x || "").trim()).filter(Boolean))).sort(), [fRows]);
   const heat = useMemo(() => {
     const h = {};
-    engineers.forEach(n => {
+    heatEngs.forEach(n => {
       h[n] = {};
       monthKeys.forEach(mk => h[n][mk] = 0);
     });
-    rows.forEach(v => {
+    fRows.forEach(v => {
       const mk = String(v.date || "").slice(0, 7);
       if (monthKeys.indexOf(mk) === -1) return;
       ["engineer", "engineer2", "engineer3"].forEach(k => {
@@ -3901,18 +4469,30 @@ function AnalyticsTab({
       });
     });
     return h;
-  }, [rows, engineers, monthKeys]);
-  const maxCell = useMemo(() => Math.max(1, ...engineers.flatMap(n => monthKeys.map(mk => heat[n][mk]))), [heat, engineers, monthKeys]);
+  }, [fRows, heatEngs, monthKeys]);
+  const maxCell = useMemo(() => Math.max(1, ...heatEngs.flatMap(n => monthKeys.map(mk => heat[n][mk]))), [heat, heatEngs, monthKeys]);
   const heatColor = c => c === 0 ? "transparent" : `rgba(56,189,248,${0.15 + 0.75 * (c / maxCell)})`;
+  const _lblS = {
+    display: "block",
+    fontSize: 9,
+    fontWeight: 700,
+    color: "var(--c-text4)",
+    textTransform: "uppercase",
+    letterSpacing: 0.5,
+    marginBottom: 3
+  };
+  const _inS = {
+    ...inputSt(),
+    padding: "7px 10px",
+    fontSize: 12,
+    minWidth: 128,
+    cursor: "pointer"
+  };
   return /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("div", {
     style: {
-      display: "flex",
-      alignItems: "center",
-      gap: 10,
-      marginBottom: 14,
-      flexWrap: "wrap"
+      marginBottom: 14
     }
-  }, /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("div", {
+  }, /*#__PURE__*/React.createElement("div", {
     style: {
       fontSize: 16,
       fontWeight: 900
@@ -3922,108 +4502,184 @@ function AnalyticsTab({
       fontSize: 11.5,
       color: "var(--c-text4)"
     }
-  }, "Per-engineer service activity. Travel, leave and administrative visit types are excluded.")), /*#__PURE__*/React.createElement("div", {
+  }, "Fleet health and engineer activity. Travel, leave and administrative visit types never count toward stats.")), /*#__PURE__*/React.createElement("div", {
     style: {
-      marginLeft: "auto",
+      display: "grid",
+      gridTemplateColumns: "repeat(auto-fit,minmax(150px,1fr))",
+      gap: 12,
+      marginBottom: 14
+    }
+  }, /*#__PURE__*/React.createElement(KPICard, {
+    title: "Total Machines",
+    value: mTot,
+    icon: "🔬",
+    color: "#38bdf8",
+    sub: "across " + labTot + " lab" + (labTot === 1 ? "" : "s")
+  }), /*#__PURE__*/React.createElement(KPICard, {
+    title: "PM Compliance",
+    value: compliance + "%",
+    icon: "📊",
+    color: compliance >= 90 ? "#10b981" : compliance >= 70 ? "#f59e0b" : "#ef4444",
+    sub: "on schedule"
+  }), /*#__PURE__*/React.createElement(KPICard, {
+    title: "PM Visits",
+    value: pmTot,
+    icon: "🛡️",
+    color: "#84cc16",
+    sub: "preventive"
+  }), /*#__PURE__*/React.createElement(KPICard, {
+    title: "Corrective",
+    value: corrTot,
+    icon: "⚙️",
+    color: "#f97316",
+    sub: "breakdowns"
+  }), /*#__PURE__*/React.createElement(KPICard, {
+    title: "PM : Corrective",
+    value: ratio,
+    icon: "⚖️",
+    color: "#a78bfa",
+    sub: "visit ratio"
+  }), /*#__PURE__*/React.createElement(KPICard, {
+    title: "Avg PM / Unit",
+    value: avgPM,
+    icon: "📐",
+    color: "#06b6d4",
+    sub: "in range"
+  })), /*#__PURE__*/React.createElement("div", {
+    style: {
       display: "flex",
-      alignItems: "center",
-      gap: 6
+      gap: 10,
+      alignItems: "flex-end",
+      flexWrap: "wrap",
+      marginBottom: 14,
+      padding: "12px 14px",
+      background: "var(--c-card)",
+      borderRadius: 12,
+      border: "1px solid var(--c-border)"
+    }
+  }, /*#__PURE__*/React.createElement("div", {
+    style: {
+      fontSize: 12,
+      fontWeight: 700,
+      color: "#38bdf8",
+      alignSelf: "center"
+    }
+  }, "🔎 Filter"), /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("label", {
+    style: _lblS
+  }, "Brand"), /*#__PURE__*/React.createElement("select", {
+    value: brand,
+    onChange: e => {
+      setBrand(e.target.value);
+      setInstrument("All");
+    },
+    style: _inS
+  }, /*#__PURE__*/React.createElement("option", {
+    value: "All"
+  }, "All brands"), brandOpts.map(b => /*#__PURE__*/React.createElement("option", {
+    key: b
+  }, b)))), /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("label", {
+    style: _lblS
+  }, "Instrument"), /*#__PURE__*/React.createElement("select", {
+    value: instrument,
+    onChange: e => setInstrument(e.target.value),
+    style: _inS
+  }, /*#__PURE__*/React.createElement("option", {
+    value: "All"
+  }, "All instruments"), instrumentOpts.map(b => /*#__PURE__*/React.createElement("option", {
+    key: b
+  }, b)))), /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("label", {
+    style: _lblS
+  }, "Engineer"), /*#__PURE__*/React.createElement("select", {
+    value: engineer,
+    onChange: e => setEngineer(e.target.value),
+    style: _inS
+  }, /*#__PURE__*/React.createElement("option", {
+    value: "All"
+  }, "All engineers"), engineerOpts.map(b => /*#__PURE__*/React.createElement("option", {
+    key: b
+  }, b)))), /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("label", {
+    style: _lblS
+  }, "From"), /*#__PURE__*/React.createElement("input", {
+    type: "date",
+    value: from,
+    max: to || undefined,
+    onChange: e => setFrom(e.target.value),
+    style: {
+      ..._inS,
+      minWidth: 140
+    }
+  })), /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("label", {
+    style: _lblS
+  }, "To"), /*#__PURE__*/React.createElement("input", {
+    type: "date",
+    value: to,
+    min: from || undefined,
+    onChange: e => setTo(e.target.value),
+    style: {
+      ..._inS,
+      minWidth: 140
+    }
+  })), anyFilter && /*#__PURE__*/React.createElement("button", {
+    onClick: () => {
+      setBrand("All");
+      setInstrument("All");
+      setEngineer("All");
+      setFrom("");
+      setTo("");
+    },
+    style: btnSt("var(--c-border)", "var(--c-text2)")
+  }, "↺ Clear"), /*#__PURE__*/React.createElement("div", {
+    style: {
+      marginLeft: "auto"
     }
   }, /*#__PURE__*/React.createElement("label", {
-    style: {
-      ...labelSt,
-      marginBottom: 0
-    }
-  }, "Window"), /*#__PURE__*/React.createElement("select", {
-    style: {
-      ...inputSt(),
-      width: 150,
-      cursor: "pointer"
-    },
+    style: _lblS
+  }, "Trend window"), /*#__PURE__*/React.createElement("select", {
     value: months,
-    onChange: e => setMonths(Number(e.target.value))
+    onChange: e => setMonths(Number(e.target.value)),
+    style: _inS
   }, [6, 12, 18, 24].map(m => /*#__PURE__*/React.createElement("option", {
     key: m,
     value: m
   }, "Last ", m, " months"))))), /*#__PURE__*/React.createElement("div", {
     style: {
       display: "grid",
-      gridTemplateColumns: "repeat(auto-fill,minmax(250px,1fr))",
-      gap: 12,
-      marginBottom: 16
+      gridTemplateColumns: "repeat(auto-fit,minmax(340px,1fr))",
+      gap: 14,
+      marginBottom: 14
     }
-  }, engineers.map(n => {
-    const vs = forEng(n);
-    const cnt = t => vs.filter(v => String(v.type || "").toLowerCase() === t).length;
-    const labsServed = new Set(vs.map(v => v._lab)).size,
-      machines = new Set(vs.map(v => v._sn)).size;
-    const last = vs.map(v => v.date).sort().slice(-1)[0];
-    return /*#__PURE__*/React.createElement("div", {
-      key: n,
-      style: {
-        background: "var(--c-card)",
-        borderRadius: 16,
-        padding: "18px 20px",
-        border: "1px solid var(--c-border)",
-        position: "relative",
-        overflow: "hidden"
-      }
-    }, /*#__PURE__*/React.createElement("div", {
-      style: {
-        position: "absolute",
-        top: 0,
-        left: 0,
-        right: 0,
-        height: 2,
-        background: "linear-gradient(90deg,#38bdf866,#38bdf811,transparent)"
-      }
-    }), /*#__PURE__*/React.createElement("div", {
-      style: {
-        fontSize: 13,
-        fontWeight: 900,
-        color: "var(--c-key)",
-        marginBottom: 8
-      }
-    }, "👨‍🔧 ", n), /*#__PURE__*/React.createElement("div", {
-      style: {
-        display: "flex",
-        gap: 14,
-        flexWrap: "wrap",
-        fontSize: 12
-      }
-    }, /*#__PURE__*/React.createElement("span", null, /*#__PURE__*/React.createElement("b", {
-      style: {
-        fontSize: 19
-      }
-    }, vs.length), " ", /*#__PURE__*/React.createElement("span", {
-      style: {
-        color: "var(--c-text4)"
-      }
-    }, "visits")), /*#__PURE__*/React.createElement("span", null, /*#__PURE__*/React.createElement("b", null, cnt("pm")), " ", /*#__PURE__*/React.createElement("span", {
-      style: {
-        color: "var(--c-text4)"
-      }
-    }, "PM")), /*#__PURE__*/React.createElement("span", null, /*#__PURE__*/React.createElement("b", null, cnt("corrective")), " ", /*#__PURE__*/React.createElement("span", {
-      style: {
-        color: "var(--c-text4)"
-      }
-    }, "corrective")), /*#__PURE__*/React.createElement("span", null, /*#__PURE__*/React.createElement("b", null, cnt("installation")), " ", /*#__PURE__*/React.createElement("span", {
-      style: {
-        color: "var(--c-text4)"
-      }
-    }, "installs"))), /*#__PURE__*/React.createElement("div", {
-      style: {
-        fontSize: 11,
-        color: "var(--c-text4)",
-        marginTop: 8
-      }
-    }, "🏥 ", labsServed, " lab", labsServed !== 1 ? "s" : "", " · 🔬 ", machines, " machine", machines !== 1 ? "s" : "", last ? " · last " + fmtDate(last) : ""));
-  }), engineers.length === 0 && /*#__PURE__*/React.createElement("div", {
-    style: {
-      color: "var(--c-text4)",
-      fontSize: 13
-    }
-  }, "No analytics-eligible visits logged yet.")), engineers.length > 0 && /*#__PURE__*/React.createElement("div", {
+  }, /*#__PURE__*/React.createElement(CardWithToggle, {
+    title: "🩺 PM Status Distribution",
+    chartType: statusChart,
+    setChartType: setStatusChart
+  }, /*#__PURE__*/React.createElement(FlexChart, {
+    type: statusChart,
+    data: statusData,
+    donut: true
+  })), /*#__PURE__*/React.createElement(CardWithToggle, {
+    title: "🧰 Visits by Type",
+    chartType: typeChart,
+    setChartType: setTypeChart
+  }, /*#__PURE__*/React.createElement(FlexChart, {
+    type: typeChart,
+    data: typeData,
+    donut: true
+  })), /*#__PURE__*/React.createElement(CardWithToggle, {
+    title: "👷 Visits by Engineer",
+    chartType: engChart,
+    setChartType: setEngChart
+  }, /*#__PURE__*/React.createElement(FlexChart, {
+    type: engChart,
+    data: engData,
+    donut: true
+  })), /*#__PURE__*/React.createElement(CardWithToggle, {
+    title: "📅 Visit Trend",
+    chartType: trendChart,
+    setChartType: setTrendChart
+  }, /*#__PURE__*/React.createElement(FlexChart, {
+    type: trendChart,
+    data: trendData
+  }))), heatEngs.length > 0 && /*#__PURE__*/React.createElement("div", {
     style: {
       ...cardSt,
       overflowX: "auto"
@@ -4049,7 +4705,7 @@ function AnalyticsTab({
       textAlign: "center",
       padding: "8px 6px"
     }
-  }, fmtDate(mk + "-01").slice(0, 3), " '", mk.slice(2, 4))))), /*#__PURE__*/React.createElement("tbody", null, engineers.map(n => /*#__PURE__*/React.createElement("tr", {
+  }, fmtDate(mk + "-01").slice(0, 3), " '", mk.slice(2, 4))))), /*#__PURE__*/React.createElement("tbody", null, heatEngs.map(n => /*#__PURE__*/React.createElement("tr", {
     key: n
   }, /*#__PURE__*/React.createElement("td", {
     style: {
@@ -4061,7 +4717,7 @@ function AnalyticsTab({
     const c = heat[n][mk];
     return /*#__PURE__*/React.createElement("td", {
       key: mk,
-      title: n + " — " + mk + ": " + c + " visit(s)",
+      title: n + " — " + mk + ": " + c,
       style: {
         ...tdSt,
         textAlign: "center",
@@ -4073,8 +4729,6 @@ function AnalyticsTab({
     }, c || "");
   })))))));
 }
-
-// ── Service Visits (v126 parity): global log across all laboratories ────────
 function VisitsTab({
   labs,
   profile,
@@ -5918,7 +6572,14 @@ function PermEditor({
       padding: 12,
       border: "1px solid var(--c-border)"
     }
-  }, [["dashboard", "Dashboard"], ["labs", "Institutions"], ["analytics", "Analytics"], ["visits", "Visits"], ["inventory", "Inventory"], ["overtime", "Overtime"]].map(([id, label]) => /*#__PURE__*/React.createElement("div", {
+  }, /*#__PURE__*/React.createElement("div", {
+    style: {
+      fontSize: 11,
+      color: "var(--c-text5)",
+      marginBottom: 8,
+      lineHeight: 1.5
+    }
+  }, "For a non-administrator, ", /*#__PURE__*/React.createElement("b", null, "Institutions “edit”"), " means they can add service visits and update a machine's Last PM date — it does ", /*#__PURE__*/React.createElement("b", null, "not"), " allow adding, editing, or deleting laboratories or machines (administrators only). Overtime is always private to each employee. Bin, Audit and Settings are administrator-only."), [["dashboard", "Dashboard"], ["labs", "Institutions"], ["analytics", "Analytics"], ["visits", "Visits"], ["inventory", "Inventory"], ["overtime", "Overtime"]].map(([id, label]) => /*#__PURE__*/React.createElement("div", {
     key: id,
     style: {
       marginBottom: 6
