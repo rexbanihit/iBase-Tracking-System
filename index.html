@@ -1215,6 +1215,13 @@ const cardSt = {
 // The system owner (developer). Mirrors the hardcoded owner in the server rules.
 const OWNER_UID = "pCaPXMqV2FXuuPLXGjfeP9qlbwl2";
 
+// Alphabetical, case-insensitive sort for every selection list in the app.
+function sortAlpha(arr, key) {
+  return [...(arr || [])].sort((a, b) => String(key ? key(a) : a).localeCompare(String(key ? key(b) : b), undefined, {
+    sensitivity: "base"
+  }));
+}
+
 // Emails pasted from chats/notes often carry invisible characters (zero-width
 // spaces, BOMs) or stray spaces that make Firebase reject them as "badly
 // formatted". Strip everything invisible, all whitespace, and lowercase.
@@ -1505,7 +1512,7 @@ function ThemePicker({
       fontWeight: 600,
       padding: "0 8px"
     }
-  }, THEMES.map(t => /*#__PURE__*/React.createElement("option", {
+  }, sortAlpha(THEMES, t => String(t.label).replace(/^\S+\s*/, "")).map(t => /*#__PURE__*/React.createElement("option", {
     key: t.id,
     value: t.id
   }, t.label)));
@@ -2751,7 +2758,7 @@ function VisitModal({
     style: inputSt(),
     value: f.type,
     onChange: e => set("type", e.target.value)
-  }, VISIT_TYPES.map(t => /*#__PURE__*/React.createElement("option", {
+  }, sortAlpha(VISIT_TYPES).map(t => /*#__PURE__*/React.createElement("option", {
     key: t
   }, t)))), /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("label", {
     style: labelSt
@@ -2820,7 +2827,7 @@ function VisitModal({
     style: inputSt(),
     value: f.machineStatus,
     onChange: e => set("machineStatus", e.target.value)
-  }, MACHINE_STATUSES.map(t => /*#__PURE__*/React.createElement("option", {
+  }, sortAlpha(MACHINE_STATUSES).map(t => /*#__PURE__*/React.createElement("option", {
     key: t
   }, t)))), /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("label", {
     style: labelSt
@@ -2896,7 +2903,7 @@ function MachineInv({
   notify
 }) {
   const items = useCol("inventory", true, notify);
-  const brands = catalog && catalog.brands || [];
+  const brands = sortAlpha(catalog && catalog.brands || []);
   const canEdit = pCanSub(profile, "machines", "edit") || profile.isAdmin;
   const brandOk = b => pBrandOk(profile, "machines", b);
   const [editing, setEditing] = useState(null); // null | "new" | item
@@ -3182,7 +3189,7 @@ function InvModal({
     style: inputSt(),
     value: f.condition,
     onChange: e => set("condition", e.target.value)
-  }, ["BRAND NEW", "USED", "For Repair", "Defective", "Scrapped"].map(c => /*#__PURE__*/React.createElement("option", {
+  }, sortAlpha(["BRAND NEW", "USED", "For Repair", "Defective", "Scrapped"]).map(c => /*#__PURE__*/React.createElement("option", {
     key: c
   }, c))), /*#__PURE__*/React.createElement("div", {
     style: {
@@ -3197,7 +3204,7 @@ function InvModal({
     style: inputSt(),
     value: f.status,
     onChange: e => set("status", e.target.value)
-  }, INVENTORY_STATUS_OPTIONS.map(s => /*#__PURE__*/React.createElement("option", {
+  }, sortAlpha(INVENTORY_STATUS_OPTIONS).map(s => /*#__PURE__*/React.createElement("option", {
     key: s
   }, s))), /*#__PURE__*/React.createElement("div", {
     style: {
@@ -3297,7 +3304,7 @@ function SpareParts({
   notify
 }) {
   const parts = useCol("spareParts", true, notify);
-  const brands = catalog && catalog.brands || [];
+  const brands = sortAlpha(catalog && catalog.brands || []);
   const canEdit = pCanSub(profile, "spares", "edit") || profile.isAdmin;
   const brandOk = b => pBrandOk(profile, "spares", b);
   const [editing, setEditing] = useState(null);
@@ -4844,7 +4851,7 @@ function VisitsTab({
     onChange: e => setTypeF(e.target.value)
   }, /*#__PURE__*/React.createElement("option", {
     value: ""
-  }, "All types"), VISIT_TYPES.map(t => /*#__PURE__*/React.createElement("option", {
+  }, "All types"), sortAlpha(VISIT_TYPES).map(t => /*#__PURE__*/React.createElement("option", {
     key: t
   }, t)))), /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("label", {
     style: labelSt
@@ -6372,7 +6379,8 @@ function SettingsTab({
   notify
 }) {
   const iAmOwner = profile.id === OWNER_UID;
-  const brands = catalog && catalog.brands || [];
+  const brands = sortAlpha(catalog && catalog.brands || []);
+  const roleOptions = sortAlpha(Array.from(new Set([...ENGINEER_ROLES, ...(catalog && catalog.roles || []), ...users.map(u => String(u.role || "").trim()).filter(Boolean)])));
   const [newBrand, setNewBrand] = useState("");
   async function saveBrands(list) {
     try {
@@ -6386,6 +6394,7 @@ function SettingsTab({
   }
   return /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement(CreateUser, {
     brands: brands,
+    roleOptions: roleOptions,
     notify: notify,
     iAmOwner: iAmOwner
   }), /*#__PURE__*/React.createElement("div", {
@@ -6398,7 +6407,7 @@ function SettingsTab({
       textTransform: "uppercase",
       marginBottom: 10
     }
-  }, "👥 Users (", users.filter(u => u.id !== OWNER_UID && !u.isAdmin).length, ")"), users.filter(u => u.id !== OWNER_UID && !u.isAdmin).map(u => /*#__PURE__*/React.createElement(UserRow, {
+  }, "👥 Users (", users.filter(u => u.id !== OWNER_UID && !u.isAdmin).length, ")"), sortAlpha(users.filter(u => u.id !== OWNER_UID && !u.isAdmin), u => u.email).map(u => /*#__PURE__*/React.createElement(UserRow, {
     key: u.id,
     u: u,
     brands: brands,
@@ -6614,6 +6623,7 @@ function PermEditor({
 }
 function CreateUser({
   brands,
+  roleOptions,
   notify,
   iAmOwner
 }) {
@@ -6655,6 +6665,16 @@ function CreateUser({
       } catch (perr) {
         notify("The login account for " + email.trim() + " was created, but saving their profile failed: " + perr.message + " — open Settings again and use '＋ Add profile for existing account' with their UID: " + newUid, "error");
         throw perr;
+      }
+      const roleClean = role.trim();
+      if (roleClean && !(roleOptions || []).some(r => r.toLowerCase() === roleClean.toLowerCase())) {
+        try {
+          await db.doc("config/catalog").set({
+            roles: firebase.firestore.FieldValue.arrayUnion(roleClean)
+          }, {
+            merge: true
+          });
+        } catch (e) {}
       }
       logAudit(null, iAmOwner && makeAdmin ? "user.create-ADMIN" : "user.create", email.trim());
       notify("✓ Created " + email.trim() + (makeAdmin ? " as an ADMINISTRATOR." : ".") + " They appear in the list below and can sign in now.", "ok");
@@ -6708,13 +6728,18 @@ function CreateUser({
     onChange: e => setName(e.target.value)
   })), /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("label", {
     style: labelSt
-  }, "Role"), /*#__PURE__*/React.createElement("select", {
+  }, "Role"), /*#__PURE__*/React.createElement("input", {
+    list: "ibase-role-list",
     style: inputSt(),
     value: role,
-    onChange: e => setRole(e.target.value)
-  }, ENGINEER_ROLES.map(r => /*#__PURE__*/React.createElement("option", {
-    key: r
-  }, r)))), /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("label", {
+    onChange: e => setRole(e.target.value),
+    placeholder: "Pick or type a role"
+  }), /*#__PURE__*/React.createElement("datalist", {
+    id: "ibase-role-list"
+  }, (roleOptions || []).map(r => /*#__PURE__*/React.createElement("option", {
+    key: r,
+    value: r
+  })))), /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("label", {
     style: labelSt
   }, "Linked employee name (optional)"), /*#__PURE__*/React.createElement("input", {
     style: inputSt(),
@@ -6881,8 +6906,8 @@ function AdminManager({
   brands,
   notify
 }) {
-  const admins = users.filter(u => u.isAdmin && u.id !== OWNER_UID);
-  const regulars = users.filter(u => !u.isAdmin && u.id !== OWNER_UID);
+  const admins = sortAlpha(users.filter(u => u.isAdmin && u.id !== OWNER_UID), u => u.email);
+  const regulars = sortAlpha(users.filter(u => !u.isAdmin && u.id !== OWNER_UID), u => u.email);
   const [pick, setPick] = useState("");
   async function promote() {
     const u = regulars.find(x => x.id === pick);
