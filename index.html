@@ -1215,6 +1215,14 @@ const cardSt = {
 // The system owner (developer). Mirrors the hardcoded owner in the server rules.
 const OWNER_UID = "pCaPXMqV2FXuuPLXGjfeP9qlbwl2";
 
+// Emails pasted from chats/notes often carry invisible characters (zero-width
+// spaces, BOMs) or stray spaces that make Firebase reject them as "badly
+// formatted". Strip everything invisible, all whitespace, and lowercase.
+function cleanEmail(v) {
+  return String(v || "").replace(/[\u200B-\u200D\uFEFF\u2060\u00AD]/g, "").replace(/\s+/g, "").toLowerCase();
+}
+const EMAIL_RX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+
 // Soft delete: everything deleted anywhere in iBase goes to the Bin first,
 // where administrators can restore it or delete it forever.
 async function binIt(kind, label, payload, byEmail) {
@@ -1513,9 +1521,14 @@ function Login({
   const [pw, setPw] = useState("");
   const [busy, setBusy] = useState(false);
   async function submit() {
+    const em = cleanEmail(email);
+    if (!EMAIL_RX.test(em)) {
+      notify("That doesn't look like a complete email address" + (em ? " (received: \"" + em + "\")" : "") + ". Please enter the full address, e.g. name@gmail.com.", "error");
+      return;
+    }
     setBusy(true);
     try {
-      await auth.signInWithEmailAndPassword(email.trim(), pw);
+      await auth.signInWithEmailAndPassword(em, pw);
     } catch (e) {
       notify("Sign-in failed: " + e.message, "error");
     } finally {
@@ -1605,14 +1618,20 @@ function Login({
     }
   }, "Installed Base Management"), /*#__PURE__*/React.createElement("label", {
     style: labelSt
-  }, "Username"), /*#__PURE__*/React.createElement("input", {
+  }, "Email"), /*#__PURE__*/React.createElement("input", {
+    type: "email",
+    autoComplete: "username",
+    autoCapitalize: "none",
+    autoCorrect: "off",
+    spellCheck: false,
     style: {
       ...inputSt(),
       marginBottom: 16
     },
     value: email,
     onChange: e => setEmail(e.target.value),
-    placeholder: "Enter email"
+    onKeyDown: e => e.key === "Enter" && submit(),
+    placeholder: "you@company.com"
   }), /*#__PURE__*/React.createElement("label", {
     style: labelSt
   }, "Password"), /*#__PURE__*/React.createElement("input", {
@@ -5954,7 +5973,12 @@ function CreateUser({
     let secondary;
     try {
       secondary = firebase.initializeApp(firebaseConfig, "creator_" + Date.now());
-      const cred = await secondary.auth().createUserWithEmailAndPassword(email.trim(), pw);
+      const em = cleanEmail(email);
+      if (!EMAIL_RX.test(em)) {
+        notify("\"" + em + "\" is not a valid email address.", "error");
+        return;
+      }
+      const cred = await secondary.auth().createUserWithEmailAndPassword(em, pw);
       const newUid = cred.user.uid;
       await secondary.auth().signOut();
       try {
@@ -6412,7 +6436,7 @@ function UserRow({
   async function resetPw() {
     if (!confirm("Send a password-reset email to " + u.email + "? They'll receive a secure link from Firebase to choose a new password.")) return;
     try {
-      await auth.sendPasswordResetEmail(u.email);
+      await auth.sendPasswordResetEmail(cleanEmail(u.email));
       logAudit(me, "user.pwreset", u.email);
       notify("📧 Reset link sent to " + u.email + ". It may land in Spam.", "ok");
     } catch (e) {
