@@ -7567,7 +7567,7 @@ function App() {
       textTransform: "uppercase",
       letterSpacing: 1.5
     }
-  }, "Installed Base · ", signedProfile && signedProfile.isAdmin ? "Administrator" : signedProfile && signedProfile.role || "Field User")), /*#__PURE__*/React.createElement("div", {
+  }, "Installed Base · ", user.uid === OWNER_UID ? "Sole Owner" : signedProfile && signedProfile.isAdmin ? "Administrator · " + (signedProfile.displayName || user.email || "").split("@")[0] : signedProfile && signedProfile.role || "Field User")), /*#__PURE__*/React.createElement("div", {
     style: {
       marginLeft: "auto",
       display: "flex",
@@ -7615,17 +7615,43 @@ function App() {
   }), /*#__PURE__*/React.createElement(HeaderClock, null), /*#__PURE__*/React.createElement(ThemePicker, {
     theme: theme,
     setTheme: setTheme
-  }), /*#__PURE__*/React.createElement("span", {
+  }), user.uid === OWNER_UID ? /*#__PURE__*/React.createElement("span", {
+    title: "You are the sole owner of this system — this badge appears for no one else",
+    style: {
+      display: "inline-flex",
+      alignItems: "center",
+      gap: 6,
+      height: 30,
+      padding: "0 12px",
+      borderRadius: 999,
+      fontSize: 11,
+      fontWeight: 900,
+      letterSpacing: 0.5,
+      color: "#1a1a1a",
+      background: "linear-gradient(90deg,#fbbf24,#f59e0b)",
+      boxShadow: "0 0 12px rgba(251,191,36,.35)"
+    }
+  }, "👑 SOLE OWNER") : signedProfile && signedProfile.isAdmin ? /*#__PURE__*/React.createElement("span", {
+    title: "Administrator account",
+    style: {
+      display: "inline-flex",
+      alignItems: "center",
+      gap: 6,
+      height: 30,
+      padding: "0 12px",
+      borderRadius: 999,
+      fontSize: 11,
+      fontWeight: 800,
+      color: "#fbbf24",
+      border: "1px solid #fbbf2466",
+      background: "rgba(251,191,36,.08)"
+    }
+  }, "🛡 ADMINISTRATOR · ", String(signedProfile.displayName || user.email || "").split("@")[0].toUpperCase()) : null, /*#__PURE__*/React.createElement("span", {
     style: {
       fontSize: 12,
       color: "var(--c-text4)"
     }
-  }, user.uid === OWNER_UID && /*#__PURE__*/React.createElement("span", {
-    title: "Signed in as the system OWNER",
-    style: {
-      marginRight: 5
-    }
-  }, "👑"), user.email), /*#__PURE__*/React.createElement("button", {
+  }, user.email), /*#__PURE__*/React.createElement("button", {
     style: btnSt("var(--c-border)", "var(--c-text2)"),
     onClick: () => auth.signOut()
   }, "🚪 Logout")))), /*#__PURE__*/React.createElement("div", {
