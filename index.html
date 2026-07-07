@@ -5025,6 +5025,8 @@ function VisitsTab({
     dir: -1
   });
   const [selected, setSelected] = useState({});
+  const [rowHeights, setRowHeights] = useState({}); // per-row Excel-style overrides
+  const [limit, setLimit] = useState(200); // rows shown; expandable to ALL
   const dragCol = useRef(null);
   const all = useMemo(() => labs.flatMap(l => (l.machines || []).flatMap(m => (m.visits || []).map(v => ({
     ...v,
@@ -5078,6 +5080,21 @@ function VisitsTab({
     const move = ev => setColW(w => ({
       ...w,
       [id]: Math.max(50, startW + (ev.clientX - startX))
+    }));
+    const up = () => {
+      window.removeEventListener("mousemove", move);
+      window.removeEventListener("mouseup", up);
+    };
+    window.addEventListener("mousemove", move);
+    window.addEventListener("mouseup", up);
+  }
+  function startRowResize(e, key, startH) {
+    e.preventDefault();
+    e.stopPropagation();
+    const startY = e.clientY;
+    const move = ev => setRowHeights(h => ({
+      ...h,
+      [key]: Math.max(24, Math.min(200, startH + (ev.clientY - startY)))
     }));
     const up = () => {
       window.removeEventListener("mousemove", move);
@@ -5262,27 +5279,36 @@ function VisitsTab({
     key: x
   }, x)))), /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("label", {
     style: _lblS
-  }, "From"), /*#__PURE__*/React.createElement("input", {
+  }, "Date range (from — to)"), /*#__PURE__*/React.createElement("div", {
+    style: {
+      display: "flex",
+      gap: 6,
+      flexWrap: "nowrap",
+      alignItems: "center"
+    }
+  }, /*#__PURE__*/React.createElement("input", {
     type: "date",
     style: {
       ..._inS,
-      minWidth: 135
+      minWidth: 132
     },
     value: from,
     max: to || undefined,
     onChange: e => setFrom(e.target.value)
-  })), /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("label", {
-    style: _lblS
-  }, "To"), /*#__PURE__*/React.createElement("input", {
+  }), /*#__PURE__*/React.createElement("span", {
+    style: {
+      color: "var(--c-text5)"
+    }
+  }, "—"), /*#__PURE__*/React.createElement("input", {
     type: "date",
     style: {
       ..._inS,
-      minWidth: 135
+      minWidth: 132
     },
     value: to,
     min: from || undefined,
     onChange: e => setTo(e.target.value)
-  })), anyFilter && /*#__PURE__*/React.createElement("button", {
+  }))), anyFilter && /*#__PURE__*/React.createElement("button", {
     style: btnSt("var(--c-border)", "var(--c-text2)"),
     onClick: () => {
       setQ("");
@@ -5307,11 +5333,15 @@ function VisitsTab({
       background: "var(--c-bg)",
       border: "1px solid var(--c-border)",
       borderRadius: 8,
-      padding: 2
+      padding: 2,
+      alignItems: "center"
     }
   }, [["Compact", 30], ["Normal", 40], ["Tall", 58]].map(([lbl, h]) => /*#__PURE__*/React.createElement("button", {
     key: lbl,
-    onClick: () => setRowH(h),
+    onClick: () => {
+      setRowH(h);
+      setRowHeights({});
+    },
     style: {
       border: "none",
       cursor: "pointer",
@@ -5322,7 +5352,32 @@ function VisitsTab({
       background: rowH === h ? "var(--c-key)" : "transparent",
       color: rowH === h ? "var(--c-bg)" : "var(--c-text3)"
     }
-  }, lbl))))), /*#__PURE__*/React.createElement("div", {
+  }, lbl)), /*#__PURE__*/React.createElement("input", {
+    type: "number",
+    min: 24,
+    max: 200,
+    value: rowH,
+    title: "Exact row height in pixels (24–200)",
+    onChange: e => {
+      const n = Math.max(24, Math.min(200, Number(e.target.value) || 40));
+      setRowH(n);
+    },
+    style: {
+      width: 58,
+      padding: "3px 6px",
+      fontSize: 11,
+      background: "var(--c-input)",
+      color: "var(--c-text)",
+      border: "1px solid var(--c-border)",
+      borderRadius: 6
+    }
+  }), /*#__PURE__*/React.createElement("span", {
+    style: {
+      fontSize: 10,
+      color: "var(--c-text5)",
+      paddingRight: 4
+    }
+  }, "px")))), /*#__PURE__*/React.createElement("div", {
     style: {
       ...cardSt,
       overflowX: "auto",
@@ -5334,7 +5389,7 @@ function VisitsTab({
       color: "var(--c-text4)",
       marginBottom: 8
     }
-  }, shown.length, " of ", all.length, " visit(s)", selCount ? " · " + selCount + " highlighted (click a row again to clear)" : ""), /*#__PURE__*/React.createElement("table", {
+  }, shown.length, " of ", all.length, " visit(s) · ", labs.reduce((s, l) => s + (l.machines || []).length, 0), " machine(s) across ", labs.length, " laborator", labs.length === 1 ? "y" : "ies", selCount ? " · " + selCount + " highlighted" : ""), /*#__PURE__*/React.createElement("table", {
     className: "ibzv",
     style: {
       borderCollapse: "collapse",
@@ -5376,19 +5431,20 @@ function VisitsTab({
       ...thSt,
       width: 52
     }
-  }))), /*#__PURE__*/React.createElement("tbody", null, shown.slice(0, 400).map((v, i) => {
+  }))), /*#__PURE__*/React.createElement("tbody", null, shown.slice(0, limit).map((v, i) => {
     const key = v.id || v._mId + "-" + i;
+    const h = rowHeights[key] || rowH; // per-row override (drag the row's bottom edge)
     return /*#__PURE__*/React.createElement("tr", {
       key: key,
       className: selected[key] ? "ibzv-sel" : "",
       style: {
-        height: rowH
+        height: h
       },
       onClick: () => setSelected(s => ({
         ...s,
         [key]: !s[key]
       }))
-    }, colOrder.map(id => {
+    }, colOrder.map((id, ci) => {
       const c = colDef(id);
       if (!c) return null;
       const w = colW[id] || c.w;
@@ -5398,19 +5454,34 @@ function VisitsTab({
         maxWidth: w,
         overflow: "hidden",
         textOverflow: "ellipsis",
-        whiteSpace: rowH >= 58 && id === "remarks" ? "normal" : "nowrap",
-        fontSize: 12
+        whiteSpace: h >= 58 && id === "remarks" ? "normal" : "nowrap",
+        fontSize: 12,
+        position: ci === 0 ? "relative" : undefined
       };
+      const grip = ci === 0 ? /*#__PURE__*/React.createElement("span", {
+        title: "Drag to resize this row (like Excel)",
+        style: {
+          position: "absolute",
+          left: 0,
+          right: 0,
+          bottom: -3,
+          height: 7,
+          cursor: "row-resize",
+          zIndex: 2
+        },
+        onMouseDown: e => startRowResize(e, key, h),
+        onClick: e => e.stopPropagation()
+      }) : null;
       if (id === "sig") return /*#__PURE__*/React.createElement("td", {
         key: id,
         style: base,
         onClick: e => e.stopPropagation()
-      }, v.signature ? /*#__PURE__*/React.createElement("img", {
+      }, grip, v.signature ? /*#__PURE__*/React.createElement("img", {
         src: v.signature,
         alt: "✍",
         title: "Signed — click to enlarge",
         style: {
-          height: Math.min(rowH - 12, 30),
+          height: Math.min(h - 12, 42),
           width: "auto",
           background: "#fff",
           borderRadius: 4,
@@ -5430,7 +5501,7 @@ function VisitsTab({
         key: id,
         style: base,
         title: (v.loggedBy || "") + (v.loggedAt ? " · " + String(v.loggedAt).replace("T", " ").slice(0, 16) : "")
-      }, v.loggedBy ? String(v.loggedBy).split("@")[0] : "—", v.loggedAt ? /*#__PURE__*/React.createElement("span", {
+      }, grip, v.loggedBy ? String(v.loggedBy).split("@")[0] : "—", v.loggedAt ? /*#__PURE__*/React.createElement("span", {
         style: {
           color: "var(--c-text5)",
           fontSize: 10
@@ -5443,7 +5514,7 @@ function VisitsTab({
           fontFamily: c.mono ? "monospace" : undefined
         },
         title: String(c.get(v) || "")
-      }, c.get(v));
+      }, grip, c.get(v));
     }), canEditLabs && /*#__PURE__*/React.createElement("td", {
       style: {
         ...tdSt,
@@ -5465,13 +5536,25 @@ function VisitsTab({
       ...tdSt,
       color: "var(--c-text4)"
     }
-  }, "No visits match the current filters.")))), shown.length > 400 && /*#__PURE__*/React.createElement("div", {
+  }, "No visits match the current filters.")))), shown.length > limit && /*#__PURE__*/React.createElement("div", {
+    style: {
+      display: "flex",
+      gap: 10,
+      alignItems: "center",
+      marginTop: 10
+    }
+  }, /*#__PURE__*/React.createElement("button", {
+    style: btnSt("var(--c-border)", "var(--c-text2)"),
+    onClick: () => setLimit(l => l + 200)
+  }, "▼ Show 200 more"), /*#__PURE__*/React.createElement("button", {
+    style: btnSt("var(--c-key)", "var(--c-bg)"),
+    onClick: () => setLimit(shown.length)
+  }, "Show ALL ", shown.length), /*#__PURE__*/React.createElement("span", {
     style: {
       fontSize: 11,
-      color: "var(--c-text5)",
-      marginTop: 8
+      color: "var(--c-text5)"
     }
-  }, "Showing the first 400 — narrow the filters or use ⬇ Backup for the complete list.")));
+  }, "Every visit of every machine in every laboratory is here — ", limit, " of ", shown.length, " currently rendered."))));
 }
 
 // ── Backup / Download (admin-only): full multi-sheet XLSX export ─────────────
