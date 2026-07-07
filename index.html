@@ -1701,6 +1701,7 @@ function Login({
 }) {
   const [email, setEmail] = useState("");
   const [pw, setPw] = useState("");
+  const [showPw, setShowPw] = useState(false);
   const [busy, setBusy] = useState(false);
   async function submit() {
     const em = cleanEmail(email);
@@ -1816,17 +1817,38 @@ function Login({
     placeholder: "you@company.com"
   }), /*#__PURE__*/React.createElement("label", {
     style: labelSt
-  }, "Password"), /*#__PURE__*/React.createElement("input", {
+  }, "Password"), /*#__PURE__*/React.createElement("div", {
+    style: {
+      position: "relative",
+      marginBottom: 22
+    }
+  }, /*#__PURE__*/React.createElement("input", {
     style: {
       ...inputSt(),
-      marginBottom: 22
+      paddingRight: 42
     },
-    type: "password",
+    type: showPw ? "text" : "password",
     value: pw,
     onChange: e => setPw(e.target.value),
     onKeyDown: e => e.key === "Enter" && submit(),
     placeholder: "Enter password"
   }), /*#__PURE__*/React.createElement("button", {
+    type: "button",
+    title: showPw ? "Hide password" : "Show password",
+    onClick: () => setShowPw(s => !s),
+    style: {
+      position: "absolute",
+      right: 8,
+      top: "50%",
+      transform: "translateY(-50%)",
+      background: "none",
+      border: "none",
+      cursor: "pointer",
+      fontSize: 16,
+      color: "var(--c-text4)",
+      padding: 4
+    }
+  }, showPw ? "🙈" : "👁")), /*#__PURE__*/React.createElement("button", {
     style: {
       ...btnSt("var(--c-key)", "var(--c-bg)"),
       width: "100%",
@@ -4787,6 +4809,19 @@ const MANAGED_TABS = [{
 }, {
   id: "overtime",
   def: "🕒 Overtime"
+}, {
+  id: "bin",
+  def: "🗑 Bin",
+  adminOnly: true
+}, {
+  id: "audit",
+  def: "🧾 Audit",
+  adminOnly: true
+}, {
+  id: "settings",
+  def: "⚙ Settings",
+  adminOnly: true,
+  noHide: true
 }];
 const MANAGED_SUBS = [{
   id: "machines",
@@ -4904,19 +4939,25 @@ function TabManager({
       ...d,
       [t.id]: e.target.value
     }))
-  }), tabHidden(cfg, t.id) ? /*#__PURE__*/React.createElement("button", {
+  }), t.noHide ? /*#__PURE__*/React.createElement("span", {
+    title: "Settings can never be hidden — otherwise nobody could reopen this manager",
+    style: {
+      fontSize: 10.5,
+      color: "var(--c-text5)"
+    }
+  }, "always visible") : tabHidden(cfg, t.id) ? /*#__PURE__*/React.createElement("button", {
     style: btnSt("#10b981", "#fff"),
     onClick: () => toggleHide(t, false)
   }, "👁 Show") : /*#__PURE__*/React.createElement("button", {
     style: btnSt("var(--c-border)", "var(--c-text2)"),
     onClick: () => toggleHide(t, true)
-  }, "🕶 Hide"), tabHidden(cfg, t.id) && /*#__PURE__*/React.createElement("span", {
+  }, "🕶 Hide"), tabHidden(cfg, t.id) && !t.noHide && /*#__PURE__*/React.createElement("span", {
     style: {
       fontSize: 10.5,
       color: "#fbbf24",
       fontWeight: 700
     }
-  }, "hidden for everyone"))), /*#__PURE__*/React.createElement("div", {
+  }, t.adminOnly ? "hidden (owner still sees it)" : "hidden for everyone"))), /*#__PURE__*/React.createElement("div", {
     style: {
       fontSize: 11,
       fontWeight: 800,
@@ -6453,20 +6494,25 @@ function BackupButton({
     }
   }
   return /*#__PURE__*/React.createElement("button", {
-    title: "Download a full multi-sheet XLSX backup of the database (administrators only)",
+    title: "Download a full multi-sheet XLSX export of the database (administrators only)",
     style: btnSt("var(--c-border)", "var(--c-text2)"),
     disabled: busy,
     onClick: run
-  }, busy ? "Exporting…" : "⬇ Backup");
+  }, busy ? "Exporting…" : "⬇ Download");
 }
 
 // ── Audit tab (admins): the trail nobody can erase ──────────────────────────
 function AuditTab({
+  profile,
   notify
 }) {
   const entries = useCol("audit", true, notify);
   const [q, setQ] = useState("");
-  const sorted = entries.slice().sort((a, b) => String(b.at || "").localeCompare(String(a.at || "")));
+  // The sole owner's actions are invisible to everyone else — administrators
+  // and users never see the owner's trace. Only the owner sees his own entries.
+  const iAmOwner = isOwnerAcct(profile);
+  const visible = entries.filter(e => iAmOwner || !(String(e.by || "").trim().toLowerCase() === OWNER_EMAIL || e.uid === OWNER_UID));
+  const sorted = visible.slice().sort((a, b) => String(b.at || "").localeCompare(String(a.at || "")));
   const shown = sorted.filter(e => {
     const s = q.toLowerCase();
     if (!s) return true;
@@ -7827,18 +7873,30 @@ function impParseWorkbook(wb) {
       });
       return;
     }
+    // columns the recognizer did NOT map — offered to the owner as "missing" data
+    const mappedIdx = {};
+    Object.keys(map).forEach(k => mappedIdx[map[k]] = true);
+    const header = grid[hi] || [];
+    const unmapped = header.map((h, i) => ({
+      h: String(h || "").trim(),
+      i
+    })).filter(x => x.h && !mappedIdx[x.i]);
     let n = 0;
     for (let i = hi + 1; i < grid.length; i++) {
       const r = grid[i] || [];
+      if (!r.some(x => String(x == null ? "" : x).trim())) continue; // truly empty line
       const g = k => map[k] === undefined ? "" : String(r[map[k]] == null ? "" : r[map[k]]).trim();
       const date = impDate(map.date !== undefined ? r[map.date] : "");
-      const lab = g("lab"),
-        serial = g("serial"),
-        instrument = g("instrument");
-      if (!date || !lab || !serial && !instrument) {
-        if (r.some(x => String(x).trim())) skipped++;
-        continue;
-      }
+      // EVERY row is kept: missing pieces get explicit fallbacks instead of being dropped.
+      const lab = g("lab") || "(Unassigned imports)";
+      const serial = g("serial");
+      const instrument = g("instrument") || (serial ? "" : "(Unspecified machine)");
+      const extra = {};
+      unmapped.forEach(u => {
+        const v = r[u.i];
+        const sv = String(v == null ? "" : v).trim();
+        if (sv) extra[u.h] = sv.slice(0, 300);
+      });
       rows.push({
         date,
         lab,
@@ -7852,7 +7910,9 @@ function impParseWorkbook(wb) {
         engineer2: g("engineer2"),
         engineer3: g("engineer3"),
         status: g("status"),
-        remarks: g("remarks")
+        remarks: g("remarks"),
+        extra,
+        missingBits: [!date && "date", !g("lab") && "laboratory", !serial && !g("instrument") && "machine"].filter(Boolean)
       });
       n++;
     }
@@ -7860,19 +7920,24 @@ function impParseWorkbook(wb) {
       name,
       used: true,
       rows: n,
-      map
+      map,
+      unmapped: unmapped.map(u => u.h)
     });
   });
+  const unmappedAll = Array.from(new Set(sheetInfo.flatMap(s => s.unmapped || [])));
+  const incomplete = rows.filter(r => r.missingBits.length).length;
   return {
     rows,
     sheetInfo,
-    skipped
+    skipped,
+    unmappedAll,
+    incomplete
   };
 }
 function impVisitKey(v) {
   return [v.date, String(v.type || "").toLowerCase(), String(v.isr || v.isrNo || "").toLowerCase(), String(v.engineer || "").toLowerCase()].join("|");
 }
-function impBuildPlan(rows, labs, importerEmail) {
+function impBuildPlan(rows, labs, importerEmail, includeExtras) {
   const nowIso = auditNow ? auditNow() : new Date().toISOString();
   const byLab = {};
   rows.forEach(r => {
@@ -7928,6 +7993,7 @@ function impBuildPlan(rows, labs, importerEmail) {
         dup++;
         return;
       }
+      const extraTxt = includeExtras && r.extra && Object.keys(r.extra).length ? Object.keys(r.extra).map(k => k + ": " + r.extra[k]).join(" · ") : "";
       m.visits.push({
         id: uid(),
         date: r.date,
@@ -7941,10 +8007,13 @@ function impBuildPlan(rows, labs, importerEmail) {
         dtArrivalHome: "",
         dtWorkStarted: "",
         dtWorkEnded: "",
-        remarks: r.remarks || "",
+        remarks: (r.remarks || "") + (extraTxt ? (r.remarks ? "\n" : "") + "[Imported columns] " + extraTxt : ""),
         signature: "",
         signedByName: "",
         attachments: [],
+        ...(includeExtras && r.extra && Object.keys(r.extra).length ? {
+          extra: r.extra
+        } : {}),
         loggedBy: importerEmail,
         loggedAt: nowIso,
         imported: true
@@ -7998,6 +8067,8 @@ function ImportExcel({
 }) {
   const [plan, setPlan] = useState(null);
   const [meta, setMeta] = useState(null);
+  const [rawRows, setRawRows] = useState(null);
+  const [withExtras, setWithExtras] = useState(false);
   const [busy, setBusy] = useState(false);
   const fileRef = useRef(null);
   async function onFile(e) {
@@ -8012,17 +8083,22 @@ function ImportExcel({
       });
       const parsed = impParseWorkbook(wb);
       if (!parsed.rows.length) {
-        notify("No usable rows found. The sheet needs at least Date, Laboratory and Serial (or Machine) columns.", "error");
+        notify("No usable rows found — no sheet had recognizable headers.", "error");
         setPlan(null);
         setMeta(null);
+        setRawRows(null);
         return;
       }
-      const p = impBuildPlan(parsed.rows, labs, profile.email);
+      setRawRows(parsed.rows);
+      setWithExtras(false);
+      const p = impBuildPlan(parsed.rows, labs, profile.email, false);
       setMeta({
         file: file.name,
         rows: parsed.rows.length,
         skipped: parsed.skipped,
-        sheets: parsed.sheetInfo
+        sheets: parsed.sheetInfo,
+        unmapped: parsed.unmappedAll,
+        incomplete: parsed.incomplete
       });
       setPlan(p);
     } catch (err) {
@@ -8061,11 +8137,12 @@ function ImportExcel({
         notify("\"" + op.name + "\" refused: " + e.message, "error");
       }
     }
-    logAudit(profile, "import.excel", (meta ? meta.file : "") + " → " + plan.tNewVisits + " visit(s), " + plan.tNewMachines + " machine(s), " + plan.tNewLabs + " lab(s)");
+    logAudit(profile, "import.excel", (meta ? meta.file : "") + " → " + plan.tNewVisits + " visit(s), " + plan.tNewMachines + " machine(s), " + plan.tNewLabs + " lab(s)" + (withExtras ? " (incl. extra columns)" : ""));
     notify(failed ? "Import finished with " + failed + " failure(s) — " + done + " laborator" + (done === 1 ? "y" : "ies") + " written." : "✅ Import complete — " + plan.tNewVisits + " visit(s), " + plan.tNewMachines + " machine(s), " + plan.tNewLabs + " new lab(s). Oldest visit dates registered as installation dates.", failed ? "error" : "ok");
     setBusy(false);
     setPlan(null);
     setMeta(null);
+    setRawRows(null);
   }
   return /*#__PURE__*/React.createElement("div", {
     style: {
@@ -8087,7 +8164,7 @@ function ImportExcel({
       marginBottom: 10,
       lineHeight: 1.5
     }
-  }, "Upload a .xlsx / .xls / .csv holding your service history (visits, machines, serials, work descriptions…). Columns are detected automatically by their headers. Rows become permanent laboratories, machines and visits — exactly as if typed in by hand — duplicates are skipped, and each machine's ", /*#__PURE__*/React.createElement("b", null, "installation date is set to its oldest visit"), ". 💡 Take a ⬇ Backup first."), /*#__PURE__*/React.createElement("input", {
+  }, "Upload a .xlsx / .xls / .csv holding your service history (visits, machines, serials, work descriptions…). Columns are detected automatically by their headers. Rows become permanent laboratories, machines and visits — exactly as if typed in by hand — duplicates are skipped, and each machine's ", /*#__PURE__*/React.createElement("b", null, "installation date is set to its oldest visit"), ". 💡 Take a ⬇ Download first."), /*#__PURE__*/React.createElement("input", {
     ref: fileRef,
     type: "file",
     accept: ".xlsx,.xls,.csv",
@@ -8119,7 +8196,45 @@ function ImportExcel({
       color: "var(--c-text2)",
       lineHeight: 1.7
     }
-  }, meta.rows, " row(s) read", meta.skipped ? " · " + meta.skipped + " unreadable row(s) skipped" : "", " · sheets used: ", meta.sheets.filter(s => s.used).map(s => s.name + " (" + s.rows + ")").join(", ") || "none", /*#__PURE__*/React.createElement("br", null), "Will write: ", /*#__PURE__*/React.createElement("b", null, plan.tNewLabs), " new laborator", plan.tNewLabs === 1 ? "y" : "ies", " · ", /*#__PURE__*/React.createElement("b", null, plan.tNewMachines), " new machine(s) · ", /*#__PURE__*/React.createElement("b", null, plan.tNewVisits), " new visit(s) · ", /*#__PURE__*/React.createElement("b", null, plan.tDupes), " duplicate visit(s) skipped"), /*#__PURE__*/React.createElement("div", {
+  }, meta.rows, " row(s) read — ", /*#__PURE__*/React.createElement("b", null, "every row is kept"), meta.incomplete ? " (" + meta.incomplete + " with missing fields go under “(Unassigned imports)” / blank dates)" : "", " · sheets used: ", meta.sheets.filter(s => s.used).map(s => s.name + " (" + s.rows + ")").join(", ") || "none", /*#__PURE__*/React.createElement("br", null), "Will write: ", /*#__PURE__*/React.createElement("b", null, plan.tNewLabs), " new laborator", plan.tNewLabs === 1 ? "y" : "ies", " · ", /*#__PURE__*/React.createElement("b", null, plan.tNewMachines), " new machine(s) · ", /*#__PURE__*/React.createElement("b", null, plan.tNewVisits), " new visit(s) · ", /*#__PURE__*/React.createElement("b", null, plan.tDupes), " duplicate visit(s) skipped"), (meta.unmapped || []).length > 0 && /*#__PURE__*/React.createElement("div", {
+    style: {
+      marginTop: 8,
+      padding: "8px 10px",
+      borderRadius: 8,
+      border: "1px dashed " + (withExtras ? "#10b981" : "#f59e0b"),
+      fontSize: 11.5
+    }
+  }, /*#__PURE__*/React.createElement("div", {
+    style: {
+      color: withExtras ? "#10b981" : "#f59e0b",
+      fontWeight: 800,
+      marginBottom: 4
+    }
+  }, withExtras ? "✅ Extra columns will be imported" : "⚠️ Your file has " + meta.unmapped.length + " column(s) the system doesn't have fields for:"), /*#__PURE__*/React.createElement("div", {
+    style: {
+      color: "var(--c-text3)",
+      marginBottom: 6
+    }
+  }, meta.unmapped.join(" · ")), !withExtras ? /*#__PURE__*/React.createElement("button", {
+    style: btnSt("#f59e0b", "#1a1a1a"),
+    onClick: () => {
+      const p = impBuildPlan(rawRows, labs, profile.email, true);
+      setWithExtras(true);
+      setPlan(p);
+    }
+  }, "➕ Yes — add these missing columns to the visits") : /*#__PURE__*/React.createElement("button", {
+    style: btnSt("var(--c-border)", "var(--c-text2)"),
+    onClick: () => {
+      const p = impBuildPlan(rawRows, labs, profile.email, false);
+      setWithExtras(false);
+      setPlan(p);
+    }
+  }, "Skip the extra columns instead"), /*#__PURE__*/React.createElement("div", {
+    style: {
+      color: "var(--c-text5)",
+      marginTop: 6
+    }
+  }, "When added, each value is saved on its visit and shown in Remarks as “[Imported columns] Header: value”.")), /*#__PURE__*/React.createElement("div", {
     style: {
       maxHeight: 150,
       overflowY: "auto",
@@ -9272,15 +9387,15 @@ function App() {
   }, (signedProfile.isAdmin || pCanTab(signedProfile, "overtime", "view")) && !tabHidden(tabsCfg, "overtime") && {
     id: "overtime",
     label: tabLabel(tabsCfg, "overtime", "🕒 Overtime")
-  }, signedProfile.isAdmin && {
+  }, signedProfile.isAdmin && (!tabHidden(tabsCfg, "bin") || isOwnerAcct(user)) && {
     id: "bin",
-    label: "🗑 Bin"
-  }, signedProfile.isAdmin && {
+    label: tabLabel(tabsCfg, "bin", "🗑 Bin")
+  }, signedProfile.isAdmin && (!tabHidden(tabsCfg, "audit") || isOwnerAcct(user)) && {
     id: "audit",
-    label: "🧾 Audit"
+    label: tabLabel(tabsCfg, "audit", "🧾 Audit")
   }, signedProfile.isAdmin && {
     id: "settings",
-    label: "⚙ Settings"
+    label: tabLabel(tabsCfg, "settings", "⚙ Settings")
   }].filter(Boolean) : [];
   const [tab, setTab] = useState("dashboard");
   useEffect(() => {
@@ -9561,6 +9676,7 @@ function App() {
     labs: labs,
     notify: notify
   }), tab === "audit" && signedProfile.isAdmin && /*#__PURE__*/React.createElement(AuditTab, {
+    profile: signedProfile,
     notify: notify
   }), tab === "settings" && signedProfile.isAdmin && /*#__PURE__*/React.createElement(SettingsTab, {
     profile: signedProfile,
