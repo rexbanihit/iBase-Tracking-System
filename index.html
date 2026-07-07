@@ -2052,6 +2052,7 @@ function LabsTab({
     } catch (e) {}
   }, [view]);
   const [instF, setInstF] = useState("");
+  const [wiping, setWiping] = useState(false);
   const [brandF, setBrandF] = useState("");
   const [flagF, setFlagF] = useState("");
   const [tSort, setTSort] = useState({
@@ -2236,7 +2237,34 @@ function LabsTab({
       marginLeft: "auto"
     },
     onClick: () => setAdding(true)
-  }, "+ New Laboratory")), view === "table" && /*#__PURE__*/React.createElement("div", {
+  }, "+ New Laboratory"), isOwnerAcct(profile) && labs.length > 0 && /*#__PURE__*/React.createElement("button", {
+    title: "Owner only: move EVERY laboratory (with all machines & visits) to the Bin — each one stays individually restorable",
+    style: btnSt("#3a1d1d", "#fca5a5"),
+    disabled: wiping,
+    onClick: async () => {
+      const nM = labs.reduce((s, l) => s + (l.machines || []).length, 0);
+      if (!confirm("⚠️ Move ALL " + labs.length + " laboratories (with their " + nM + " machine record(s) and every visit) to the Bin?\n\nEach laboratory becomes a separate Bin entry you can restore one by one.")) return;
+      if (!confirm("FINAL confirmation — this clears the entire Institutions tab. Continue?")) return;
+      setWiping(true);
+      let done = 0,
+        failed = 0;
+      for (const l of labs) {
+        try {
+          await binIt("lab", l.name, {
+            ...l
+          }, profile.email);
+          await db.collection("labs").doc(l.id).delete();
+          done++;
+        } catch (e) {
+          failed++;
+          notify("\"" + l.name + "\" refused: " + e.message, "error");
+        }
+      }
+      logAudit(profile, "labs.deleteALL", done + " laborator" + (done === 1 ? "y" : "ies") + " → Bin" + (failed ? " (" + failed + " failed)" : ""));
+      notify("🗑 " + done + " laborator" + (done === 1 ? "y" : "ies") + " moved to the Bin." + (failed ? " " + failed + " failed." : ""), failed ? "error" : "bin");
+      setWiping(false);
+    }
+  }, wiping ? "Moving to Bin…" : "🗑 Delete ALL laboratories")), view === "table" && /*#__PURE__*/React.createElement("div", {
     style: {
       ...cardSt,
       overflowX: "auto"
@@ -4655,6 +4683,7 @@ function BinTab({
   labs,
   notify
 }) {
+  const [emptying, setEmptying] = useState(false);
   const entries = useCol("bin", true, notify);
   const KIND_META = {
     lab: {
@@ -4790,11 +4819,41 @@ function BinTab({
     }
   }, "🗑 Bin (", sorted.length, ")"), /*#__PURE__*/React.createElement("div", {
     style: {
+      display: "flex",
+      alignItems: "center",
+      gap: 10,
+      marginBottom: 14,
+      flexWrap: "wrap"
+    }
+  }, /*#__PURE__*/React.createElement("div", {
+    style: {
       fontSize: 11.5,
       color: "var(--c-text5)",
-      marginBottom: 14
+      flex: 1,
+      minWidth: 220
     }
-  }, "Everything deleted anywhere in iBase lands here first. Restore puts it back where it came from; Delete forever removes it permanently."), /*#__PURE__*/React.createElement("table", {
+  }, "Everything deleted anywhere in iBase lands here first. Restore puts it back where it came from; Delete forever removes it permanently."), entries.length > 0 && /*#__PURE__*/React.createElement("button", {
+    style: btnSt("#3a1d1d", "#fca5a5"),
+    disabled: emptying,
+    onClick: async () => {
+      if (!confirm("⚠️ Permanently delete ALL " + entries.length + " item(s) in the Bin?\n\nThis cannot be undone — nothing here will be restorable afterwards.")) return;
+      if (!confirm("FINAL confirmation — empty the Bin forever?")) return;
+      setEmptying(true);
+      let done = 0,
+        failed = 0;
+      for (const e of entries) {
+        try {
+          await db.collection("bin").doc(e.id).delete();
+          done++;
+        } catch (err) {
+          failed++;
+        }
+      }
+      logAudit(profile, "bin.emptyALL", done + " item(s) permanently deleted" + (failed ? " (" + failed + " failed)" : ""));
+      notify(failed ? done + " deleted, " + failed + " refused." : "🗑 Bin emptied — " + done + " item(s) permanently deleted.", failed ? "error" : "bin");
+      setEmptying(false);
+    }
+  }, emptying ? "Emptying…" : "🗑 Delete ALL forever (" + entries.length + ")")), /*#__PURE__*/React.createElement("table", {
     style: {
       width: "100%",
       borderCollapse: "collapse"
@@ -5956,6 +6015,7 @@ function VisitsTab({
   });
   const [selected, setSelected] = useState({});
   const [rowHeights, setRowHeights] = useState({}); // per-row Excel-style overrides
+  const [bulkBusy, setBulkBusy] = useState(false);
   const [limit, setLimit] = useState(200); // rows shown; expandable to ALL
   const dragCol = useRef(null);
   const all = useMemo(() => labs.flatMap(l => (l.machines || []).flatMap(m => (m.visits || []).map(v => ({
@@ -6361,11 +6421,82 @@ function VisitsTab({
     }
   }, /*#__PURE__*/React.createElement("div", {
     style: {
-      fontSize: 11.5,
-      color: "var(--c-text4)",
-      marginBottom: 8
+      display: "flex",
+      alignItems: "center",
+      gap: 10,
+      marginBottom: 8,
+      flexWrap: "wrap"
     }
-  }, shown.length, " of ", all.length, " visit(s) · ", labs.reduce((s, l) => s + (l.machines || []).length, 0), " machine(s) across ", labs.length, " laborator", labs.length === 1 ? "y" : "ies", selCount ? " · " + selCount + " highlighted" : ""), /*#__PURE__*/React.createElement("table", {
+  }, /*#__PURE__*/React.createElement("div", {
+    style: {
+      fontSize: 11.5,
+      color: "var(--c-text4)"
+    }
+  }, shown.length, " of ", all.length, " visit(s) · ", labs.reduce((s, l) => s + (l.machines || []).length, 0), " machine(s) across ", labs.length, " laborator", labs.length === 1 ? "y" : "ies", selCount ? " · " + selCount + " highlighted" : ""), canEditLabs && selCount > 0 && /*#__PURE__*/React.createElement("button", {
+    style: {
+      ...btnSt("#3a1d1d", "#fca5a5"),
+      marginLeft: "auto"
+    },
+    disabled: bulkBusy,
+    onClick: async () => {
+      const picked = shown.filter((v, i) => selected[v.id || v._mId + "-" + i]);
+      if (!picked.length) return;
+      if (!confirm("Move the " + picked.length + " highlighted visit(s) to the Bin?\nEach one stays individually restorable.")) return;
+      setBulkBusy(true);
+      const byLab = {};
+      picked.forEach(v => (byLab[v._labId] = byLab[v._labId] || []).push(v));
+      let done = 0,
+        failed = 0;
+      for (const labId of Object.keys(byLab)) {
+        const lab = labs.find(l => l.id === labId);
+        if (!lab) {
+          failed += byLab[labId].length;
+          continue;
+        }
+        let binned = [];
+        for (const v of byLab[labId]) {
+          try {
+            await binIt("visit", (v.type || "Visit") + " " + fmtDate(v.date) + " · " + v._machine + " @ " + v._lab, {
+              labId: lab.id,
+              labName: lab.name,
+              machineId: v._mId,
+              visit: (({
+                _labId,
+                _lab,
+                _mId,
+                _machine,
+                _sn,
+                _brand,
+                ...rest
+              }) => rest)(v)
+            }, profile.email);
+            binned.push(v);
+          } catch (e) {
+            failed++;
+          }
+        }
+        if (!binned.length) continue;
+        try {
+          const ids = {};
+          binned.forEach(v => (ids[v._mId] = ids[v._mId] || {})[v.id] = true);
+          const machines = (lab.machines || []).map(m => ids[m.id] ? {
+            ...m,
+            visits: (m.visits || []).filter(x => !ids[m.id][x.id])
+          } : m);
+          await db.collection("labs").doc(lab.id).update({
+            machines
+          });
+          done += binned.length;
+        } catch (e) {
+          failed += binned.length;
+        }
+      }
+      logAudit(profile, "visit.deleteBulk", done + " visit(s) → Bin" + (failed ? " (" + failed + " failed)" : ""));
+      notify(failed ? done + " moved, " + failed + " failed." : "🗑 " + done + " visit(s) moved to the Bin.", failed ? "error" : "bin");
+      setSelected({});
+      setBulkBusy(false);
+    }
+  }, bulkBusy ? "Moving…" : "🗑 Delete selected (" + selCount + ") → Bin")), /*#__PURE__*/React.createElement("table", {
     className: "ibzv",
     style: {
       borderCollapse: "collapse",
