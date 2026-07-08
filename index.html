@@ -4656,6 +4656,8 @@ function BinTab({
   notify
 }) {
   const [emptying, setEmptying] = useState(false);
+  const [bulkBusy, setBulkBusy] = useState(false);
+  const [sel, setSel] = useState({});
   const entries = useCol("bin", true, notify);
   const KIND_META = {
     lab: {
@@ -4688,115 +4690,148 @@ function BinTab({
     }
   };
   const sorted = entries.slice().sort((a, b) => String(b.deletedAt || "").localeCompare(String(a.deletedAt || "")));
+
+  // Core restore against a LIVE working copy of labs (ctx.labs) so that a bulk
+  // restore can bring back a laboratory and, in the same run, put its machines,
+  // visits and logs into it — even though the on-screen state hasn't refreshed.
+  async function restoreCore(e, ctx) {
+    const findLab = () => ctx.labs.find(l => l.id === e.payload.labId) || ctx.labs.find(l => labNameNorm(l.name) === labNameNorm(e.payload.labName));
+    let warn = "";
+    if (e.kind === "logs") {
+      const lab = findLab();
+      if (!lab) throw new Error("The laboratory \"" + e.payload.labName + "\" no longer exists — restore the laboratory first, then its logs.");
+      const bm = e.payload.byMachine || {};
+      let missing = 0;
+      const machines = (lab.machines || []).map(m => {
+        if (!bm[m.id]) return m;
+        const have = {};
+        (m.visits || []).forEach(v => {
+          if (v.id) have[v.id] = 1;
+        });
+        const add = (bm[m.id].visits || []).filter(v => !v.id || !have[v.id]);
+        return {
+          ...m,
+          visits: [...(m.visits || []), ...add]
+        };
+      });
+      Object.keys(bm).forEach(id => {
+        if (!(lab.machines || []).some(m => m.id === id)) missing++;
+      });
+      await db.collection("labs").doc(lab.id).update({
+        machines
+      });
+      lab.machines = machines;
+      if (missing) warn = missing + " machine(s) no longer exist — their visits were skipped.";
+    } else if (e.kind === "lab") {
+      const dup = ctx.labs.find(l => labNameNorm(l.name) === labNameNorm(e.payload.name));
+      if (dup) throw new Error("A laboratory named \"" + dup.name + "\" already exists — rename or delete it first.");
+      const {
+        id,
+        ...data
+      } = e.payload;
+      const ref = await db.collection("labs").add(data);
+      ctx.labs.push({
+        id: ref.id,
+        ...JSON.parse(JSON.stringify(data))
+      });
+    } else if (e.kind === "machine") {
+      const lab = findLab();
+      if (!lab) throw new Error("The laboratory \"" + e.payload.labName + "\" no longer exists — restore the laboratory first, then this machine.");
+      const machines = [...(lab.machines || []), e.payload.machine];
+      await db.collection("labs").doc(lab.id).update({
+        machines
+      });
+      lab.machines = machines;
+    } else if (e.kind === "visit") {
+      const lab = findLab();
+      if (!lab) throw new Error("The laboratory \"" + e.payload.labName + "\" no longer exists — restore it first.");
+      const m = (lab.machines || []).find(x => x.id === e.payload.machineId);
+      if (!m) throw new Error("The machine this visit belonged to no longer exists — restore the machine first.");
+      const machines = (lab.machines || []).map(x => x.id === m.id ? {
+        ...x,
+        visits: [...(x.visits || []), e.payload.visit]
+      } : x);
+      await db.collection("labs").doc(lab.id).update({
+        machines
+      });
+      lab.machines = machines;
+    } else if (e.kind === "inventory") {
+      const {
+        id,
+        ...data
+      } = e.payload;
+      await db.collection("inventory").add(data);
+    } else if (e.kind === "sparePart") {
+      const {
+        id,
+        ...data
+      } = e.payload;
+      await db.collection("spareParts").add(data);
+    } else if (e.kind === "user") {
+      const {
+        id,
+        ...data
+      } = e.payload;
+      if (!id) throw new Error("This user entry has no UID — cannot restore.");
+      await db.collection("users").doc(id).set(data);
+    } else if (e.kind === "tab") {
+      const cur = (await db.doc("config/tabs").get()).data() || {};
+      const hidden = (cur.hidden || []).filter(t => t !== e.payload.tabId);
+      await db.doc("config/tabs").set({
+        ...cur,
+        hidden
+      }, {
+        merge: true
+      });
+    } else throw new Error("Unknown bin entry kind: " + e.kind);
+    await db.collection("bin").doc(e.id).delete();
+    return warn;
+  }
+  const mkCtx = () => ({
+    labs: labs.map(l => ({
+      ...l
+    }))
+  });
+  // Restore order: laboratories first, then machines, then log bundles, then
+  // single visits, then everything else — so dependencies always exist in time.
+  const RESTORE_ORDER = {
+    lab: 0,
+    machine: 1,
+    logs: 2,
+    visit: 3
+  };
   async function restore(e) {
     try {
-      if (e.kind === "logs") {
-        const lab = labs.find(l => l.id === e.payload.labId) || labs.find(l => labNameNorm(l.name) === labNameNorm(e.payload.labName));
-        if (!lab) {
-          notify("The laboratory \"" + e.payload.labName + "\" no longer exists — restore the laboratory first, then its logs.", "error");
-          return;
-        }
-        const bm = e.payload.byMachine || {};
-        let restoredN = 0,
-          missing = 0;
-        const machines = (lab.machines || []).map(m => {
-          if (!bm[m.id]) return m;
-          const have = {};
-          (m.visits || []).forEach(v => {
-            if (v.id) have[v.id] = 1;
-          });
-          const add = (bm[m.id].visits || []).filter(v => !v.id || !have[v.id]);
-          restoredN += add.length;
-          return {
-            ...m,
-            visits: [...(m.visits || []), ...add]
-          };
-        });
-        Object.keys(bm).forEach(id => {
-          if (!(lab.machines || []).some(m => m.id === id)) missing++;
-        });
-        await db.collection("labs").doc(lab.id).update({
-          machines
-        });
-        if (missing) notify(missing + " machine(s) from this entry no longer exist — their visits were skipped.", "error");
-      } else if (e.kind === "lab") {
-        const dup = labs.find(l => labNameNorm(l.name) === labNameNorm(e.payload.name));
-        if (dup) {
-          notify("A laboratory named \"" + dup.name + "\" already exists — rename or delete it first.", "error");
-          return;
-        }
-        const {
-          id,
-          ...data
-        } = e.payload;
-        await db.collection("labs").add(data);
-      } else if (e.kind === "machine") {
-        const lab = labs.find(l => l.id === e.payload.labId) || labs.find(l => labNameNorm(l.name) === labNameNorm(e.payload.labName));
-        if (!lab) {
-          notify("The laboratory \"" + e.payload.labName + "\" no longer exists — restore the laboratory first, then this machine.", "error");
-          return;
-        }
-        await db.collection("labs").doc(lab.id).update({
-          machines: [...(lab.machines || []), e.payload.machine]
-        });
-      } else if (e.kind === "visit") {
-        const lab = labs.find(l => l.id === e.payload.labId) || labs.find(l => labNameNorm(l.name) === labNameNorm(e.payload.labName));
-        if (!lab) {
-          notify("The laboratory \"" + e.payload.labName + "\" no longer exists — restore it first.", "error");
-          return;
-        }
-        const m = (lab.machines || []).find(x => x.id === e.payload.machineId);
-        if (!m) {
-          notify("The machine this visit belonged to no longer exists — restore the machine first.", "error");
-          return;
-        }
-        await db.collection("labs").doc(lab.id).update({
-          machines: (lab.machines || []).map(x => x.id === m.id ? {
-            ...x,
-            visits: [...(x.visits || []), e.payload.visit]
-          } : x)
-        });
-      } else if (e.kind === "inventory") {
-        const {
-          id,
-          ...data
-        } = e.payload;
-        await db.collection("inventory").add(data);
-      } else if (e.kind === "sparePart") {
-        const {
-          id,
-          ...data
-        } = e.payload;
-        await db.collection("spareParts").add(data);
-      } else if (e.kind === "user") {
-        const {
-          id,
-          ...data
-        } = e.payload;
-        if (!id) {
-          notify("This user entry has no UID — cannot restore.", "error");
-          return;
-        }
-        await db.collection("users").doc(id).set(data);
-      } else if (e.kind === "tab") {
-        const cur = (await db.doc("config/tabs").get()).data() || {};
-        const hidden = (cur.hidden || []).filter(t => t !== e.payload.tabId);
-        await db.doc("config/tabs").set({
-          ...cur,
-          hidden
-        }, {
-          merge: true
-        });
-      } else {
-        notify("Unknown bin entry kind: " + e.kind, "error");
-        return;
-      }
-      await db.collection("bin").doc(e.id).delete();
+      const warn = await restoreCore(e, mkCtx());
       logAudit(profile, "restore." + e.kind, e.label || "");
       notify("Restored: " + (e.label || e.kind), "ok");
+      if (warn) notify(warn, "error");
     } catch (err) {
       notify("Restore refused: " + err.message, "error");
     }
+  }
+  async function restoreMany(list) {
+    if (!list.length) return;
+    if (!confirm("↩ Restore " + list.length + " item(s) from the Bin?\nLaboratories are restored first, then machines, then logs and visits — so related items in this batch land correctly.")) return;
+    setBulkBusy(true);
+    const ordered = [...list].sort((a, b) => (RESTORE_ORDER[a.kind] != null ? RESTORE_ORDER[a.kind] : 9) - (RESTORE_ORDER[b.kind] != null ? RESTORE_ORDER[b.kind] : 9) || String(a.deletedAt || "").localeCompare(String(b.deletedAt || "")));
+    const ctx = mkCtx();
+    let done = 0;
+    const fails = [];
+    const warns = [];
+    for (const e of ordered) {
+      try {
+        const w = await restoreCore(e, ctx);
+        done++;
+        if (w) warns.push(w);
+      } catch (err) {
+        fails.push((e.label || e.kind) + ": " + err.message);
+      }
+    }
+    logAudit(profile, "restore.bulk", done + " of " + ordered.length + " restored" + (fails.length ? " (" + fails.length + " failed)" : ""));
+    notify((fails.length ? "↩ Restored " + done + " of " + ordered.length + ". Failed: " + fails.slice(0, 3).join(" | ") + (fails.length > 3 ? " …" : "") : "↩ Restored all " + done + " item(s).") + (warns.length ? " " + warns[0] : ""), fails.length ? "error" : "ok");
+    setSel({});
+    setBulkBusy(false);
   }
   async function purge(e) {
     if (!confirm("PERMANENTLY delete \"" + (e.label || e.kind) + "\"? This cannot be undone.")) return;
@@ -4833,9 +4868,36 @@ function BinTab({
       flex: 1,
       minWidth: 220
     }
-  }, "Everything deleted anywhere in iBase lands here first. Restore puts it back where it came from; Delete forever removes it permanently."), entries.length > 0 && /*#__PURE__*/React.createElement("button", {
+  }, "Everything deleted anywhere in iBase lands here first. Restore puts it back where it came from; Delete forever removes it permanently."), entries.length > 0 && /*#__PURE__*/React.createElement("label", {
+    style: {
+      display: "flex",
+      alignItems: "center",
+      gap: 6,
+      fontSize: 12,
+      cursor: "pointer",
+      fontWeight: 700,
+      color: "var(--c-text3)"
+    }
+  }, /*#__PURE__*/React.createElement("input", {
+    type: "checkbox",
+    checked: sorted.length > 0 && sorted.every(e => sel[e.id]),
+    onChange: ev => {
+      const on = ev.target.checked;
+      const n = {};
+      if (on) sorted.forEach(e => n[e.id] = true);
+      setSel(n);
+    }
+  }), "Select all"), Object.values(sel).filter(Boolean).length > 0 && /*#__PURE__*/React.createElement("button", {
+    style: btnSt("#10b981", "#fff"),
+    disabled: bulkBusy || emptying,
+    onClick: () => restoreMany(sorted.filter(e => sel[e.id]))
+  }, bulkBusy ? "Restoring…" : "↩ Restore selected (" + Object.values(sel).filter(Boolean).length + ")"), entries.length > 0 && /*#__PURE__*/React.createElement("button", {
+    style: btnSt("var(--c-border)", "#10b981"),
+    disabled: bulkBusy || emptying,
+    onClick: () => restoreMany(sorted)
+  }, bulkBusy ? "Restoring…" : "↩ Restore ALL (" + sorted.length + ")"), entries.length > 0 && /*#__PURE__*/React.createElement("button", {
     style: btnSt("#3a1d1d", "#fca5a5"),
-    disabled: emptying,
+    disabled: emptying || bulkBusy,
     onClick: async () => {
       if (!confirm("⚠️ Permanently delete ALL " + entries.length + " item(s) in the Bin?\n\nThis cannot be undone — nothing here will be restorable afterwards.")) return;
       if (!confirm("FINAL confirmation — empty the Bin forever?")) return;
@@ -4868,13 +4930,27 @@ function BinTab({
       name: e.kind
     };
     return /*#__PURE__*/React.createElement("tr", {
-      key: e.id
+      key: e.id,
+      style: sel[e.id] ? {
+        background: "rgba(16,185,129,.08)"
+      } : undefined
     }, /*#__PURE__*/React.createElement("td", {
       style: {
         ...tdSt,
         whiteSpace: "nowrap"
       }
-    }, m.icon, " ", m.name), /*#__PURE__*/React.createElement("td", {
+    }, /*#__PURE__*/React.createElement("input", {
+      type: "checkbox",
+      checked: !!sel[e.id],
+      onChange: ev => setSel(s => ({
+        ...s,
+        [e.id]: ev.target.checked
+      })),
+      style: {
+        marginRight: 8,
+        cursor: "pointer"
+      }
+    }), m.icon, " ", m.name), /*#__PURE__*/React.createElement("td", {
       style: {
         ...tdSt,
         fontWeight: 600
@@ -8927,19 +9003,28 @@ function DangerZone({
 }) {
   const [busyL, setBusyL] = useState(false);
   const [busyV, setBusyV] = useState(false);
-  const nVisits = labs.reduce((s, l) => s + (l.machines || []).reduce((a, m) => a + (m.visits || []).length, 0), 0);
+  // Selection: delete EVERYTHING or only the laboratories you tick below.
+  const [sel, setSel] = useState({});
+  const [open, setOpen] = useState(false);
+  const targets = labs.filter(l => sel[l.id]);
+  const allTicked = labs.length > 0 && targets.length === labs.length;
+  const labVisits = l => (l.machines || []).reduce((a, m) => a + (m.visits || []).length, 0);
+  const tVisits = targets.reduce((s, l) => s + labVisits(l), 0);
+  const tMachines = targets.reduce((s, l) => s + (l.machines || []).length, 0);
+  const nVisits = labs.reduce((s, l) => s + labVisits(l), 0);
   const nMachines = labs.reduce((s, l) => s + (l.machines || []).length, 0);
   async function deleteAllLabs() {
-    if (!labs.length) {
-      notify("There are no laboratories to delete.", "error");
+    if (!targets.length) {
+      notify("Tick at least one laboratory below (or Select all).", "error");
       return;
     }
-    if (!confirm("⚠️ Move ALL " + labs.length + " laboratories (with " + nMachines + " machine record(s) and " + nVisits + " visit(s)) to the Bin?\n\nEach laboratory becomes its own Bin entry, restorable one by one.")) return;
-    if (!confirm("FINAL confirmation — this clears the entire Institutions tab. Continue?")) return;
+    const names = targets.length <= 5 ? "\n• " + targets.map(l => l.name).join("\n• ") : "";
+    if (!confirm("⚠️ Move " + (allTicked ? "ALL " : "") + targets.length + " laborator" + (targets.length === 1 ? "y" : "ies") + " (with " + tMachines + " machine record(s) and " + tVisits + " visit(s)) to the Bin?" + names + "\n\nEach laboratory becomes its own Bin entry, restorable one by one.")) return;
+    if (!confirm("FINAL confirmation — continue?")) return;
     setBusyL(true);
     let done = 0,
       failed = 0;
-    for (const l of labs) {
+    for (const l of targets) {
       try {
         await binIt("lab", l.name, {
           ...l
@@ -8956,16 +9041,21 @@ function DangerZone({
     setBusyL(false);
   }
   async function deleteAllLogs() {
-    if (!nVisits) {
-      notify("There are no visits/logs to delete.", "error");
+    if (!targets.length) {
+      notify("Tick at least one laboratory below (or Select all).", "error");
       return;
     }
-    if (!confirm("⚠️ Move ALL " + nVisits + " visit log(s) to the Bin?\n\nLaboratories and machines stay in place — only their visit history is cleared. Each laboratory's logs become ONE restorable Bin entry.")) return;
-    if (!confirm("FINAL confirmation — clear every visit log in the system?")) return;
+    if (!tVisits) {
+      notify("The selected laborator" + (targets.length === 1 ? "y has" : "ies have") + " no visit logs.", "error");
+      return;
+    }
+    const names = targets.length <= 5 ? "\n• " + targets.map(l => l.name).join("\n• ") : "";
+    if (!confirm("⚠️ Move the " + tVisits + " visit log(s) of " + (allTicked ? "ALL " : "") + targets.length + " laborator" + (targets.length === 1 ? "y" : "ies") + " to the Bin?" + names + "\n\nLaboratories and machines stay in place — only their visit history is cleared. Each laboratory's logs become ONE restorable Bin entry.")) return;
+    if (!confirm("FINAL confirmation — continue?")) return;
     setBusyV(true);
     let done = 0,
       failed = 0;
-    for (const l of labs) {
+    for (const l of targets) {
       const byMachine = {};
       (l.machines || []).forEach(m => {
         if ((m.visits || []).length) byMachine[m.id] = {
@@ -9017,7 +9107,77 @@ function DangerZone({
       color: "var(--c-text5)",
       marginBottom: 12
     }
-  }, "Mass deletions. Nothing is destroyed outright — everything lands in the Bin and can be restored (laboratories one by one; logs one entry per laboratory). Take a ⬇ Download first."), /*#__PURE__*/React.createElement("div", {
+  }, "Mass deletions — everything for ALL laboratories, or only the ones you tick. Nothing is destroyed outright: it all lands in the Bin, restorable (laboratories one by one; logs one entry per laboratory). Take a ⬇ Download first. System total: ", labs.length, " lab(s) · ", nMachines, " machine(s) · ", nVisits, " visit(s)."), /*#__PURE__*/React.createElement("div", {
+    style: {
+      display: "flex",
+      gap: 8,
+      alignItems: "center",
+      flexWrap: "wrap",
+      marginBottom: 10
+    }
+  }, /*#__PURE__*/React.createElement("button", {
+    style: btnSt("var(--c-border)", "var(--c-text2)"),
+    onClick: () => setOpen(o => !o)
+  }, open ? "▲ Hide list" : "▼ Choose laboratories", " ", targets.length ? "· " + targets.length + " selected" : ""), /*#__PURE__*/React.createElement("label", {
+    style: {
+      display: "flex",
+      alignItems: "center",
+      gap: 6,
+      fontSize: 12,
+      cursor: "pointer",
+      fontWeight: 700,
+      color: "var(--c-text3)"
+    }
+  }, /*#__PURE__*/React.createElement("input", {
+    type: "checkbox",
+    checked: allTicked,
+    onChange: e => {
+      const n = {};
+      if (e.target.checked) labs.forEach(l => n[l.id] = true);
+      setSel(n);
+    }
+  }), "Select all (", labs.length, ")")), open && /*#__PURE__*/React.createElement("div", {
+    style: {
+      maxHeight: 180,
+      overflowY: "auto",
+      border: "1px solid var(--c-border)",
+      borderRadius: 10,
+      padding: "8px 12px",
+      marginBottom: 10
+    }
+  }, sortAlpha(labs, l => l.name).map(l => /*#__PURE__*/React.createElement("label", {
+    key: l.id,
+    style: {
+      display: "flex",
+      alignItems: "center",
+      gap: 8,
+      fontSize: 12,
+      padding: "3px 0",
+      cursor: "pointer"
+    }
+  }, /*#__PURE__*/React.createElement("input", {
+    type: "checkbox",
+    checked: !!sel[l.id],
+    onChange: e => setSel(s => ({
+      ...s,
+      [l.id]: e.target.checked
+    }))
+  }), /*#__PURE__*/React.createElement("span", {
+    style: {
+      fontWeight: 600
+    }
+  }, l.name), /*#__PURE__*/React.createElement("span", {
+    style: {
+      marginLeft: "auto",
+      color: "var(--c-text5)",
+      fontSize: 11
+    }
+  }, (l.machines || []).length, " machine(s) · ", labVisits(l), " visit(s)"))), labs.length === 0 && /*#__PURE__*/React.createElement("div", {
+    style: {
+      fontSize: 12,
+      color: "var(--c-text4)"
+    }
+  }, "No laboratories in the system.")), /*#__PURE__*/React.createElement("div", {
     style: {
       display: "flex",
       gap: 10,
@@ -9025,13 +9185,13 @@ function DangerZone({
     }
   }, /*#__PURE__*/React.createElement("button", {
     style: btnSt("#3a1d1d", "#fca5a5"),
-    disabled: busyL || busyV,
+    disabled: busyL || busyV || !targets.length,
     onClick: deleteAllLabs
-  }, busyL ? "Moving…" : "🗑 Delete all laboratories (" + labs.length + ")"), /*#__PURE__*/React.createElement("button", {
+  }, busyL ? "Moving…" : "🗑 Delete " + (allTicked ? "ALL" : "selected") + " laboratories (" + targets.length + ")"), /*#__PURE__*/React.createElement("button", {
     style: btnSt("#3a1d1d", "#fca5a5"),
-    disabled: busyL || busyV,
+    disabled: busyL || busyV || !targets.length,
     onClick: deleteAllLogs
-  }, busyV ? "Moving…" : "🗑 Delete all logs (" + nVisits + " visits)")));
+  }, busyV ? "Moving…" : "🗑 Delete " + (allTicked ? "ALL" : "selected") + " logs (" + tVisits + " visits)")));
 }
 function SettingsTab({
   profile,
