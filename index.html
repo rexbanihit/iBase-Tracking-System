@@ -906,7 +906,21 @@ function CosmicLoginBG({
       mouse.active = true;
       mouse.moved = performance.now();
     }
+    function isExempt(e) {
+      var t = e.target;
+      if (!t) return false;
+      var tag = t.tagName ? t.tagName.toUpperCase() : "";
+      if (tag === "INPUT" || tag === "BUTTON" || tag === "SELECT" || tag === "TEXTAREA" || tag === "LABEL" || tag === "A" || tag === "OPTION") return true;
+      var el = t;
+      while (el && el !== document.body) {
+        if (el.dataset && el.dataset.cosmicExempt) return true;
+        if (el.getAttribute && el.getAttribute("role") === "button") return true;
+        el = el.parentElement;
+      }
+      return false;
+    }
     function onDown(e) {
+      if (isExempt(e)) return;
       var r = canvas.getBoundingClientRect();
       var x = e.clientX - r.left,
         y = e.clientY - r.top;
@@ -918,10 +932,10 @@ function CosmicLoginBG({
         si: myCol2 ? spriteFor(myCol2) : null
       });
       if (attractors.length > 8) attractors.shift();
-      if (!reduce) spawn(x, y, 26, 2.2, myCol2 ? spriteFor(myCol2) : null); // click burst in my color
+      if (!reduce) spawn(x, y, 26, 2.2, myCol2 ? spriteFor(myCol2) : null);
       if (W > 0 && H > 0) {
-        chainPush("me", x / W, y / H, myCol2 || "#38bdf8"); // my own constellation
-        if (onLocalClick) onLocalClick(x / W, y / H); // broadcast to all viewers
+        chainPush("me", x / W, y / H, myCol2 || "#38bdf8");
+        if (onLocalClick) onLocalClick(x / W, y / H);
       }
     }
     function onCtx(e) {
@@ -1352,6 +1366,7 @@ function ViewersPill({
   if (!presence.enabled) return null;
   const list = Object.entries(presence.viewers);
   return /*#__PURE__*/React.createElement("div", {
+    "data-cosmic-exempt": "1",
     style: {
       position: "relative"
     },
@@ -2022,6 +2037,7 @@ function Login({
     remoteClicksRef: remoteClicksRef,
     onLocalClick: presence && presence.sendClick
   }), /*#__PURE__*/React.createElement("div", {
+    "data-cosmic-exempt": "1",
     style: {
       position: "fixed",
       top: 14,
@@ -2048,6 +2064,7 @@ function Login({
       padding: "16px"
     }
   }, /*#__PURE__*/React.createElement("div", {
+    "data-cosmic-exempt": "1",
     style: {
       width: "100%",
       maxWidth: 360
