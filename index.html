@@ -710,6 +710,22 @@ function CosmicLoginBG({
       moved: 0
     };
     var attractors = [];
+    var chains = {}; // id -> { color, pts:[{x,y,born}] }  (normalized coords)
+    var CHAIN_TTL = 22000,
+      CHAIN_MAX = 14;
+    function chainPush(id, nx, ny, color) {
+      var ch = chains[id] || (chains[id] = {
+        color: color,
+        pts: []
+      });
+      ch.color = color || ch.color;
+      ch.pts.push({
+        x: nx,
+        y: ny,
+        born: performance.now()
+      });
+      if (ch.pts.length > CHAIN_MAX) ch.pts.shift();
+    }
     function spawn(x, y, n, spread, si) {
       for (var i = 0; i < n; i++) {
         if (particles.length >= MAX) particles.shift();
@@ -787,9 +803,45 @@ function CosmicLoginBG({
           });
           if (!reduce) spawn(rc.x * W, rc.y * H, 26, 2.2, spriteFor(rc.color || "#38bdf8"));
           if (attractors.length > 8) attractors.shift();
+          chainPush(rc.id || "peer", rc.x, rc.y, rc.color || "#38bdf8");
         }
       }
       for (var ai = attractors.length - 1; ai >= 0; ai--) if (now - attractors[ai].born > 9000) attractors.splice(ai, 1);
+
+      // ── constellation lines: each viewer's clicks joined 1st→2nd→3rd… ──
+      ctx.globalCompositeOperation = "lighter";
+      ctx.lineCap = "round";
+      for (var ck in chains) {
+        var ch = chains[ck];
+        // expire old points from the front
+        while (ch.pts.length && now - ch.pts[0].born > CHAIN_TTL) ch.pts.shift();
+        if (!ch.pts.length) {
+          delete chains[ck];
+          continue;
+        }
+        for (var si2 = 1; si2 < ch.pts.length; si2++) {
+          var A = ch.pts[si2 - 1],
+            B = ch.pts[si2];
+          var segAge = (now - B.born) / CHAIN_TTL;
+          ctx.globalAlpha = Math.max(0, 0.55 * (1 - segAge));
+          ctx.strokeStyle = ch.color;
+          ctx.lineWidth = 1.6;
+          ctx.beginPath();
+          ctx.moveTo(A.x * W, A.y * H);
+          ctx.lineTo(B.x * W, B.y * H);
+          ctx.stroke();
+        }
+        // small node dots at each click point
+        for (var di = 0; di < ch.pts.length; di++) {
+          var Pn = ch.pts[di];
+          ctx.globalAlpha = Math.max(0, 0.8 * (1 - (now - Pn.born) / CHAIN_TTL));
+          ctx.fillStyle = ch.color;
+          ctx.beginPath();
+          ctx.arc(Pn.x * W, Pn.y * H, 2.2, 0, 6.2832);
+          ctx.fill();
+        }
+      }
+      ctx.globalAlpha = 1;
       ctx.globalCompositeOperation = additive ? "lighter" : "source-over";
       for (var i = particles.length - 1; i >= 0; i--) {
         var p = particles[i];
@@ -867,7 +919,16 @@ function CosmicLoginBG({
       });
       if (attractors.length > 8) attractors.shift();
       if (!reduce) spawn(x, y, 26, 2.2, myCol2 ? spriteFor(myCol2) : null); // click burst in my color
-      if (onLocalClick && W > 0 && H > 0) onLocalClick(x / W, y / H); // broadcast to all viewers
+      if (W > 0 && H > 0) {
+        chainPush("me", x / W, y / H, myCol2 || "#38bdf8"); // my own constellation
+        if (onLocalClick) onLocalClick(x / W, y / H); // broadcast to all viewers
+      }
+    }
+    function onCtx(e) {
+      // right-click joins the chain too
+      if (e.target === canvas) {
+        e.preventDefault();
+      }
     }
     var idle = setInterval(function () {
       if (performance.now() - mouse.moved > 600) mouse.active = false;
@@ -876,6 +937,7 @@ function CosmicLoginBG({
     window.addEventListener("resize", resize);
     window.addEventListener("mousemove", onMove);
     window.addEventListener("mousedown", onDown);
+    window.addEventListener("contextmenu", onCtx);
     raf = requestAnimationFrame(frame);
     return function () {
       cancelAnimationFrame(raf);
@@ -883,6 +945,7 @@ function CosmicLoginBG({
       window.removeEventListener("resize", resize);
       window.removeEventListener("mousemove", onMove);
       window.removeEventListener("mousedown", onDown);
+      window.removeEventListener("contextmenu", onCtx);
     };
   }, [theme]);
   return /*#__PURE__*/React.createElement("canvas", {
@@ -11936,6 +11999,7 @@ function App() {
       if (!fresh) return; // ignore stale clicks from before we joined
       const v = presence.viewers[id];
       remoteClicksRef.current.push({
+        id,
         x: k.x,
         y: k.y,
         color: v && v.color || "#38bdf8"
