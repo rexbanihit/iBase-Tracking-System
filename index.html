@@ -941,12 +941,31 @@ function slotColor(i) {
 // a race window; a transaction has none. Slots are freed on disconnect and
 // reused by the next visitor.
 async function claimColorSlot(maxTries) {
-  for (let i = 0; i < (maxTries || 64); i++) {
+  const N = maxTries || 64;
+  // Start probing at a RANDOM slot and avoid the slot used on the previous
+  // visit from this browser — so even a lone viewer gets a different color on
+  // every refresh. The transaction still guarantees no two live viewers can
+  // ever hold the same slot.
+  let lastSlot = -1;
+  try {
+    lastSlot = parseInt(localStorage.getItem("ibase_last_slot") || "-1", 10);
+  } catch (e) {}
+  const start = Math.floor(Math.random() * PRESENCE_COLORS.length);
+  const candidates = [];
+  for (let k = 0; k < N; k++) {
+    const idx = (start + k) % N;
+    if (idx !== lastSlot) candidates.push(idx);
+  }
+  if (lastSlot >= 0 && lastSlot < N) candidates.push(lastSlot); // last resort only
+  for (const i of candidates) {
     try {
       const res = await rtdb.ref("colorSlots/" + i).transaction(cur => cur === null ? SESSION_ID : undefined);
       if (res && res.committed && res.snapshot && res.snapshot.val() === SESSION_ID) {
         try {
           rtdb.ref("colorSlots/" + i).onDisconnect().remove();
+        } catch (e) {}
+        try {
+          localStorage.setItem("ibase_last_slot", String(i));
         } catch (e) {}
         return i;
       }
