@@ -5942,6 +5942,15 @@ function BinTab({
         ...data
       } = e.payload;
       await db.collection("spareParts").add(data);
+    } else if (e.kind === "cfgRole") {
+      const snapR = await db.doc("config/catalog").get();
+      const catR = snapR.data() || {};
+      const roles = Array.isArray(catR.roles) ? catR.roles : [];
+      if (!roles.some(x => String(x).toLowerCase() === String(e.payload.role).toLowerCase())) await db.doc("config/catalog").set({
+        roles: [...roles, e.payload.role]
+      }, {
+        merge: true
+      });
     } else if (e.kind === "cfgDept" || e.kind === "cfgEmployee" || e.kind === "cfgModel" || e.kind === "cfgBrand") {
       const snap = await db.doc("config/catalog").get();
       const cat = snap.data() || {};
@@ -5981,6 +5990,13 @@ function BinTab({
               deps.push(home);
             }
             home.employees = [...(home.employees || []), name];
+            if (e.payload.role) await db.doc("config/catalog").set({
+              empRoles: {
+                [name]: e.payload.role
+              }
+            }, {
+              merge: true
+            });
           }
         }
         await db.doc("config/catalog").set({
@@ -11330,6 +11346,53 @@ function SettingsTab({
   }] : [];
   const [ndDept, setNdDept] = useState("");
   const [neNames, setNeNames] = useState({});
+  // 🎖 job-title roles (registered in the Users sub-tab; shown on employee chips)
+  const empRoles = catalog && catalog.empRoles || {};
+  const jobRoles = catalog && Array.isArray(catalog.roles) ? catalog.roles : [];
+  const [newRole, setNewRole] = useState("");
+  const [selRoles, setSelRoles] = useState({});
+  async function saveRoles(list) {
+    const sorted = [...new Set(list.map(r => String(r).trim()).filter(Boolean))].sort((a, b) => a.localeCompare(b, undefined, {
+      sensitivity: "base"
+    }));
+    try {
+      await db.doc("config/catalog").set({
+        roles: sorted
+      }, {
+        merge: true
+      });
+      notify("Roles saved.", "ok");
+    } catch (e) {
+      notify("SERVER REFUSED:\n" + e.message, "error");
+    }
+  }
+  async function setEmpRole(name, role) {
+    try {
+      await db.doc("config/catalog").set({
+        empRoles: {
+          [name]: role || ""
+        }
+      }, {
+        merge: true
+      });
+    } catch (e) {
+      notify("SERVER REFUSED:\n" + e.message, "error");
+    }
+  }
+  async function delSelectedRoles() {
+    const rs = Object.keys(selRoles).filter(k => selRoles[k]);
+    if (!rs.length) return;
+    if (!confirm("Delete " + rs.length + " role(s)? Employees keep their assigned text until changed. Deleted roles go to the Bin.")) return;
+    if (!(await adminGuard(profile, notify, "Delete " + rs.length + " selected role(s)"))) return;
+    if (!isOwnerAcct(profile)) {
+      for (const r of rs) await binIt("cfgRole", "🎖 Role " + r, {
+        role: r
+      }, meEmail(profile));
+      cfgTrace(profile, "settings.delete", rs.length + " role(s) → Bin: " + rs.join(", "));
+    }
+    await saveRoles(jobRoles.filter(x => !rs.includes(x)));
+    setSelRoles({});
+  }
   const [selDeps, setSelDeps] = useState({});
   const [selEmps, setSelEmps] = useState({}); // key: dept + "‖" + name
   const [selBrands, setSelBrands] = useState({});
@@ -11355,9 +11418,10 @@ function SettingsTab({
           dept: d
         }, meEmail(profile));
       }
-      for (const e of emps) await binIt("cfgEmployee", "👤 Employee " + e.name + " (" + e.dept + ")", {
+      for (const e of emps) await binIt("cfgEmployee", "👤 Employee " + e.name + (empRoles[e.name] ? " — " + empRoles[e.name] : ""), {
         name: e.name,
-        dept: e.dept
+        dept: e.dept,
+        role: empRoles[e.name] || ""
       }, meEmail(profile));
       cfgTrace(profile, "settings.delete", depNames.length + " department(s), " + emps.length + " employee name(s) → Bin");
     }
@@ -11644,10 +11708,42 @@ function SettingsTab({
         ...x,
         employees: (x.employees || []).map(e => e === name ? nn.trim() : e)
       } : x));
+      if (empRoles[name]) {
+        try {
+          await db.doc("config/catalog").set({
+            empRoles: {
+              [name]: "",
+              [nn.trim()]: empRoles[name]
+            }
+          }, {
+            merge: true
+          });
+        } catch (e) {}
+      }
       cfgTrace(profile, "settings.rename", "employee “" + name + "” → “" + nn.trim() + "” (" + d.name + ")");
     }
   }, "✏️"), /*#__PURE__*/React.createElement("select", {
-    title: "Transfer to another department",
+    title: "Role in the company (register roles under the Users sub-tab)",
+    style: {
+      background: "transparent",
+      color: empRoles[name] ? "var(--c-text3)" : "var(--c-text5)",
+      border: "none",
+      fontSize: 10.5,
+      padding: 0,
+      cursor: "pointer",
+      maxWidth: 150
+    },
+    value: empRoles[name] || "",
+    onChange: e => setEmpRole(name, e.target.value)
+  }, /*#__PURE__*/React.createElement("option", {
+    value: ""
+  }, "— role —"), jobRoles.map(r => /*#__PURE__*/React.createElement("option", {
+    key: r,
+    value: r
+  }, r)), empRoles[name] && !jobRoles.includes(empRoles[name]) ? /*#__PURE__*/React.createElement("option", {
+    value: empRoles[name]
+  }, empRoles[name]) : null), /*#__PURE__*/React.createElement("select", {
+    title: "Move to another department",
     style: {
       background: "var(--c-bg)",
       color: "var(--c-text3)",
@@ -11655,11 +11751,16 @@ function SettingsTab({
       borderRadius: 6,
       fontSize: 10.5,
       padding: "1px 2px",
-      cursor: "pointer"
+      cursor: "pointer",
+      width: 26
     },
-    value: d.name,
-    onChange: e => transferEmp(name, d.name, e.target.value)
-  }, deps.map(x => /*#__PURE__*/React.createElement("option", {
+    value: "",
+    onChange: e => {
+      if (e.target.value) transferEmp(name, d.name, e.target.value);
+    }
+  }, /*#__PURE__*/React.createElement("option", {
+    value: ""
+  }, "⇄"), deps.filter(x => x.name !== d.name).map(x => /*#__PURE__*/React.createElement("option", {
     key: x.name,
     value: x.name
   }, x.name))))), (d.employees || []).length === 0 && /*#__PURE__*/React.createElement("span", {
@@ -11749,7 +11850,86 @@ function SettingsTab({
       }]);
       setNdDept("");
     }
-  }, "+ Add department")))), eff === "users" && /*#__PURE__*/React.createElement(React.Fragment, null, /*#__PURE__*/React.createElement(CreateUser, {
+  }, "+ Add department")))), eff === "users" && /*#__PURE__*/React.createElement(React.Fragment, null, /*#__PURE__*/React.createElement("div", {
+    style: cardSt
+  }, /*#__PURE__*/React.createElement("div", {
+    style: {
+      fontSize: 12,
+      fontWeight: 800,
+      color: "var(--c-text4)",
+      textTransform: "uppercase",
+      marginBottom: 10
+    }
+  }, "🎖 Employee Roles"), /*#__PURE__*/React.createElement("div", {
+    style: {
+      fontSize: 11.5,
+      color: "var(--c-text5)",
+      marginBottom: 12
+    }
+  }, "Register the company's roles here (e.g. Technical Head, Area Service Engineer, Field Service Engineer, Trainee). Registered roles become the picker on every employee chip under 👥 Employees."), /*#__PURE__*/React.createElement("div", {
+    style: {
+      display: "flex",
+      gap: 6,
+      flexWrap: "wrap",
+      marginBottom: 10
+    }
+  }, jobRoles.map(r => /*#__PURE__*/React.createElement("span", {
+    key: r,
+    style: {
+      fontSize: 12,
+      padding: "4px 10px",
+      borderRadius: 999,
+      background: selRoles[r] ? "rgba(248,113,113,.15)" : "var(--c-card2)",
+      border: "1px solid " + (selRoles[r] ? "#f8717166" : "var(--c-border)"),
+      display: "inline-flex",
+      gap: 6,
+      alignItems: "center"
+    }
+  }, /*#__PURE__*/React.createElement("input", {
+    type: "checkbox",
+    checked: !!selRoles[r],
+    onChange: e => setSelRoles(s => ({
+      ...s,
+      [r]: e.target.checked
+    })),
+    style: {
+      cursor: "pointer"
+    }
+  }), r)), jobRoles.length === 0 && /*#__PURE__*/React.createElement("span", {
+    style: {
+      fontSize: 12,
+      color: "var(--c-text4)"
+    }
+  }, "No roles registered yet.")), /*#__PURE__*/React.createElement("div", {
+    style: {
+      display: "flex",
+      gap: 8,
+      alignItems: "flex-end",
+      flexWrap: "wrap"
+    }
+  }, /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("label", {
+    style: labelSt
+  }, "New role"), /*#__PURE__*/React.createElement("input", {
+    style: {
+      ...inputSt(),
+      minWidth: 210
+    },
+    value: newRole,
+    onChange: e => setNewRole(e.target.value),
+    onKeyDown: e => e.key === "Enter" && newRole.trim() && !jobRoles.some(r => r.toLowerCase() === newRole.trim().toLowerCase()) && (saveRoles([...jobRoles, newRole.trim()]), setNewRole("")),
+    placeholder: "e.g. Field Service Engineer"
+  })), /*#__PURE__*/React.createElement("button", {
+    style: btnSt("var(--c-key)", "var(--c-bg)"),
+    disabled: !newRole.trim() || jobRoles.some(r => r.toLowerCase() === newRole.trim().toLowerCase()),
+    onClick: () => {
+      saveRoles([...jobRoles, newRole.trim()]);
+      setNewRole("");
+    }
+  }, "+ Add role"), /*#__PURE__*/React.createElement("button", {
+    style: btnSt("#3a1d1d", "#fca5a5"),
+    disabled: !Object.values(selRoles).some(Boolean),
+    onClick: delSelectedRoles
+  }, "🗑 Delete selected (", Object.values(selRoles).filter(Boolean).length, ")"))), /*#__PURE__*/React.createElement(CreateUser, {
     brands: brands,
     roleOptions: roleOptions,
     notify: notify,
