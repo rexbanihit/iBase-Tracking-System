@@ -11308,7 +11308,7 @@ function SettingsTab({
   const brands = sortAlpha(catalog && catalog.brands || []);
   const roleOptions = sortAlpha(Array.from(new Set([...ENGINEER_ROLES, ...(catalog && catalog.roles || []), ...users.map(u => String(u.role || "").trim()).filter(Boolean)])));
   const [newBrand, setNewBrand] = useState("");
-  const [sub, setSub] = useState("general");
+  const [sub, setSub] = useState("employees");
   async function saveBrands(list) {
     try {
       await db.doc("config/catalog").set({
@@ -11329,8 +11329,19 @@ function SettingsTab({
     employees: legacyEng.slice()
   }] : [];
   const [ndDept, setNdDept] = useState("");
-  const [neDept, setNeDept] = useState("");
-  const [neName, setNeName] = useState("");
+  const [neNames, setNeNames] = useState({});
+  function addEmp(d) {
+    const nm = (neNames[d.name] || "").trim();
+    if (!nm || allEmployees.some(e => e.toLowerCase() === nm.toLowerCase())) return;
+    saveDeps(deps.map(x => x.name === d.name ? {
+      ...x,
+      employees: [...(x.employees || []), nm]
+    } : x));
+    setNeNames(s => ({
+      ...s,
+      [d.name]: ""
+    }));
+  }
   const allEmployees = deps.flatMap(d => d.employees || []);
   async function saveDeps(list) {
     const sorted = list.map(d => ({
@@ -11389,25 +11400,22 @@ function SettingsTab({
     id: "users",
     label: "🪪 Users"
   }, {
-    id: "admins",
-    label: "👑 Administrators"
-  }, {
     id: "models",
     label: "🔬 Models & Item Codes"
-  }, {
-    id: "general",
-    label: "⚙ General"
   }, {
     id: "visibility",
     label: "🙈 Tabs & Visibility",
     noHide: true
   }, {
-    id: "audit",
-    label: "🧾 Audit"
-  }, {
     id: "import",
     label: "📥 Import Excel",
     ownerOnly: true
+  }, {
+    id: "audit",
+    label: "🧾 Audit"
+  }, {
+    id: "admins",
+    label: "👑 Administrators"
   }, {
     id: "danger",
     label: "☠ Danger zone",
@@ -11442,8 +11450,14 @@ function SettingsTab({
     style: {
       display: "flex",
       gap: 8,
-      marginBottom: 16,
-      flexWrap: "wrap"
+      flexWrap: "wrap",
+      position: "sticky",
+      top: 62,
+      zIndex: 45,
+      background: "var(--c-bg)",
+      padding: "10px 0 12px",
+      marginBottom: 12,
+      boxShadow: "0 6px 14px rgba(0,0,0,.35)"
     }
   }, visibleSubs.map(subBtn)), eff === "danger" && iAmOwner && /*#__PURE__*/React.createElement(DangerZone, {
     labs: labs,
@@ -11632,7 +11646,35 @@ function SettingsTab({
       fontSize: 11.5,
       color: "var(--c-text5)"
     }
-  }, "no names yet")))), deps.length === 0 && /*#__PURE__*/React.createElement("div", {
+  }, "no names yet")), /*#__PURE__*/React.createElement("div", {
+    style: {
+      display: "flex",
+      gap: 6,
+      marginTop: 7
+    }
+  }, /*#__PURE__*/React.createElement("input", {
+    style: {
+      ...inputSt(),
+      maxWidth: 230,
+      padding: "5px 10px",
+      fontSize: 12
+    },
+    value: neNames[d.name] || "",
+    onChange: e => setNeNames(s => ({
+      ...s,
+      [d.name]: e.target.value
+    })),
+    onKeyDown: e => e.key === "Enter" && addEmp(d),
+    placeholder: "+ add a name to " + d.name
+  }), /*#__PURE__*/React.createElement("button", {
+    style: {
+      ...btnSt("var(--c-key)", "var(--c-bg)"),
+      padding: "5px 12px",
+      fontSize: 12
+    },
+    disabled: !(neNames[d.name] || "").trim() || allEmployees.some(e => e.toLowerCase() === (neNames[d.name] || "").trim().toLowerCase()),
+    onClick: () => addEmp(d)
+  }, "+ Add")))), deps.length === 0 && /*#__PURE__*/React.createElement("div", {
     style: {
       fontSize: 12,
       color: "var(--c-text4)",
@@ -11666,48 +11708,7 @@ function SettingsTab({
       }]);
       setNdDept("");
     }
-  }, "+ Add department")), /*#__PURE__*/React.createElement("div", {
-    style: {
-      display: "flex",
-      gap: 8,
-      flexWrap: "wrap",
-      alignItems: "flex-end"
-    }
-  }, /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("label", {
-    style: labelSt
-  }, "Department"), /*#__PURE__*/React.createElement("select", {
-    style: {
-      ...inputSt(),
-      minWidth: 160
-    },
-    value: neDept,
-    onChange: e => setNeDept(e.target.value)
-  }, /*#__PURE__*/React.createElement("option", {
-    value: ""
-  }, "— pick —"), deps.map(d => /*#__PURE__*/React.createElement("option", {
-    key: d.name,
-    value: d.name
-  }, d.name)))), /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("label", {
-    style: labelSt
-  }, "Employee name"), /*#__PURE__*/React.createElement("input", {
-    style: {
-      ...inputSt(),
-      minWidth: 190
-    },
-    value: neName,
-    onChange: e => setNeName(e.target.value),
-    placeholder: "e.g. Rex Banihit"
-  })), /*#__PURE__*/React.createElement("button", {
-    style: btnSt("var(--c-key)", "var(--c-bg)"),
-    disabled: !neDept || !neName.trim() || allEmployees.some(e => e.toLowerCase() === neName.trim().toLowerCase()),
-    onClick: () => {
-      saveDeps(deps.map(d => d.name === neDept ? {
-        ...d,
-        employees: [...(d.employees || []), neName.trim()]
-      } : d));
-      setNeName("");
-    }
-  }, "+ Add name")))), eff === "users" && /*#__PURE__*/React.createElement(React.Fragment, null, /*#__PURE__*/React.createElement(CreateUser, {
+  }, "+ Add department")))), eff === "users" && /*#__PURE__*/React.createElement(React.Fragment, null, /*#__PURE__*/React.createElement(CreateUser, {
     brands: brands,
     roleOptions: roleOptions,
     notify: notify,
@@ -11782,6 +11783,78 @@ function SettingsTab({
       color: "var(--c-text5)"
     }
   }, "— hidden (owner still sees it)"))))), eff === "models" && /*#__PURE__*/React.createElement(React.Fragment, null, /*#__PURE__*/React.createElement("div", {
+    style: cardSt
+  }, /*#__PURE__*/React.createElement("div", {
+    style: {
+      fontSize: 12,
+      fontWeight: 800,
+      color: "var(--c-text4)",
+      textTransform: "uppercase",
+      marginBottom: 10
+    }
+  }, "🏷 Brand Catalog"), /*#__PURE__*/React.createElement("div", {
+    style: {
+      display: "flex",
+      gap: 6,
+      flexWrap: "wrap",
+      marginBottom: 10
+    }
+  }, brands.map(b => /*#__PURE__*/React.createElement("span", {
+    key: b,
+    style: {
+      fontSize: 12,
+      padding: "4px 10px",
+      borderRadius: 999,
+      background: "var(--c-card2)",
+      border: "1px solid var(--c-border)",
+      display: "inline-flex",
+      gap: 6,
+      alignItems: "center"
+    }
+  }, b, /*#__PURE__*/React.createElement("button", {
+    onClick: async () => {
+      if (!(await adminGuard(profile, notify, "Delete brand “" + b + "”"))) return;
+      if (!isOwnerAcct(profile)) {
+        await binIt("cfgBrand", "🏷 Brand " + b, {
+          brand: b
+        }, meEmail(profile));
+        cfgTrace(profile, "settings.delete", "brand “" + b + "” → Bin");
+      }
+      saveBrands(brands.filter(x => x !== b));
+    },
+    style: {
+      background: "none",
+      border: "none",
+      color: "#f87171",
+      cursor: "pointer",
+      padding: 0
+    }
+  }, "✕"))), brands.length === 0 && /*#__PURE__*/React.createElement("span", {
+    style: {
+      fontSize: 12,
+      color: "var(--c-text4)"
+    }
+  }, "No brands yet — add the brands you carry; they drive the inventory dropdowns and the per-brand permission checkboxes.")), /*#__PURE__*/React.createElement("div", {
+    style: {
+      display: "flex",
+      gap: 8
+    }
+  }, /*#__PURE__*/React.createElement("input", {
+    style: {
+      ...inputSt(),
+      maxWidth: 220
+    },
+    value: newBrand,
+    onChange: e => setNewBrand(e.target.value),
+    placeholder: "e.g. Sebia"
+  }), /*#__PURE__*/React.createElement("button", {
+    style: btnSt("var(--c-key)", "var(--c-bg)"),
+    disabled: !newBrand.trim() || brands.includes(newBrand.trim()),
+    onClick: () => {
+      saveBrands([...brands, newBrand.trim()].sort());
+      setNewBrand("");
+    }
+  }, "+ Add brand"))), /*#__PURE__*/React.createElement("div", {
     style: cardSt
   }, /*#__PURE__*/React.createElement("div", {
     style: {
@@ -11912,79 +11985,7 @@ function SettingsTab({
       setNmModel("");
       setNmCode("");
     }
-  }, "+ Add model")))), eff === "general" && /*#__PURE__*/React.createElement(React.Fragment, null, /*#__PURE__*/React.createElement("div", {
-    style: cardSt
-  }, /*#__PURE__*/React.createElement("div", {
-    style: {
-      fontSize: 12,
-      fontWeight: 800,
-      color: "var(--c-text4)",
-      textTransform: "uppercase",
-      marginBottom: 10
-    }
-  }, "🏷 Brand Catalog"), /*#__PURE__*/React.createElement("div", {
-    style: {
-      display: "flex",
-      gap: 6,
-      flexWrap: "wrap",
-      marginBottom: 10
-    }
-  }, brands.map(b => /*#__PURE__*/React.createElement("span", {
-    key: b,
-    style: {
-      fontSize: 12,
-      padding: "4px 10px",
-      borderRadius: 999,
-      background: "var(--c-card2)",
-      border: "1px solid var(--c-border)",
-      display: "inline-flex",
-      gap: 6,
-      alignItems: "center"
-    }
-  }, b, /*#__PURE__*/React.createElement("button", {
-    onClick: async () => {
-      if (!(await adminGuard(profile, notify, "Delete brand “" + b + "”"))) return;
-      if (!isOwnerAcct(profile)) {
-        await binIt("cfgBrand", "🏷 Brand " + b, {
-          brand: b
-        }, meEmail(profile));
-        cfgTrace(profile, "settings.delete", "brand “" + b + "” → Bin");
-      }
-      saveBrands(brands.filter(x => x !== b));
-    },
-    style: {
-      background: "none",
-      border: "none",
-      color: "#f87171",
-      cursor: "pointer",
-      padding: 0
-    }
-  }, "✕"))), brands.length === 0 && /*#__PURE__*/React.createElement("span", {
-    style: {
-      fontSize: 12,
-      color: "var(--c-text4)"
-    }
-  }, "No brands yet — add the brands you carry; they drive the inventory dropdowns and the per-brand permission checkboxes.")), /*#__PURE__*/React.createElement("div", {
-    style: {
-      display: "flex",
-      gap: 8
-    }
-  }, /*#__PURE__*/React.createElement("input", {
-    style: {
-      ...inputSt(),
-      maxWidth: 220
-    },
-    value: newBrand,
-    onChange: e => setNewBrand(e.target.value),
-    placeholder: "e.g. Sebia"
-  }), /*#__PURE__*/React.createElement("button", {
-    style: btnSt("var(--c-key)", "var(--c-bg)"),
-    disabled: !newBrand.trim() || brands.includes(newBrand.trim()),
-    onClick: () => {
-      saveBrands([...brands, newBrand.trim()].sort());
-      setNewBrand("");
-    }
-  }, "+ Add brand")))));
+  }, "+ Add model")))));
 }
 function PermEditor({
   perms,
