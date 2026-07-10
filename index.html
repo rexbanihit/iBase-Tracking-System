@@ -3402,8 +3402,16 @@ function Modal({
   onClose,
   wide
 }) {
+  // Escape still closes (an intentional key press); clicking the dark backdrop
+  // does NOT — that guards against accidental clicks wiping a half-typed form.
+  React.useEffect(() => {
+    const onKey = e => {
+      if (e.key === "Escape") onClose();
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [onClose]);
   return /*#__PURE__*/React.createElement("div", {
-    onClick: onClose,
     style: {
       position: "fixed",
       inset: 0,
