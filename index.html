@@ -146,6 +146,8 @@
       .ibt table tbody tr:hover td { background: rgba(56,189,248,.07); }
       .ibt tr.ibt-sel td, table.ibt tr.ibt-sel td { background: rgba(56,189,248,.16) !important; }
       table.ibt tbody tr:hover td { background: rgba(56,189,248,.07); }
+  .ibrow { cursor: pointer; }
+  .ibrow:hover { background: rgba(56,189,248,.07) !important; }
   body { background: var(--c-bg); color: var(--c-text); margin:0; font-family:'DM Sans','Segoe UI',system-ui,sans-serif; font-size:14px; }
   * { box-sizing: border-box; } input, select, button { font-family: inherit; }
 </style>
@@ -2905,6 +2907,7 @@ function LabsTab({
   labs,
   profile,
   catalog,
+  inventory,
   notify
 }) {
   const canEdit = pCanTab(profile, "labs", "edit");
@@ -3343,6 +3346,7 @@ function LabsTab({
     labs: labs,
     profile: profile,
     catalog: catalog,
+    inventory: inventory,
     notify: notify,
     onBack: () => setOpenLab(null)
   }));
@@ -3484,12 +3488,15 @@ function LabDetail({
   labs,
   profile,
   catalog,
+  inventory,
   notify,
   onBack
 }) {
-  const engineerOptions = React.useMemo(() => Array.from(new Set([...(catalog && Array.isArray(catalog.engineers) ? catalog.engineers : []),
-  // employees registered under departments (Settings → Employees & Departments)
-  ...(catalog && Array.isArray(catalog.departments) ? catalog.departments.flatMap(d => Array.isArray(d.employees) ? d.employees : []) : []), ...(typeof window !== "undefined" && window.__ibaseEngineers || []), ...(labs || []).flatMap(l => (l.machines || []).flatMap(m => (m.visits || []).flatMap(v => [v.engineer, v.engineer2, v.engineer3])))].map(x => String(x || "").trim()).filter(Boolean))).sort(), [labs, catalog]);
+  // ONLY names registered under departments whose name contains
+  // "Engineer(ing)" or "Specialist" may be picked when logging a visit.
+  const engineerOptions = React.useMemo(() => Array.from(new Set((catalog && Array.isArray(catalog.departments) ? catalog.departments : []).filter(d => /engineer|specialist/i.test(String(d.name || ""))).flatMap(d => Array.isArray(d.employees) ? d.employees : []).map(x => String(x || "").trim()).filter(Boolean))).sort(), [catalog]);
+  // machine-status suggestions: every status ever typed, across ALL laboratories
+  const statusOptions = React.useMemo(() => Array.from(new Set((labs || []).flatMap(l => (l.machines || []).flatMap(m => [m.status, ...(m.visits || []).map(v => v.machineStatus)])).map(x => String(x || "").trim()).filter(Boolean))).sort(), [labs]);
   // "Service" rights (labs.edit): add a visit, update Last PM — NOT structural.
   // "Manage" rights (admins only): add/edit/delete laboratories and machines.
   const canService = pCanTab(profile, "labs", "edit");
@@ -3501,9 +3508,6 @@ function LabDetail({
   const [pmFor, setPmFor] = useState(null);
   const [editVisit, setEditVisit] = useState(null); // { machine, visit } being corrected
   const [attView, setAttView] = useState(null); // attachments being viewed
-  const [rvQ, setRvQ] = useState("");
-  const [rvType, setRvType] = useState("");
-  const [rvMach, setRvMach] = useState("");
   // Upload the freshly-picked files to the shared attachments store; returns metadata.
   async function uploadAtts(pending, machineId, visitId) {
     const metas = [];
@@ -3738,150 +3742,15 @@ function LabDetail({
       ...tdSt,
       color: "var(--c-text4)"
     }
-  }, "No machines yet."))))), /*#__PURE__*/React.createElement("div", {
-    style: cardSt
-  }, /*#__PURE__*/React.createElement("div", {
-    style: {
-      display: "flex",
-      alignItems: "center",
-      gap: 10,
-      flexWrap: "wrap",
-      marginBottom: 10
-    }
-  }, /*#__PURE__*/React.createElement("div", {
-    style: {
-      fontSize: 12,
-      fontWeight: 800,
-      color: "var(--c-text3)",
-      textTransform: "uppercase"
-    }
-  }, "Recent Service Visits"), /*#__PURE__*/React.createElement("input", {
-    style: {
-      ...inputSt(),
-      maxWidth: 180,
-      padding: "6px 10px",
-      fontSize: 12,
-      marginLeft: "auto"
-    },
-    value: rvQ,
-    onChange: e => setRvQ(e.target.value),
-    placeholder: "🔍 Filter…"
-  }), /*#__PURE__*/React.createElement("select", {
-    style: {
-      ...inputSt(),
-      maxWidth: 150,
-      padding: "6px 10px",
-      fontSize: 12,
-      cursor: "pointer"
-    },
-    value: rvType,
-    onChange: e => setRvType(e.target.value)
-  }, /*#__PURE__*/React.createElement("option", {
-    value: ""
-  }, "All types"), sortAlpha(VISIT_TYPES).map(t => /*#__PURE__*/React.createElement("option", {
-    key: t
-  }, t))), /*#__PURE__*/React.createElement("select", {
-    style: {
-      ...inputSt(),
-      maxWidth: 170,
-      padding: "6px 10px",
-      fontSize: 12,
-      cursor: "pointer"
-    },
-    value: rvMach,
-    onChange: e => setRvMach(e.target.value)
-  }, /*#__PURE__*/React.createElement("option", {
-    value: ""
-  }, "All machines"), sortAlpha(Array.from(new Set((lab.machines || []).map(m => m.instrument).filter(Boolean)))).map(x => /*#__PURE__*/React.createElement("option", {
-    key: x
-  }, x)))), /*#__PURE__*/React.createElement("table", {
-    className: "ibt",
-    style: {
-      width: "100%",
-      borderCollapse: "collapse"
-    }
-  }, /*#__PURE__*/React.createElement("thead", null, /*#__PURE__*/React.createElement("tr", null, ["Date", "Machine", "Type", "ISR", "Engineer", "Status after", "Logged by", ""].map((h, i) => /*#__PURE__*/React.createElement("th", {
-    key: i,
-    style: {
-      ...thSt,
-      position: "sticky",
-      top: 0,
-      background: "var(--c-bg2)",
-      zIndex: 4
-    }
-  }, h)))), /*#__PURE__*/React.createElement("tbody", null, (lab.machines || []).flatMap(m => (m.visits || []).map(v => ({
-    ...v,
-    _m: m.instrument,
-    _sn: m.serialNo
-  }))).filter(v => (!rvType || v.type === rvType) && (!rvMach || v._m === rvMach) && (!rvQ || [v._m, v._sn, v.isrNo, v.engineer, v.remarks, v.loggedBy].some(x => String(x || "").toLowerCase().includes(rvQ.toLowerCase())))).sort((a, b) => String(b.date).localeCompare(String(a.date))).slice(0, 25).map((v, i) => /*#__PURE__*/React.createElement("tr", {
-    key: i
-  }, /*#__PURE__*/React.createElement("td", {
-    style: tdSt
-  }, fmtDate(v.date)), /*#__PURE__*/React.createElement("td", {
-    style: tdSt
-  }, v._m, " ", /*#__PURE__*/React.createElement("span", {
-    style: {
-      color: "var(--c-text5)",
-      fontSize: 11
-    }
-  }, "(", v._sn, ")")), /*#__PURE__*/React.createElement("td", {
-    style: tdSt
-  }, v.type), /*#__PURE__*/React.createElement("td", {
-    style: tdSt
-  }, v.isrNo || "—"), /*#__PURE__*/React.createElement("td", {
-    style: tdSt
-  }, v.engineer || "—"), /*#__PURE__*/React.createElement("td", {
-    style: tdSt
-  }, v.machineStatus || "—"), /*#__PURE__*/React.createElement("td", {
-    style: {
-      ...tdSt,
-      fontSize: 11.5,
-      color: "var(--c-text4)"
-    }
-  }, v.loggedBy || "—", v.loggedAt ? " · " + String(v.loggedAt).slice(0, 10) : "", (v.editLog || []).length > 0 && /*#__PURE__*/React.createElement("div", {
-    title: v.editLog.map(e => "✎ " + e.by + " · " + String(e.at).replace("T", " ").slice(0, 16) + "\n   " + e.changes.join("\n   ")).join("\n"),
-    style: {
-      fontSize: 10,
-      color: "#f59e0b",
-      cursor: "help"
-    }
-  }, "✎ edited by ", String(v.editLog[v.editLog.length - 1].by).split("@")[0], " · ", String(v.editLog[v.editLog.length - 1].at).slice(0, 10), " (", v.editLog.reduce((s, e) => s + e.changes.length, 0), " change", v.editLog.reduce((s, e) => s + e.changes.length, 0) !== 1 ? "s" : "", ")")), /*#__PURE__*/React.createElement("td", {
-    style: {
-      ...tdSt,
-      whiteSpace: "nowrap"
-    }
-  }, (v.attachments || []).length > 0 && /*#__PURE__*/React.createElement("button", {
-    title: "View attachments",
-    style: {
-      ...btnSt("var(--c-border)", "var(--c-text2)"),
-      padding: "3px 8px",
-      fontSize: 11
-    },
-    onClick: () => {
-      const mm = (lab.machines || []).find(m => (m.visits || []).some(x => x.id === v.id));
-      openAtts(v);
-    }
-  }, "📎", v.attachments.length), " ", String(v.loggedBy || "") === String(profile.email || "") && /*#__PURE__*/React.createElement("button", {
-    title: "Correct this visit (you logged it) — every change is recorded",
-    style: {
-      ...btnSt("var(--c-border)", "#f59e0b"),
-      padding: "3px 8px",
-      fontSize: 11
-    },
-    onClick: () => {
-      const mm = (lab.machines || []).find(m => (m.visits || []).some(x => x.id === v.id));
-      if (mm) setEditVisit({
-        machine: mm,
-        visit: (mm.visits || []).find(x => x.id === v.id)
-      });
-    }
-  }, "✏️"))))))), canManage && addingM && /*#__PURE__*/React.createElement(MachineModal, {
+  }, "No machines yet."))))), canManage && addingM && /*#__PURE__*/React.createElement(MachineModal, {
+    inventory: inventory,
     models: catalog && catalog.machines || [],
     onClose: () => setAddingM(false),
     onSave: async m => {
       if (await saveMachines([...(lab.machines || []), m], "Machine added.")) setAddingM(false);
     }
   }), canManage && editingM && /*#__PURE__*/React.createElement(MachineModal, {
+    inventory: inventory,
     models: catalog && catalog.machines || [],
     initial: editingM,
     onClose: () => setEditingM(null),
@@ -3889,6 +3758,7 @@ function LabDetail({
       if (await saveMachines((lab.machines || []).map(x => x.id === m.id ? m : x), "Machine updated.")) setEditingM(null);
     }
   }), editVisit && /*#__PURE__*/React.createElement(VisitModal, {
+    statusOptions: statusOptions,
     machine: editVisit.machine,
     engineerOptions: engineerOptions,
     customFields: catalog && catalog.visitFields || [],
@@ -4020,6 +3890,7 @@ function LabDetail({
       }
     }
   }), visitFor && /*#__PURE__*/React.createElement(VisitModal, {
+    statusOptions: statusOptions,
     machine: visitFor,
     engineerOptions: engineerOptions,
     customFields: catalog && catalog.visitFields || [],
@@ -4085,7 +3956,8 @@ function MachineModal({
   initial,
   onSave,
   onClose,
-  models
+  models,
+  inventory
 }) {
   const [f, setF] = useState(initial ? {
     instrument: initial.instrument || "",
@@ -4097,7 +3969,9 @@ function MachineModal({
     lastPM: initial.lastPM || "",
     pmInterval: initial.pmInterval || "",
     nextPM: initial.nextPM || "",
-    status: initial.status || "Active"
+    status: initial.status || "Active",
+    software: initial.software || "",
+    firmware: initial.firmware || ""
   } : {
     instrument: "",
     itemCode: "",
@@ -4108,7 +3982,9 @@ function MachineModal({
     lastPM: "",
     pmInterval: "",
     nextPM: "",
-    status: "Active"
+    status: "Active",
+    software: "",
+    firmware: ""
   });
   const set = (k, v) => setF(x => ({
     ...x,
@@ -4116,6 +3992,18 @@ function MachineModal({
   }));
   const reg = Array.isArray(models) ? models : [];
   // picking a registered model auto-fills its linked item code (v127 behavior)
+  const setSerial = v => setF(x => {
+    const hit = (Array.isArray(inventory) ? inventory : []).find(it => String(it.serialNo || "").trim().toLowerCase() === String(v || "").trim().toLowerCase());
+    return hit ? {
+      ...x,
+      serialNo: v,
+      instrument: hit.machineModel || x.instrument,
+      itemCode: hit.itemCode || x.itemCode
+    } : {
+      ...x,
+      serialNo: v
+    };
+  });
   const setInstrument = v => setF(x => {
     const hit = reg.find(m => String(m.model || "").trim().toLowerCase() === String(v || "").trim().toLowerCase());
     return {
@@ -4164,7 +4052,26 @@ function MachineModal({
       marginBottom: 10
     },
     value: f.serialNo,
-    onChange: e => set("serialNo", e.target.value)
+    onChange: e => setSerial(e.target.value),
+    placeholder: "known inventory serials auto-fill the model + item code"
+  }), /*#__PURE__*/React.createElement("label", {
+    style: labelSt
+  }, "Software"), /*#__PURE__*/React.createElement("input", {
+    style: {
+      ...inputSt(),
+      marginBottom: 10
+    },
+    value: f.software,
+    onChange: e => set("software", e.target.value)
+  }), /*#__PURE__*/React.createElement("label", {
+    style: labelSt
+  }, "Firmware"), /*#__PURE__*/React.createElement("input", {
+    style: {
+      ...inputSt(),
+      marginBottom: 10
+    },
+    value: f.firmware,
+    onChange: e => set("firmware", e.target.value)
   }), /*#__PURE__*/React.createElement("label", {
     style: labelSt
   }, "Installation date"), /*#__PURE__*/React.createElement("input", {
@@ -4250,7 +4157,9 @@ function MachineModal({
       installedBy: f.installedBy.trim(),
       lastPM: f.lastPM,
       pmInterval: f.pmInterval,
-      nextPM: f.nextPM,
+      nextPM: "",
+      software: f.software.trim(),
+      firmware: f.firmware.trim(),
       updatedAt: auditNow()
     } : {
       id: uid(),
@@ -4261,7 +4170,9 @@ function MachineModal({
       installedBy: f.installedBy.trim(),
       lastPM: f.lastPM,
       pmInterval: f.pmInterval,
-      nextPM: f.nextPM,
+      nextPM: "",
+      software: f.software.trim(),
+      firmware: f.firmware.trim(),
       status: "Active",
       visits: [],
       createdAt: auditNow()
@@ -4501,6 +4412,7 @@ function NameSelect({
 function VisitModal({
   machine,
   engineerOptions,
+  statusOptions,
   customFields,
   canEditFields,
   notify,
@@ -4508,6 +4420,7 @@ function VisitModal({
   onClose,
   onSave
 }) {
+  const [engs, setEngs] = useState(initial ? [initial.engineer, initial.engineer2, initial.engineer3].map(x => String(x || "").trim()).filter(Boolean) : []);
   const [f, setF] = useState(initial ? {
     date: initial.date || today(),
     type: initial.type || "PM",
@@ -4602,13 +4515,6 @@ function VisitModal({
     }
   }, /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("label", {
     style: labelSt
-  }, "Date"), /*#__PURE__*/React.createElement("input", {
-    type: "date",
-    style: inputSt(),
-    value: f.date,
-    onChange: e => set("date", e.target.value)
-  })), /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("label", {
-    style: labelSt
   }, "Type of Visit"), /*#__PURE__*/React.createElement("select", {
     style: inputSt(),
     value: f.type,
@@ -4621,31 +4527,64 @@ function VisitModal({
     style: inputSt(),
     value: f.isrNo,
     onChange: e => set("isrNo", e.target.value)
-  })), /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("label", {
+  })), /*#__PURE__*/React.createElement("div", {
+    style: {
+      gridColumn: "1 / -1"
+    }
+  }, /*#__PURE__*/React.createElement("label", {
     style: labelSt
-  }, "Engineer"), /*#__PURE__*/React.createElement(NameSelect, {
-    value: f.engineer,
-    onChange: v => set("engineer", v),
-    options: engineerOptions,
-    placeholder: "Engineer name"
-  }), /*#__PURE__*/React.createElement("datalist", {
-    id: "ibase-eng-list"
-  }, (engineerOptions || []).map(n => /*#__PURE__*/React.createElement("option", {
+  }, "Engineers / Specialists (select one or more)"), /*#__PURE__*/React.createElement("div", {
+    style: {
+      display: "flex",
+      gap: 6,
+      flexWrap: "wrap",
+      alignItems: "center"
+    }
+  }, engs.map(n => /*#__PURE__*/React.createElement("span", {
+    key: n,
+    style: {
+      fontSize: 12,
+      padding: "4px 10px",
+      borderRadius: 999,
+      background: "var(--c-card2)",
+      border: "1px solid var(--c-border)",
+      display: "inline-flex",
+      gap: 6,
+      alignItems: "center"
+    }
+  }, n, /*#__PURE__*/React.createElement("button", {
+    type: "button",
+    onClick: () => setEngs(s => s.filter(x => x !== n)),
+    style: {
+      background: "none",
+      border: "none",
+      color: "#f87171",
+      cursor: "pointer",
+      padding: 0
+    }
+  }, "✕"))), /*#__PURE__*/React.createElement("select", {
+    style: {
+      ...inputSt(),
+      maxWidth: 230,
+      cursor: "pointer"
+    },
+    value: "",
+    onChange: e => {
+      const v = e.target.value;
+      if (v) setEngs(s => s.includes(v) ? s : [...s, v]);
+    }
+  }, /*#__PURE__*/React.createElement("option", {
+    value: ""
+  }, "+ add engineer / specialist…"), (engineerOptions || []).filter(n => !engs.includes(n)).map(n => /*#__PURE__*/React.createElement("option", {
     key: n,
     value: n
-  })))), /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("label", {
-    style: labelSt
-  }, "Engineer 2 (optional)"), /*#__PURE__*/React.createElement(NameSelect, {
-    value: f.engineer2,
-    onChange: v => set("engineer2", v),
-    options: engineerOptions
-  })), /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("label", {
-    style: labelSt
-  }, "Engineer 3 (optional)"), /*#__PURE__*/React.createElement(NameSelect, {
-    value: f.engineer3,
-    onChange: v => set("engineer3", v),
-    options: engineerOptions
-  })), /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("label", {
+  }, n)))), (engineerOptions || []).length === 0 && /*#__PURE__*/React.createElement("div", {
+    style: {
+      fontSize: 10.5,
+      color: "#fbbf24",
+      marginTop: 4
+    }
+  }, "No names registered — add employees under a department named “…Engineering” or “…Specialist” (Settings → Employees).")), /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("label", {
     style: labelSt
   }, "Date & Time reported"), /*#__PURE__*/React.createElement("input", {
     type: "datetime-local",
@@ -4689,26 +4628,43 @@ function VisitModal({
     onChange: e => set("dtWorkEnded", e.target.value)
   })), /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("label", {
     style: labelSt
-  }, "Machine status after visit"), /*#__PURE__*/React.createElement("select", {
+  }, "Machine status after visit"), /*#__PURE__*/React.createElement("input", {
+    list: "ib-mstat",
     style: inputSt(),
     value: f.machineStatus,
-    onChange: e => set("machineStatus", e.target.value)
-  }, sortAlpha(MACHINE_STATUSES).map(t => /*#__PURE__*/React.createElement("option", {
-    key: t
-  }, t)))), /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("label", {
+    onChange: e => set("machineStatus", e.target.value),
+    placeholder: "type freely — past entries suggested"
+  }), /*#__PURE__*/React.createElement("datalist", {
+    id: "ib-mstat"
+  }, (statusOptions || []).map(s2 => /*#__PURE__*/React.createElement("option", {
+    key: s2,
+    value: s2
+  })))), /*#__PURE__*/React.createElement("div", {
+    style: {
+      gridColumn: "1 / -1"
+    }
+  }, /*#__PURE__*/React.createElement("label", {
     style: labelSt
-  }, "Description of Work (remarks)"), /*#__PURE__*/React.createElement("input", {
-    style: inputSt(),
+  }, "Description of Work"), /*#__PURE__*/React.createElement("textarea", {
+    style: {
+      ...inputSt(),
+      minHeight: 64,
+      resize: "vertical"
+    },
     value: f.remarks,
     onChange: e => set("remarks", e.target.value)
   })), /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("label", {
     style: labelSt
-  }, "Support type"), /*#__PURE__*/React.createElement("input", {
-    style: inputSt(),
+  }, "Support type"), /*#__PURE__*/React.createElement("select", {
+    style: {
+      ...inputSt(),
+      cursor: "pointer"
+    },
     value: f.supportType,
-    onChange: e => set("supportType", e.target.value),
-    placeholder: "e.g. Onsite / Remote / Phone"
-  })), /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("label", {
+    onChange: e => set("supportType", e.target.value)
+  }, /*#__PURE__*/React.createElement("option", {
+    value: ""
+  }, "— select —"), /*#__PURE__*/React.createElement("option", null, "Onsite support"), /*#__PURE__*/React.createElement("option", null, "Phone support"))), /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("label", {
     style: labelSt
   }, "Priority"), /*#__PURE__*/React.createElement("input", {
     list: "ib-prio",
@@ -4763,60 +4719,7 @@ function VisitModal({
     },
     value: f.recommendation,
     onChange: e => set("recommendation", e.target.value)
-  }))), (customFields || []).length > 0 && /*#__PURE__*/React.createElement("div", {
-    style: {
-      marginTop: 12
-    }
-  }, /*#__PURE__*/React.createElement("label", {
-    style: labelSt
-  }, "Additional details"), /*#__PURE__*/React.createElement("div", {
-    style: {
-      display: "grid",
-      gridTemplateColumns: "1fr 1fr",
-      gap: 10
-    }
-  }, sortAlpha(customFields).map(name => /*#__PURE__*/React.createElement("div", {
-    key: name
-  }, /*#__PURE__*/React.createElement("label", {
-    style: {
-      ...labelSt,
-      textTransform: "none",
-      fontSize: 10.5,
-      display: "flex",
-      alignItems: "center",
-      gap: 6
-    }
-  }, name, canEditFields && /*#__PURE__*/React.createElement("span", {
-    title: "Delete the “" + name + "” field from the Visit form for EVERYONE (existing visits keep their saved values)",
-    onClick: async () => {
-      if (!confirm("Remove the “" + name + "” input field from the Visit form for everyone?\nAlready-saved values on past visits are kept.")) return;
-      try {
-        await db.doc("config/catalog").set({
-          visitFields: FieldValue.arrayRemove(name)
-        }, {
-          merge: true
-        });
-        notify && notify("🗑 “" + name + "” removed from the Visit form.", "bin");
-      } catch (e) {
-        notify && notify("Could not remove: " + e.message, "error");
-      }
-    },
-    style: {
-      color: "#f87171",
-      cursor: "pointer",
-      fontWeight: 700
-    }
-  }, "✕")), /*#__PURE__*/React.createElement("input", {
-    style: inputSt(),
-    value: f.extra && f.extra[name] || "",
-    onChange: e => setF(x => ({
-      ...x,
-      extra: {
-        ...(x.extra || {}),
-        [name]: e.target.value
-      }
-    }))
-  }))))), /*#__PURE__*/React.createElement("div", {
+  }))), /*#__PURE__*/React.createElement("div", {
     style: {
       marginTop: 14,
       display: "grid",
@@ -4940,10 +4843,18 @@ function VisitModal({
       ...btnSt("var(--c-key)", "var(--c-bg)"),
       marginTop: 16
     },
-    onClick: () => onSave({
-      id: initial ? initial.id : uid(),
-      ...f
-    }, f.machineStatus, pending)
+    onClick: () => {
+      const dISO = String(f.dtWorkStarted || f.dtDeparture || f.dtReported || "").slice(0, 10);
+      onSave({
+        id: initial ? initial.id : uid(),
+        ...f,
+        date: dISO || f.date || today(),
+        engineer: engs[0] || "",
+        engineer2: engs[1] || "",
+        engineer3: engs[2] || "",
+        engineers: engs
+      }, f.machineStatus, pending);
+    }
   }, "Save visit"), /*#__PURE__*/React.createElement("div", {
     style: {
       fontSize: 10.5,
@@ -11679,10 +11590,16 @@ function SettingsTab({
     style: rowWrap
   }, (d.employees || []).map(name => /*#__PURE__*/React.createElement("div", {
     key: name,
-    style: rowSt(selEmps[d.name + "‖" + name])
+    className: "ibrow",
+    style: rowSt(selEmps[d.name + "‖" + name]),
+    onClick: () => setSelEmps(s => ({
+      ...s,
+      [d.name + "‖" + name]: !s[d.name + "‖" + name]
+    }))
   }, /*#__PURE__*/React.createElement("input", {
     type: "checkbox",
     checked: !!selEmps[d.name + "‖" + name],
+    onClick: e => e.stopPropagation(),
     onChange: e => setSelEmps(s => ({
       ...s,
       [d.name + "‖" + name]: e.target.checked
@@ -11704,7 +11621,8 @@ function SettingsTab({
       color: "var(--c-text4)",
       padding: 0
     },
-    onClick: async () => {
+    onClick: async ev => {
+      ev.stopPropagation();
       const nn = prompt("Rename employee:", name);
       if (!nn || !nn.trim() || nn.trim() === name) return;
       if (allEmployees.some(e => e.toLowerCase() === nn.trim().toLowerCase())) {
@@ -11731,6 +11649,7 @@ function SettingsTab({
       cfgTrace(profile, "settings.rename", "employee “" + name + "” → “" + nn.trim() + "” (" + d.name + ")");
     }
   }, "✏️"), /*#__PURE__*/React.createElement("select", {
+    onClick: e => e.stopPropagation(),
     title: "Role in the company (register roles under the Users sub-tab)",
     style: {
       background: "transparent",
@@ -11751,6 +11670,7 @@ function SettingsTab({
   }, r)), empRoles[name] && !jobRoles.includes(empRoles[name]) ? /*#__PURE__*/React.createElement("option", {
     value: empRoles[name]
   }, empRoles[name]) : null), /*#__PURE__*/React.createElement("select", {
+    onClick: e => e.stopPropagation(),
     title: "Move to another department",
     style: {
       background: "var(--c-bg)",
@@ -11879,10 +11799,16 @@ function SettingsTab({
     style: rowWrap
   }, jobRoles.map(r => /*#__PURE__*/React.createElement("div", {
     key: r,
-    style: rowSt(selRoles[r])
+    className: "ibrow",
+    style: rowSt(selRoles[r]),
+    onClick: () => setSelRoles(s => ({
+      ...s,
+      [r]: !s[r]
+    }))
   }, /*#__PURE__*/React.createElement("input", {
     type: "checkbox",
     checked: !!selRoles[r],
+    onClick: e => e.stopPropagation(),
     onChange: e => setSelRoles(s => ({
       ...s,
       [r]: e.target.checked
@@ -11985,10 +11911,16 @@ function SettingsTab({
     style: rowWrap
   }, brands.map(b => /*#__PURE__*/React.createElement("div", {
     key: b,
-    style: rowSt(selBrands[b])
+    className: "ibrow",
+    style: rowSt(selBrands[b]),
+    onClick: () => setSelBrands(s => ({
+      ...s,
+      [b]: !s[b]
+    }))
   }, /*#__PURE__*/React.createElement("input", {
     type: "checkbox",
     checked: !!selBrands[b],
+    onClick: e => e.stopPropagation(),
     onChange: e => setSelBrands(s => ({
       ...s,
       [b]: e.target.checked
@@ -12064,10 +11996,16 @@ function SettingsTab({
     sensitivity: "base"
   })).map((m, i) => /*#__PURE__*/React.createElement("div", {
     key: m.model + i,
-    style: rowSt(selModels[(m.brand || "") + "‖" + (m.model || "")])
+    className: "ibrow",
+    style: rowSt(selModels[(m.brand || "") + "‖" + (m.model || "")]),
+    onClick: () => setSelModels(s => ({
+      ...s,
+      [(m.brand || "") + "‖" + (m.model || "")]: !s[(m.brand || "") + "‖" + (m.model || "")]
+    }))
   }, /*#__PURE__*/React.createElement("input", {
     type: "checkbox",
     checked: !!selModels[(m.brand || "") + "‖" + (m.model || "")],
+    onClick: e => e.stopPropagation(),
     onChange: e => setSelModels(s => ({
       ...s,
       [(m.brand || "") + "‖" + (m.model || "")]: e.target.checked
@@ -12931,6 +12869,7 @@ function UserRow({
     }
   }
   return /*#__PURE__*/React.createElement("div", {
+    className: "ibrow",
     style: {
       borderBottom: "1px solid var(--c-border2)",
       padding: "8px 0"
@@ -13216,6 +13155,8 @@ function App() {
     isAdmin: !!profile.isAdmin
   } : null;
   const labs = useCol("labs", !!signedProfile && (pCanTab(signedProfile, "labs", "view") || pCanTab(signedProfile, "overtime", "view") || pCanTab(signedProfile, "dashboard", "view") || pCanTab(signedProfile, "analytics", "view") || pCanTab(signedProfile, "visits", "view")), notify);
+  // machines added in a laboratory auto-fill from inventory by serial number
+  const invForLabs = useCol("inventory", !!signedProfile && pCanTab(signedProfile, "labs", "view"), notify);
   const users = useCol("users", !!signedProfile && signedProfile.isAdmin, notify);
   const binItems = useCol("bin", !!signedProfile && signedProfile.isAdmin, notify);
   const catalog = useDoc("config/catalog", !!signedProfile);
@@ -13537,6 +13478,7 @@ function App() {
     labs: labs,
     profile: signedProfile,
     catalog: catalog,
+    inventory: invForLabs,
     notify: notify
   }), tab === "analytics" && (signedProfile.isAdmin || pCanTab(signedProfile, "analytics", "view")) && /*#__PURE__*/React.createElement(AnalyticsTab, {
     labs: labs
