@@ -11330,6 +11330,75 @@ function SettingsTab({
   }] : [];
   const [ndDept, setNdDept] = useState("");
   const [neNames, setNeNames] = useState({});
+  const [selDeps, setSelDeps] = useState({});
+  const [selEmps, setSelEmps] = useState({}); // key: dept + "‖" + name
+  const [selBrands, setSelBrands] = useState({});
+  const [selModels, setSelModels] = useState({}); // key: brand + "‖" + model
+  const nPeopleSel = Object.values(selDeps).filter(Boolean).length + Object.values(selEmps).filter(Boolean).length;
+  async function delSelectedPeople() {
+    const depNames = Object.keys(selDeps).filter(k => selDeps[k]);
+    const emps = Object.keys(selEmps).filter(k => selEmps[k]).map(k => {
+      const [dept, name] = k.split("‖");
+      return {
+        dept,
+        name
+      };
+    }).filter(e => !depNames.includes(e.dept)); // dept selected → its names go with it
+    const total = depNames.length + emps.length;
+    if (!total) return;
+    if (!confirm("Delete " + (depNames.length ? depNames.length + " department(s)" : "") + (depNames.length && emps.length ? " and " : "") + (emps.length ? emps.length + " name(s)" : "") + "?\n\nDeleted items go to the Bin, restorable.")) return;
+    if (!(await adminGuard(profile, notify, "Delete " + total + " selected item(s) (Employees & Departments)"))) return;
+    if (!isOwnerAcct(profile)) {
+      for (const dn of depNames) {
+        const d = deps.find(x => x.name === dn);
+        if (d) await binIt("cfgDept", "📁 Department " + d.name + " (" + (d.employees || []).length + " names)", {
+          dept: d
+        }, meEmail(profile));
+      }
+      for (const e of emps) await binIt("cfgEmployee", "👤 Employee " + e.name + " (" + e.dept + ")", {
+        name: e.name,
+        dept: e.dept
+      }, meEmail(profile));
+      cfgTrace(profile, "settings.delete", depNames.length + " department(s), " + emps.length + " employee name(s) → Bin");
+    }
+    let next = deps.filter(d => !depNames.includes(d.name));
+    next = next.map(d => ({
+      ...d,
+      employees: (d.employees || []).filter(n => !emps.some(e => e.dept === d.name && e.name === n))
+    }));
+    await saveDeps(next);
+    setSelDeps({});
+    setSelEmps({});
+  }
+  async function delSelectedBrands() {
+    const bs = Object.keys(selBrands).filter(k => selBrands[k]);
+    if (!bs.length) return;
+    if (!confirm("Delete " + bs.length + " brand(s)? Deleted brands go to the Bin, restorable.")) return;
+    if (!(await adminGuard(profile, notify, "Delete " + bs.length + " selected brand(s)"))) return;
+    if (!isOwnerAcct(profile)) {
+      for (const b of bs) await binIt("cfgBrand", "🏷 Brand " + b, {
+        brand: b
+      }, meEmail(profile));
+      cfgTrace(profile, "settings.delete", bs.length + " brand(s) → Bin: " + bs.join(", "));
+    }
+    await saveBrands(brands.filter(x => !bs.includes(x)));
+    setSelBrands({});
+  }
+  async function delSelectedModels() {
+    const keys = Object.keys(selModels).filter(k => selModels[k]);
+    if (!keys.length) return;
+    if (!confirm("Delete " + keys.length + " model(s)? Deleted models go to the Bin, restorable.")) return;
+    if (!(await adminGuard(profile, notify, "Delete " + keys.length + " selected model(s)"))) return;
+    const picked = models.filter(m => keys.includes((m.brand || "") + "‖" + (m.model || "")));
+    if (!isOwnerAcct(profile)) {
+      for (const m of picked) await binIt("cfgModel", "🔬 Model " + m.model + (m.itemCode ? " · " + m.itemCode : ""), {
+        machine: m
+      }, meEmail(profile));
+      cfgTrace(profile, "settings.delete", picked.length + " model(s) → Bin");
+    }
+    await saveModels(models.filter(m => !keys.includes((m.brand || "") + "‖" + (m.model || ""))));
+    setSelModels({});
+  }
   function addEmp(d) {
     const nm = (neNames[d.name] || "").trim();
     if (!nm || allEmployees.some(e => e.toLowerCase() === nm.toLowerCase())) return;
@@ -11422,8 +11491,7 @@ function SettingsTab({
     ownerOnly: true,
     danger: true
   }];
-  const subHidden = id => !!(tabsCfg && tabsCfg.settingsHidden && tabsCfg.settingsHidden[id]);
-  const visibleSubs = SETTINGS_SUBS.filter(s => (!s.ownerOnly || iAmOwner) && (!subHidden(s.id) || iAmOwner));
+  const visibleSubs = SETTINGS_SUBS.filter(s => !s.ownerOnly || iAmOwner);
   const eff = visibleSubs.some(s => s.id === sub) ? sub : visibleSubs[0] ? visibleSubs[0].id : "employees";
   const subBtn = s => /*#__PURE__*/React.createElement("button", {
     key: s.id,
@@ -11432,32 +11500,19 @@ function SettingsTab({
       ...btnSt(eff === s.id ? s.danger ? "#7f1d1d" : "var(--c-key)" : "var(--c-border)", eff === s.id ? s.danger ? "#fecaca" : "var(--c-bg)" : s.danger ? "#f87171" : "var(--c-text2)"),
       fontWeight: 800
     }
-  }, s.label, subHidden(s.id) ? " 🙈" : "");
-  async function toggleSubHidden(id, hide) {
-    try {
-      await db.doc("config/tabs").set({
-        settingsHidden: {
-          [id]: hide
-        }
-      }, {
-        merge: true
-      });
-    } catch (e) {
-      notify("SERVER REFUSED:\n" + e.message, "error");
-    }
-  }
+  }, s.label);
   return /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("div", {
     style: {
       display: "flex",
       gap: 8,
       flexWrap: "wrap",
       position: "sticky",
-      top: 62,
+      top: 56,
       zIndex: 45,
       background: "var(--c-bg)",
       padding: "10px 0 12px",
       marginBottom: 12,
-      boxShadow: "0 6px 14px rgba(0,0,0,.35)"
+      boxShadow: "0 -26px 0 0 var(--c-bg), 0 6px 14px rgba(0,0,0,.35)"
     }
   }, visibleSubs.map(subBtn)), eff === "danger" && iAmOwner && /*#__PURE__*/React.createElement(DangerZone, {
     labs: labs,
@@ -11501,7 +11556,18 @@ function SettingsTab({
       gap: 8,
       alignItems: "center"
     }
-  }, "📁 ", d.name, " ", /*#__PURE__*/React.createElement("span", {
+  }, /*#__PURE__*/React.createElement("input", {
+    type: "checkbox",
+    title: "Select this department (its names go with it)",
+    checked: !!selDeps[d.name],
+    onChange: e => setSelDeps(s => ({
+      ...s,
+      [d.name]: e.target.checked
+    })),
+    style: {
+      cursor: "pointer"
+    }
+  }), "📁 ", d.name, " ", /*#__PURE__*/React.createElement("span", {
     style: {
       color: "var(--c-text5)",
       fontWeight: 600
@@ -11529,38 +11595,7 @@ function SettingsTab({
       } : x));
       cfgTrace(profile, "settings.rename", "department “" + d.name + "” → “" + nn.trim() + "”");
     }
-  }, "✏️"), /*#__PURE__*/React.createElement("button", {
-    title: "Delete department (its names move to (Unassigned))",
-    style: {
-      background: "none",
-      border: "none",
-      cursor: "pointer",
-      color: "#f87171",
-      padding: 0
-    },
-    onClick: async () => {
-      if (!confirm("Delete department “" + d.name + "”?" + ((d.employees || []).length ? " Its " + d.employees.length + " name(s) move to (Unassigned)." : ""))) return;
-      if (!(await adminGuard(profile, notify, "Delete department “" + d.name + "”"))) return;
-      if (!isOwnerAcct(profile)) {
-        await binIt("cfgDept", "📁 Department " + d.name + " (" + (d.employees || []).length + " names)", {
-          dept: d
-        }, meEmail(profile));
-        cfgTrace(profile, "settings.delete", "department “" + d.name + "” → Bin");
-      }
-      let rest = deps.filter(x => x !== d);
-      if ((d.employees || []).length) {
-        const un = rest.find(x => x.name === "(Unassigned)");
-        rest = un ? rest.map(x => x === un ? {
-          ...x,
-          employees: [...(x.employees || []), ...d.employees]
-        } : x) : [...rest, {
-          name: "(Unassigned)",
-          employees: [...d.employees]
-        }];
-      }
-      saveDeps(rest);
-    }
-  }, "✕")), /*#__PURE__*/React.createElement("div", {
+  }, "✏️")), /*#__PURE__*/React.createElement("div", {
     style: {
       display: "flex",
       gap: 6,
@@ -11572,13 +11607,23 @@ function SettingsTab({
       fontSize: 12,
       padding: "4px 10px",
       borderRadius: 999,
-      background: "var(--c-card2)",
-      border: "1px solid var(--c-border)",
+      background: selEmps[d.name + "‖" + name] ? "rgba(248,113,113,.15)" : "var(--c-card2)",
+      border: "1px solid " + (selEmps[d.name + "‖" + name] ? "#f8717166" : "var(--c-border)"),
       display: "inline-flex",
       gap: 6,
       alignItems: "center"
     }
-  }, name, /*#__PURE__*/React.createElement("button", {
+  }, /*#__PURE__*/React.createElement("input", {
+    type: "checkbox",
+    checked: !!selEmps[d.name + "‖" + name],
+    onChange: e => setSelEmps(s => ({
+      ...s,
+      [d.name + "‖" + name]: e.target.checked
+    })),
+    style: {
+      cursor: "pointer"
+    }
+  }), name, /*#__PURE__*/React.createElement("button", {
     title: "Rename",
     style: {
       background: "none",
@@ -11617,31 +11662,7 @@ function SettingsTab({
   }, deps.map(x => /*#__PURE__*/React.createElement("option", {
     key: x.name,
     value: x.name
-  }, x.name))), /*#__PURE__*/React.createElement("button", {
-    title: "Delete name",
-    style: {
-      background: "none",
-      border: "none",
-      cursor: "pointer",
-      color: "#f87171",
-      padding: 0
-    },
-    onClick: async () => {
-      if (!confirm("Remove “" + name + "” from the employee list? Past visits keep the name.")) return;
-      if (!(await adminGuard(profile, notify, "Delete employee “" + name + "”"))) return;
-      if (!isOwnerAcct(profile)) {
-        await binIt("cfgEmployee", "👤 Employee " + name + " (" + d.name + ")", {
-          name,
-          dept: d.name
-        }, meEmail(profile));
-        cfgTrace(profile, "settings.delete", "employee “" + name + "” (" + d.name + ") → Bin");
-      }
-      await saveDeps(deps.map(x => x === d ? {
-        ...x,
-        employees: (x.employees || []).filter(e => e !== name)
-      } : x));
-    }
-  }, "✕"))), (d.employees || []).length === 0 && /*#__PURE__*/React.createElement("span", {
+  }, x.name))))), (d.employees || []).length === 0 && /*#__PURE__*/React.createElement("span", {
     style: {
       fontSize: 11.5,
       color: "var(--c-text5)"
@@ -11681,6 +11702,26 @@ function SettingsTab({
       marginBottom: 10
     }
   }, "No departments yet — add one below, then add names under it."), /*#__PURE__*/React.createElement("div", {
+    style: {
+      display: "flex",
+      gap: 10,
+      alignItems: "center",
+      marginBottom: 12
+    }
+  }, /*#__PURE__*/React.createElement("button", {
+    style: btnSt("#3a1d1d", "#fca5a5"),
+    disabled: !nPeopleSel,
+    onClick: delSelectedPeople
+  }, "🗑 Delete selected (", nPeopleSel, ")"), nPeopleSel > 0 && /*#__PURE__*/React.createElement("button", {
+    style: {
+      ...btnSt("var(--c-border)", "var(--c-text3)"),
+      fontSize: 11.5
+    },
+    onClick: () => {
+      setSelDeps({});
+      setSelEmps({});
+    }
+  }, "Clear selection")), /*#__PURE__*/React.createElement("div", {
     style: {
       display: "flex",
       gap: 8,
@@ -11747,42 +11788,7 @@ function SettingsTab({
     profile: profile,
     tabsCfg: tabsCfg,
     notify: notify
-  }), /*#__PURE__*/React.createElement("div", {
-    style: cardSt
-  }, /*#__PURE__*/React.createElement("div", {
-    style: {
-      fontSize: 12,
-      fontWeight: 800,
-      color: "var(--c-text4)",
-      textTransform: "uppercase",
-      marginBottom: 10
-    }
-  }, "🙈 Settings Sub-Tabs"), /*#__PURE__*/React.createElement("div", {
-    style: {
-      fontSize: 11.5,
-      color: "var(--c-text5)",
-      marginBottom: 12
-    }
-  }, "Tick a sub-tab to hide it from everyone. The owner always sees hidden sub-tabs, marked 🙈. Owner-only sub-tabs and this page can't be hidden."), SETTINGS_SUBS.filter(s => !s.ownerOnly && !s.noHide).map(s => /*#__PURE__*/React.createElement("label", {
-    key: s.id,
-    style: {
-      display: "flex",
-      gap: 8,
-      alignItems: "center",
-      fontSize: 12.5,
-      marginBottom: 6,
-      cursor: "pointer"
-    }
-  }, /*#__PURE__*/React.createElement("input", {
-    type: "checkbox",
-    checked: subHidden(s.id),
-    onChange: e => toggleSubHidden(s.id, e.target.checked)
-  }), s.label, " ", subHidden(s.id) && /*#__PURE__*/React.createElement("span", {
-    style: {
-      fontSize: 10.5,
-      color: "var(--c-text5)"
-    }
-  }, "— hidden (owner still sees it)"))))), eff === "models" && /*#__PURE__*/React.createElement(React.Fragment, null, /*#__PURE__*/React.createElement("div", {
+  })), eff === "models" && /*#__PURE__*/React.createElement(React.Fragment, null, /*#__PURE__*/React.createElement("div", {
     style: cardSt
   }, /*#__PURE__*/React.createElement("div", {
     style: {
@@ -11811,25 +11817,17 @@ function SettingsTab({
       gap: 6,
       alignItems: "center"
     }
-  }, b, /*#__PURE__*/React.createElement("button", {
-    onClick: async () => {
-      if (!(await adminGuard(profile, notify, "Delete brand “" + b + "”"))) return;
-      if (!isOwnerAcct(profile)) {
-        await binIt("cfgBrand", "🏷 Brand " + b, {
-          brand: b
-        }, meEmail(profile));
-        cfgTrace(profile, "settings.delete", "brand “" + b + "” → Bin");
-      }
-      saveBrands(brands.filter(x => x !== b));
-    },
+  }, /*#__PURE__*/React.createElement("input", {
+    type: "checkbox",
+    checked: !!selBrands[b],
+    onChange: e => setSelBrands(s => ({
+      ...s,
+      [b]: e.target.checked
+    })),
     style: {
-      background: "none",
-      border: "none",
-      color: "#f87171",
-      cursor: "pointer",
-      padding: 0
+      cursor: "pointer"
     }
-  }, "✕"))), brands.length === 0 && /*#__PURE__*/React.createElement("span", {
+  }), b)), brands.length === 0 && /*#__PURE__*/React.createElement("span", {
     style: {
       fontSize: 12,
       color: "var(--c-text4)"
@@ -11854,7 +11852,11 @@ function SettingsTab({
       saveBrands([...brands, newBrand.trim()].sort());
       setNewBrand("");
     }
-  }, "+ Add brand"))), /*#__PURE__*/React.createElement("div", {
+  }, "+ Add brand"), /*#__PURE__*/React.createElement("button", {
+    style: btnSt("#3a1d1d", "#fca5a5"),
+    disabled: !Object.values(selBrands).some(Boolean),
+    onClick: delSelectedBrands
+  }, "🗑 Delete selected (", Object.values(selBrands).filter(Boolean).length, ")"))), /*#__PURE__*/React.createElement("div", {
     style: cardSt
   }, /*#__PURE__*/React.createElement("div", {
     style: {
@@ -11896,37 +11898,29 @@ function SettingsTab({
       fontSize: 12,
       padding: "4px 10px",
       borderRadius: 999,
-      background: "var(--c-card2)",
-      border: "1px solid var(--c-border)",
+      background: selModels[(m.brand || "") + "‖" + (m.model || "")] ? "rgba(248,113,113,.15)" : "var(--c-card2)",
+      border: "1px solid " + (selModels[(m.brand || "") + "‖" + (m.model || "")] ? "#f8717166" : "var(--c-border)"),
       display: "inline-flex",
       gap: 6,
       alignItems: "center"
     }
-  }, m.model, m.itemCode ? /*#__PURE__*/React.createElement("span", {
+  }, /*#__PURE__*/React.createElement("input", {
+    type: "checkbox",
+    checked: !!selModels[(m.brand || "") + "‖" + (m.model || "")],
+    onChange: e => setSelModels(s => ({
+      ...s,
+      [(m.brand || "") + "‖" + (m.model || "")]: e.target.checked
+    })),
+    style: {
+      cursor: "pointer"
+    }
+  }), m.model, m.itemCode ? /*#__PURE__*/React.createElement("span", {
     style: {
       fontFamily: "monospace",
       fontSize: 10.5,
       color: "var(--c-text4)"
     }
-  }, "· ", m.itemCode) : null, /*#__PURE__*/React.createElement("button", {
-    onClick: async () => {
-      if (!(await adminGuard(profile, notify, "Delete model “" + m.model + "” (" + (m.brand || "") + ")"))) return;
-      if (!isOwnerAcct(profile)) {
-        await binIt("cfgModel", "🔬 Model " + m.model + (m.itemCode ? " · " + m.itemCode : ""), {
-          machine: m
-        }, meEmail(profile));
-        cfgTrace(profile, "settings.delete", "model “" + m.model + "” → Bin");
-      }
-      saveModels(models.filter(x => x !== m));
-    },
-    style: {
-      background: "none",
-      border: "none",
-      color: "#f87171",
-      cursor: "pointer",
-      padding: 0
-    }
-  }, "✕")))))), models.length === 0 && /*#__PURE__*/React.createElement("div", {
+  }, "· ", m.itemCode) : null))))), models.length === 0 && /*#__PURE__*/React.createElement("div", {
     style: {
       fontSize: 12,
       color: "var(--c-text4)",
@@ -11985,7 +11979,11 @@ function SettingsTab({
       setNmModel("");
       setNmCode("");
     }
-  }, "+ Add model")))));
+  }, "+ Add model"), /*#__PURE__*/React.createElement("button", {
+    style: btnSt("#3a1d1d", "#fca5a5"),
+    disabled: !Object.values(selModels).some(Boolean),
+    onClick: delSelectedModels
+  }, "🗑 Delete selected (", Object.values(selModels).filter(Boolean).length, ")")))));
 }
 function PermEditor({
   perms,
@@ -13030,7 +13028,7 @@ function App() {
   }, (signedProfile.isAdmin || pCanTab(signedProfile, "overtime", "view")) && !tabHidden(tabsCfg, "overtime") && {
     id: "overtime",
     label: tabLabel(tabsCfg, "overtime", "🕒 Overtime")
-  }, signedProfile.isAdmin && (!tabHidden(tabsCfg, "bin") || isOwnerAcct(user)) && {
+  }, signedProfile.isAdmin && !tabHidden(tabsCfg, "bin") && {
     id: "bin",
     label: tabLabel(tabsCfg, "bin", "🗑 Bin")
   }, signedProfile.isAdmin && {
