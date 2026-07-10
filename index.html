@@ -11338,6 +11338,22 @@ function SettingsTab({
     }
   }
   const models = catalog && Array.isArray(catalog.machines) ? catalog.machines : [];
+  const rowSt = sel => ({
+    display: "flex",
+    alignItems: "center",
+    gap: 10,
+    padding: "6px 10px",
+    borderBottom: "1px solid var(--c-border2)",
+    background: sel ? "rgba(248,113,113,.10)" : "transparent"
+  });
+  const rowWrap = {
+    display: "flex",
+    flexDirection: "column",
+    border: "1px solid var(--c-border)",
+    borderRadius: 8,
+    overflow: "hidden",
+    marginBottom: 10
+  };
   // ── Employees & Departments (admin-editable; feeds the visit form) ──
   const legacyEng = catalog && Array.isArray(catalog.engineers) ? catalog.engineers : [];
   const deps = catalog && Array.isArray(catalog.departments) && catalog.departments.length ? catalog.departments : legacyEng.length ? [{
@@ -11660,23 +11676,10 @@ function SettingsTab({
       cfgTrace(profile, "settings.rename", "department “" + d.name + "” → “" + nn.trim() + "”");
     }
   }, "✏️")), /*#__PURE__*/React.createElement("div", {
-    style: {
-      display: "flex",
-      gap: 6,
-      flexWrap: "wrap"
-    }
-  }, (d.employees || []).map(name => /*#__PURE__*/React.createElement("span", {
+    style: rowWrap
+  }, (d.employees || []).map(name => /*#__PURE__*/React.createElement("div", {
     key: name,
-    style: {
-      fontSize: 12,
-      padding: "4px 10px",
-      borderRadius: 999,
-      background: selEmps[d.name + "‖" + name] ? "rgba(248,113,113,.15)" : "var(--c-card2)",
-      border: "1px solid " + (selEmps[d.name + "‖" + name] ? "#f8717166" : "var(--c-border)"),
-      display: "inline-flex",
-      gap: 6,
-      alignItems: "center"
-    }
+    style: rowSt(selEmps[d.name + "‖" + name])
   }, /*#__PURE__*/React.createElement("input", {
     type: "checkbox",
     checked: !!selEmps[d.name + "‖" + name],
@@ -11687,7 +11690,12 @@ function SettingsTab({
     style: {
       cursor: "pointer"
     }
-  }), name, /*#__PURE__*/React.createElement("button", {
+  }), /*#__PURE__*/React.createElement("span", {
+    style: {
+      flex: 1,
+      fontSize: 12.5
+    }
+  }, name), /*#__PURE__*/React.createElement("button", {
     title: "Rename",
     style: {
       background: "none",
@@ -11763,10 +11771,11 @@ function SettingsTab({
   }, "⇄"), deps.filter(x => x.name !== d.name).map(x => /*#__PURE__*/React.createElement("option", {
     key: x.name,
     value: x.name
-  }, x.name))))), (d.employees || []).length === 0 && /*#__PURE__*/React.createElement("span", {
+  }, x.name))))), (d.employees || []).length === 0 && /*#__PURE__*/React.createElement("div", {
     style: {
       fontSize: 11.5,
-      color: "var(--c-text5)"
+      color: "var(--c-text5)",
+      padding: "6px 10px"
     }
   }, "no names yet")), /*#__PURE__*/React.createElement("div", {
     style: {
@@ -11867,24 +11876,10 @@ function SettingsTab({
       marginBottom: 12
     }
   }, "Register the company's roles here (e.g. Technical Head, Area Service Engineer, Field Service Engineer, Trainee). Registered roles become the picker on every employee chip under 👥 Employees."), /*#__PURE__*/React.createElement("div", {
-    style: {
-      display: "flex",
-      gap: 6,
-      flexWrap: "wrap",
-      marginBottom: 10
-    }
-  }, jobRoles.map(r => /*#__PURE__*/React.createElement("span", {
+    style: rowWrap
+  }, jobRoles.map(r => /*#__PURE__*/React.createElement("div", {
     key: r,
-    style: {
-      fontSize: 12,
-      padding: "4px 10px",
-      borderRadius: 999,
-      background: selRoles[r] ? "rgba(248,113,113,.15)" : "var(--c-card2)",
-      border: "1px solid " + (selRoles[r] ? "#f8717166" : "var(--c-border)"),
-      display: "inline-flex",
-      gap: 6,
-      alignItems: "center"
-    }
+    style: rowSt(selRoles[r])
   }, /*#__PURE__*/React.createElement("input", {
     type: "checkbox",
     checked: !!selRoles[r],
@@ -11895,10 +11890,16 @@ function SettingsTab({
     style: {
       cursor: "pointer"
     }
-  }), r)), jobRoles.length === 0 && /*#__PURE__*/React.createElement("span", {
+  }), /*#__PURE__*/React.createElement("span", {
+    style: {
+      flex: 1,
+      fontSize: 12.5
+    }
+  }, r))), jobRoles.length === 0 && /*#__PURE__*/React.createElement("div", {
     style: {
       fontSize: 12,
-      color: "var(--c-text4)"
+      color: "var(--c-text4)",
+      padding: "6px 10px"
     }
   }, "No roles registered yet.")), /*#__PURE__*/React.createElement("div", {
     style: {
@@ -11948,6 +11949,7 @@ function SettingsTab({
     key: u.id,
     u: u,
     brands: brands,
+    roleOptions: roleOptions,
     notify: notify,
     me: profile
   })), users.filter(u => !isOwnerAcct(u) && !u.isAdmin).length === 0 && /*#__PURE__*/React.createElement("div", {
@@ -11963,6 +11965,7 @@ function SettingsTab({
     me: profile,
     iAmOwner: iAmOwner,
     brands: brands,
+    roleOptions: roleOptions,
     notify: notify
   })), eff === "visibility" && /*#__PURE__*/React.createElement(React.Fragment, null, /*#__PURE__*/React.createElement(TabManager, {
     profile: profile,
@@ -11979,24 +11982,10 @@ function SettingsTab({
       marginBottom: 10
     }
   }, "🏷 Brand Catalog"), /*#__PURE__*/React.createElement("div", {
-    style: {
-      display: "flex",
-      gap: 6,
-      flexWrap: "wrap",
-      marginBottom: 10
-    }
-  }, brands.map(b => /*#__PURE__*/React.createElement("span", {
+    style: rowWrap
+  }, brands.map(b => /*#__PURE__*/React.createElement("div", {
     key: b,
-    style: {
-      fontSize: 12,
-      padding: "4px 10px",
-      borderRadius: 999,
-      background: "var(--c-card2)",
-      border: "1px solid var(--c-border)",
-      display: "inline-flex",
-      gap: 6,
-      alignItems: "center"
-    }
+    style: rowSt(selBrands[b])
   }, /*#__PURE__*/React.createElement("input", {
     type: "checkbox",
     checked: !!selBrands[b],
@@ -12007,7 +11996,12 @@ function SettingsTab({
     style: {
       cursor: "pointer"
     }
-  }), b)), brands.length === 0 && /*#__PURE__*/React.createElement("span", {
+  }), /*#__PURE__*/React.createElement("span", {
+    style: {
+      flex: 1,
+      fontSize: 12.5
+    }
+  }, b))), brands.length === 0 && /*#__PURE__*/React.createElement("div", {
     style: {
       fontSize: 12,
       color: "var(--c-text4)"
@@ -12065,25 +12059,12 @@ function SettingsTab({
       marginBottom: 4
     }
   }, b), /*#__PURE__*/React.createElement("div", {
-    style: {
-      display: "flex",
-      gap: 6,
-      flexWrap: "wrap"
-    }
+    style: rowWrap
   }, models.filter(m => (m.brand || "(No brand)") === b).slice().sort((x, y) => String(x.model || "").localeCompare(String(y.model || ""), undefined, {
     sensitivity: "base"
-  })).map((m, i) => /*#__PURE__*/React.createElement("span", {
+  })).map((m, i) => /*#__PURE__*/React.createElement("div", {
     key: m.model + i,
-    style: {
-      fontSize: 12,
-      padding: "4px 10px",
-      borderRadius: 999,
-      background: selModels[(m.brand || "") + "‖" + (m.model || "")] ? "rgba(248,113,113,.15)" : "var(--c-card2)",
-      border: "1px solid " + (selModels[(m.brand || "") + "‖" + (m.model || "")] ? "#f8717166" : "var(--c-border)"),
-      display: "inline-flex",
-      gap: 6,
-      alignItems: "center"
-    }
+    style: rowSt(selModels[(m.brand || "") + "‖" + (m.model || "")])
   }, /*#__PURE__*/React.createElement("input", {
     type: "checkbox",
     checked: !!selModels[(m.brand || "") + "‖" + (m.model || "")],
@@ -12094,13 +12075,23 @@ function SettingsTab({
     style: {
       cursor: "pointer"
     }
-  }), m.model, m.itemCode ? /*#__PURE__*/React.createElement("span", {
+  }), /*#__PURE__*/React.createElement("span", {
+    style: {
+      flex: 1,
+      fontSize: 12.5
+    }
+  }, m.model), m.itemCode ? /*#__PURE__*/React.createElement("span", {
     style: {
       fontFamily: "monospace",
-      fontSize: 10.5,
+      fontSize: 11,
       color: "var(--c-text4)"
     }
-  }, "· ", m.itemCode) : null))))), models.length === 0 && /*#__PURE__*/React.createElement("div", {
+  }, m.itemCode) : /*#__PURE__*/React.createElement("span", {
+    style: {
+      fontSize: 10.5,
+      color: "var(--c-text5)"
+    }
+  }, "no code")))))), models.length === 0 && /*#__PURE__*/React.createElement("div", {
     style: {
       fontSize: 12,
       color: "var(--c-text4)",
@@ -12596,6 +12587,7 @@ function AdminManager({
   me,
   iAmOwner,
   brands,
+  roleOptions,
   notify
 }) {
   const admins = sortAlpha(users.filter(u => u.isAdmin && !isOwnerAcct(u)), u => u.email);
@@ -12670,6 +12662,7 @@ function AdminManager({
     key: u.id,
     u: u,
     brands: brands,
+    roleOptions: roleOptions,
     notify: notify,
     me: me
   })), admins.length === 0 && /*#__PURE__*/React.createElement("div", {
@@ -12827,6 +12820,7 @@ function RecoverProfileTool({
 function UserRow({
   u,
   brands,
+  roleOptions,
   notify,
   me
 }) {
@@ -12852,6 +12846,23 @@ function UserRow({
   }, [u.id]);
   const isOwnerRow = isOwnerAcct(u);
   const iAmOwner = isOwnerAcct(me);
+  const [roleEdit, setRoleEdit] = useState(false);
+  const [roleVal, setRoleVal] = useState(u.role || "");
+  useEffect(() => {
+    setRoleVal(u.role || "");
+  }, [u.id, u.role]);
+  async function saveRole(v) {
+    try {
+      await db.collection("users").doc(u.id).update({
+        role: v
+      });
+      logAudit(me, "user.role", u.email + " → " + (v || "(none)"));
+      notify(v ? "Role set: " + v : "Role unlinked.", "ok");
+      setRoleEdit(false);
+    } catch (e) {
+      notify("SERVER REFUSED:\n" + e.message, "error");
+    }
+  }
   // Server rules enforce all of this; the UI just mirrors them:
   const canEditRow = !isOwnerRow && !u.isAdmin; // non-admin profiles
   const canDeleteRow = !isOwnerRow && (iAmOwner || !u.isAdmin) && u.id !== me.id;
@@ -12941,12 +12952,67 @@ function UserRow({
       fontSize: 12,
       color: "var(--c-text3)"
     }
-  }, u.displayName || "—"), /*#__PURE__*/React.createElement("span", {
+  }, u.displayName || "—"), roleEdit ? /*#__PURE__*/React.createElement("span", {
+    style: {
+      display: "inline-flex",
+      gap: 4,
+      alignItems: "center"
+    }
+  }, /*#__PURE__*/React.createElement("input", {
+    list: "ur-roles-" + u.id,
+    style: {
+      ...inputSt(),
+      width: 180,
+      padding: "3px 8px",
+      fontSize: 12
+    },
+    value: roleVal,
+    onChange: e => setRoleVal(e.target.value),
+    placeholder: "link a role…",
+    autoFocus: true
+  }), /*#__PURE__*/React.createElement("datalist", {
+    id: "ur-roles-" + u.id
+  }, (roleOptions || []).map(r => /*#__PURE__*/React.createElement("option", {
+    key: r,
+    value: r
+  }))), /*#__PURE__*/React.createElement("button", {
+    style: {
+      ...btnSt("var(--c-key)", "var(--c-bg)"),
+      padding: "3px 8px",
+      fontSize: 11
+    },
+    onClick: () => saveRole(roleVal.trim())
+  }, "✓"), u.role ? /*#__PURE__*/React.createElement("button", {
+    title: "Unlink role",
+    style: {
+      ...btnSt("#3a1d1d", "#fca5a5"),
+      padding: "3px 8px",
+      fontSize: 11
+    },
+    onClick: () => {
+      setRoleVal("");
+      saveRole("");
+    }
+  }, "⛓️‍💥") : null, /*#__PURE__*/React.createElement("button", {
+    style: {
+      ...btnSt("var(--c-border)", "var(--c-text3)"),
+      padding: "3px 8px",
+      fontSize: 11
+    },
+    onClick: () => {
+      setRoleEdit(false);
+      setRoleVal(u.role || "");
+    }
+  }, "✕")) : /*#__PURE__*/React.createElement("span", {
+    title: "Click to edit / link a role",
+    onClick: () => setRoleEdit(true),
     style: {
       fontSize: 12,
-      color: "var(--c-text4)"
+      color: u.role ? "var(--c-text3)" : "var(--c-text5)",
+      cursor: "pointer",
+      borderBottom: "1px dotted var(--c-border)"
     }
-  }, u.role || "—"), /*#__PURE__*/React.createElement(LinkedName, {
+  }, u.role || "— link role —", " ✎"), /*#__PURE__*/React.createElement(LinkedName, {
     u: u,
     me: me,
     notify: notify
