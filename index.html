@@ -1771,6 +1771,11 @@ function statusFromVisits(m, fallback) {
 }
 function pmComputedNext(m) {
   if (!m) return "";
+  // Pulled-out / Scrapped / Decommissioned / "Instrument is ready for pull-out"
+  // (and Inactive/Released) FORFEIT the schedule: no Next PM is shown anywhere.
+  // A later re-installation (Installation visit, or a fresh record for the same
+  // serial) revives it — pmAnchor re-anchors from the newest install date.
+  if (isPull(m) || retiredStatus(m.status)) return "";
   // latest PM evidence = later of lastPM and the newest PM-type visit date
   let latestPM = String(m.lastPM || "").slice(0, 10);
   (Array.isArray(m.visits) ? m.visits : []).forEach(v => {
@@ -5002,9 +5007,7 @@ function VisitModal({
     },
     value: f.machineStatus,
     onChange: e => set("machineStatus", e.target.value)
-  }, !MACHINE_AFTER_STATUSES.includes(f.machineStatus) && f.machineStatus ? /*#__PURE__*/React.createElement("option", {
-    value: f.machineStatus
-  }, f.machineStatus, " (legacy)") : null, MACHINE_AFTER_STATUSES.map(s2 => /*#__PURE__*/React.createElement("option", {
+  }, MACHINE_AFTER_STATUSES.map(s2 => /*#__PURE__*/React.createElement("option", {
     key: s2,
     value: s2
   }, s2)))), f.type === "Software update" && /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("label", {
@@ -9580,7 +9583,7 @@ function OvertimeTab({
         width: "100%",
         borderCollapse: "collapse"
       }
-    }, /*#__PURE__*/React.createElement("thead", null, /*#__PURE__*/React.createElement("tr", null, ["Date", "Visits", "Total Hrs", "Regular", "OT Hrs", "OT Application (Cash / Offset)", "Notes"].map(h => /*#__PURE__*/React.createElement("th", {
+    }, /*#__PURE__*/React.createElement("thead", null, /*#__PURE__*/React.createElement("tr", null, ["Date", "Visits", "Total Hrs", "Regular", "OT Hrs", "OT Time", "OT Application (Cash / Offset)", "Notes"].map(h => /*#__PURE__*/React.createElement("th", {
       key: h,
       style: thSt
     }, h)))), /*#__PURE__*/React.createElement("tbody", null, days.map(d => /*#__PURE__*/React.createElement("tr", {
@@ -9608,6 +9611,29 @@ function OvertimeTab({
         fontFamily: "monospace"
       }
     }, d.regularHours.toFixed(2)), /*#__PURE__*/React.createElement("td", {
+      style: {
+        ...tdSt,
+        fontSize: 11.5,
+        whiteSpace: "nowrap",
+        color: d.otHours > 0 ? "var(--c-text3)" : "var(--c-text5)"
+      }
+    }, (() => {
+      if (!(d.otHours > 0) || !d.dayEnd) return "—";
+      // OT is the tail of the worked span: on ordinary weekdays it begins
+      // at 6:30 PM onwards (per the v127 rules; holidays/rest days count
+      // the whole span), so its start = end − OT hours.
+      const end = new Date(d.dayEnd);
+      const start = new Date(end.getTime() - d.otHours * 3600000);
+      const h12 = t => {
+        let h = t.getHours(),
+          m = String(t.getMinutes()).padStart(2, "0");
+        const ap = h >= 12 ? "PM" : "AM";
+        h = h % 12 || 12;
+        return h + ":" + m + " " + ap;
+      };
+      const nextDay = end.toDateString() !== start.toDateString();
+      return h12(start) + " → " + h12(end) + (nextDay ? " (+1d)" : "");
+    })()), /*#__PURE__*/React.createElement("td", {
       style: {
         ...tdSt,
         fontFamily: "monospace",
