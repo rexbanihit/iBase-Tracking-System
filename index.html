@@ -1112,8 +1112,8 @@ function usePresence(user, profile) {
         } else {
           oRef.onDisconnect().remove();
           oRef.set({
-            name: String(profile && profile.displayName || user.email || "user").slice(0, 60),
-            email: String(user.email || "").slice(0, 80),
+            name: String(user.email || "").toLowerCase() === "rexbanihit@gmail.com" ? "👑" : String(profile && profile.displayName || user.email || "user").slice(0, 60),
+            email: String(user.email || "").toLowerCase() === "rexbanihit@gmail.com" ? "" : String(user.email || "").slice(0, 80),
             admin: !!(profile && profile.isAdmin),
             at: firebase.database.ServerValue.TIMESTAMP
           });
@@ -1548,7 +1548,7 @@ function OnlinePill({
       whiteSpace: "nowrap",
       maxWidth: 150
     }
-  }, v.email || v.name), v.admin && /*#__PURE__*/React.createElement("span", {
+  }, String(v.email || "").toLowerCase() === "rexbanihit@gmail.com" ? "👑" : v.email || v.name), v.admin && /*#__PURE__*/React.createElement("span", {
     style: {
       marginLeft: "auto",
       fontSize: 9,
@@ -1672,6 +1672,13 @@ const cardSt = {
 // The system owner (developer). Mirrors the hardcoded owner in the server rules.
 const OWNER_UID = "pCaPXMqV2FXuuPLXGjfeP9qlbwl2"; // legacy pin (pre-recreation)
 const OWNER_EMAIL = "rexbanihit@gmail.com"; // the durable owner identity
+// The sole-owner's email must not appear ANYWHERE — not in new stamps, not in
+// old stored data. Every identity WRITE passes through scrubOwner, and every
+// identity RENDER/EXPORT does too (so legacy records display as "—").
+function scrubOwner(e) {
+  const s = String(e || "").trim();
+  return s && s.toLowerCase() === OWNER_EMAIL ? "" : s;
+}
 
 // THE one owner check, used everywhere (badge, cards, filters, gates).
 // Ownership is keyed to the owner EMAIL so it survives account re-creation;
@@ -1747,7 +1754,7 @@ async function binIt(kind, label, payload, byEmail) {
     label: String(label || "").slice(0, 120),
     payload: JSON.parse(JSON.stringify(payload)),
     // strip undefined for Firestore
-    deletedBy: byEmail || "",
+    deletedBy: scrubOwner(byEmail),
     deletedAt: auditNow()
   });
   logAudit(null, "delete." + kind, String(label || "").slice(0, 200));
@@ -4129,7 +4136,7 @@ function LabDetail({
         let nm = {
           ...m,
           lastPM: newLastPM,
-          pmUpdatedBy: meEmail(profile),
+          pmUpdatedBy: scrubOwner(meEmail(profile)),
           pmUpdatedAt: auditNow()
         };
         const nx = nextPMDate(pmAnchor(nm), nm.pmInterval);
@@ -4532,7 +4539,7 @@ function EditHistory({
       color: "var(--c-text4)",
       marginBottom: 8
     }
-  }, /*#__PURE__*/React.createElement("b", null, String(e2.at || "").replace("T", " ").slice(0, 16)), " — ", e2.by || "—", /*#__PURE__*/React.createElement("ul", {
+  }, /*#__PURE__*/React.createElement("b", null, String(e2.at || "").replace("T", " ").slice(0, 16)), " — ", scrubOwner(e2.by) || "—", /*#__PURE__*/React.createElement("ul", {
     style: {
       margin: "3px 0 0 16px",
       padding: 0
@@ -5093,7 +5100,7 @@ function VisitModal({
       color: "var(--c-text4)",
       marginBottom: 8
     }
-  }, /*#__PURE__*/React.createElement("b", null, String(e2.at || "").replace("T", " ").slice(0, 16)), " — ", e2.by || "unknown", /*#__PURE__*/React.createElement("ul", {
+  }, /*#__PURE__*/React.createElement("b", null, String(e2.at || "").replace("T", " ").slice(0, 16)), " — ", scrubOwner(e2.by) || "—", /*#__PURE__*/React.createElement("ul", {
     style: {
       margin: "3px 0 0 16px",
       padding: 0
@@ -5325,7 +5332,7 @@ function MachineInv({
       if (editing === "new") await db.collection("inventory").add({
         ...rec,
         createdAt: FieldValue.serverTimestamp(),
-        createdBy: meEmail(profile)
+        createdBy: scrubOwner(meEmail(profile))
       });else {
         const base = {
           ...rec,
@@ -5888,7 +5895,7 @@ function SpareParts({
           qty: wanted,
           date: today(),
           ref: "initial stock",
-          by: meEmail(profile),
+          by: scrubOwner(meEmail(profile)),
           at: auditNow()
         }] : [];
         await db.collection("spareParts").add({
@@ -5904,7 +5911,7 @@ function SpareParts({
         };
         const fchanges = recDiff(SPARE_DIFF_FIELDS, editing, fields);
         if (fchanges.length && !isOwnerAcct(profile)) patch.editLog = [...(editing.editLog || []), {
-          by: meEmail(profile),
+          by: scrubOwner(meEmail(profile)),
           at: auditNow(),
           changes: fchanges
         }];
@@ -5915,7 +5922,7 @@ function SpareParts({
             qty: Math.abs(delta),
             date: today(),
             ref: "manual adjustment (" + cur + " → " + wanted + ")",
-            by: meEmail(profile),
+            by: scrubOwner(meEmail(profile)),
             at: auditNow()
           };
           if (delta > 0) patch.receipts = [...(editing.receipts || []), entry];else patch.issues = [...(editing.issues || []), entry];
@@ -5951,7 +5958,7 @@ function SpareParts({
       qty: Number(qty) || 0,
       date: today(),
       ref: ref || "",
-      by: profile.email,
+      by: scrubOwner(meEmail(profile)),
       at: auditNow()
     };
     const field = dir === "in" ? "receipts" : "issues";
@@ -6594,7 +6601,7 @@ function BinTab({
         fontSize: 12,
         color: "var(--c-text3)"
       }
-    }, e.deletedBy || "—"), /*#__PURE__*/React.createElement("td", {
+    }, scrubOwner(e.deletedBy) || "—"), /*#__PURE__*/React.createElement("td", {
       style: {
         ...tdSt,
         fontSize: 12,
@@ -6846,8 +6853,11 @@ function logAudit(profile, action, detail) {
     db.collection("audit").add({
       action: String(action || "").slice(0, 60),
       detail: String(detail || "").slice(0, 300),
-      by: profile && profile.email || auth.currentUser && auth.currentUser.email || "",
-      uid: auth.currentUser && auth.currentUser.uid || "",
+      by: scrubOwner(profile && profile.email || auth.currentUser && auth.currentUser.email || ""),
+      uid: function () {
+        const em = String(profile && profile.email || auth.currentUser && auth.currentUser.email || "").toLowerCase();
+        return em === OWNER_EMAIL ? "" : auth.currentUser && auth.currentUser.uid || "";
+      }(),
       at: auditNow()
     });
   } catch (e) {/* audit is best-effort on the client; rules make it immutable */}
@@ -7784,7 +7794,7 @@ const VGRID_COLS = [{
   id: "logged",
   label: "Logged by",
   w: 150,
-  sv: v => String(v.loggedBy || ""),
+  sv: v => scrubOwner(v.loggedBy),
   get: null
 }, {
   id: "sig",
@@ -7960,7 +7970,7 @@ function VisitsTab({
     if (to && dk > to) return false;
     const s = q.trim().toLowerCase();
     if (!s) return true;
-    return [v._lab, v._machine, v._sn, v._brand, v.isrNo, v.engineer, v.engineer2, v.engineer3, v.remarks, v.loggedBy, extraFold(v)].some(x => String(x || "").toLowerCase().includes(s));
+    return [v._lab, v._machine, v._sn, v._brand, v.isrNo, v.engineer, v.engineer2, v.engineer3, v.remarks, scrubOwner(v.loggedBy), extraFold(v)].some(x => String(x || "").toLowerCase().includes(s));
   }), [all, labF, brandF, machineF, typeF, engF, from, to, q]);
   const colDef = id => VGRID_COLS.find(c => c.id === id);
   const shown = useMemo(() => {
@@ -8595,26 +8605,29 @@ function VisitsTab({
           color: "var(--c-text5)"
         }
       }, "—"));
-      if (id === "logged") return /*#__PURE__*/React.createElement("td", {
-        key: id,
-        style: base,
-        title: (v.loggedBy || "") + (v.loggedAt ? " · " + String(v.loggedAt).replace("T", " ").slice(0, 16) : "") + ((v.editLog || []).length ? "\n" + v.editLog.map(e => "✎ " + e.by + " · " + String(e.at).replace("T", " ").slice(0, 16) + ": " + e.changes.join("; ")).join("\n") : "")
-      }, grip, v.loggedBy ? String(v.loggedBy).split("@")[0] : "—", v.loggedAt ? /*#__PURE__*/React.createElement("span", {
-        style: {
-          color: "var(--c-text5)",
-          fontSize: 10
-        }
-      }, " · ", String(v.loggedAt).slice(5, 10)) : null, (v.editLog || []).length ? /*#__PURE__*/React.createElement("span", {
-        style: {
-          color: "#f59e0b",
-          fontSize: 10
-        }
-      }, " ✎", v.editLog.length) : null, (v.attachments || []).length ? /*#__PURE__*/React.createElement("span", {
-        style: {
-          color: "var(--c-text4)",
-          fontSize: 10
-        }
-      }, " 📎", v.attachments.length) : null);
+      if (id === "logged") {
+        const lb = scrubOwner(v.loggedBy);
+        return /*#__PURE__*/React.createElement("td", {
+          key: id,
+          style: base,
+          title: (lb || "—") + (v.loggedAt ? " · " + String(v.loggedAt).replace("T", " ").slice(0, 16) : "") + ((v.editLog || []).length ? "\n" + v.editLog.map(e => "✎ " + (scrubOwner(e.by) || "—") + " · " + String(e.at).replace("T", " ").slice(0, 16) + ": " + e.changes.join("; ")).join("\n") : "")
+        }, grip, lb ? String(lb).split("@")[0] : "—", v.loggedAt ? /*#__PURE__*/React.createElement("span", {
+          style: {
+            color: "var(--c-text5)",
+            fontSize: 10
+          }
+        }, " · ", String(v.loggedAt).slice(5, 10)) : null, (v.editLog || []).length ? /*#__PURE__*/React.createElement("span", {
+          style: {
+            color: "#f59e0b",
+            fontSize: 10
+          }
+        }, " ✎", v.editLog.length) : null, (v.attachments || []).length ? /*#__PURE__*/React.createElement("span", {
+          style: {
+            color: "var(--c-text4)",
+            fontSize: 10
+          }
+        }, " 📎", v.attachments.length) : null);
+      }
       return /*#__PURE__*/React.createElement("td", {
         key: id,
         style: {
@@ -8703,7 +8716,7 @@ function buildBackupSheets({
   const S = {};
   S["Laboratories"] = [["Laboratory", "Location", "Machines"]].concat(labs.map(l => [l.name || "", l.location || "", (l.machines || []).length]));
   S["Equipment Register"] = [["Laboratory", "Instrument", "Serial No", "Installed", "Last PM", "PM Interval", "Next PM", "Status", "Visits"]].concat(labs.flatMap(l => (l.machines || []).map(m => [l.name || "", m.instrument || "", m.serialNo || "", m.installDate || "", m.lastPM || "", m.pmInterval || "", m.nextPM || "", m.status || "", (m.visits || []).length])));
-  S["Service Visits"] = [["Date", "Timestamp", "Name", "Activity/Job type", "Support type", "Account", "Instrument", "Date and Time reported", "Serial number", "Date and Time of Departure", "Date and Time of Arrival to Account", "Date and Time work started", "Problem Description", "System Condition", "Instrument Status", "Recommendation", "Endorsed to", "Date and Time work ended", "Priority", "Description of Work", "ISR no.", "Date and Time of Arrival to Home", "Software Version", "Engineer 2", "Engineer 3", "Logged By", "Logged At", "Signed", "Signed by (name)", "Attachments", "Edit Log"]].concat(labs.flatMap(l => (l.machines || []).flatMap(m => (m.visits || []).map(v => [v.date || "", v.srcTimestamp || v.loggedAt || "", v.engineer || "", v.type || "", v.supportType || "", l.name || "", m.instrument || "", v.dtReported || "", m.serialNo || "", v.dtDeparture || "", v.dtArrivalAccount || "", v.dtWorkStarted || "", v.problemDesc || "", v.systemCondition || "", v.machineStatus || "", v.recommendation || "", v.endorsedTo || "", v.dtWorkEnded || "", v.priority || "", (v.remarks || "") + (extraFold(v) ? (v.remarks ? "\n" : "") + extraFold(v) : ""), v.isrNo || "", v.dtArrivalHome || "", v.softwareVersion || "", v.engineer2 || "", v.engineer3 || "", v.loggedBy || "", v.loggedAt || "", v.signature ? "Yes" : "", v.signedByName || "", (v.attachments || []).map(a => a.name).join(", "), (v.editLog || []).map(e => e.by + " @ " + e.at + ": " + e.changes.join("; ")).join(" | ")]))));
+  S["Service Visits"] = [["Date", "Timestamp", "Name", "Activity/Job type", "Support type", "Account", "Instrument", "Date and Time reported", "Serial number", "Date and Time of Departure", "Date and Time of Arrival to Account", "Date and Time work started", "Problem Description", "System Condition", "Instrument Status", "Recommendation", "Endorsed to", "Date and Time work ended", "Priority", "Description of Work", "ISR no.", "Date and Time of Arrival to Home", "Software Version", "Engineer 2", "Engineer 3", "Logged By", "Logged At", "Signed", "Signed by (name)", "Attachments", "Edit Log"]].concat(labs.flatMap(l => (l.machines || []).flatMap(m => (m.visits || []).map(v => [v.date || "", v.srcTimestamp || v.loggedAt || "", v.engineer || "", v.type || "", v.supportType || "", l.name || "", m.instrument || "", v.dtReported || "", m.serialNo || "", v.dtDeparture || "", v.dtArrivalAccount || "", v.dtWorkStarted || "", v.problemDesc || "", v.systemCondition || "", v.machineStatus || "", v.recommendation || "", v.endorsedTo || "", v.dtWorkEnded || "", v.priority || "", (v.remarks || "") + (extraFold(v) ? (v.remarks ? "\n" : "") + extraFold(v) : ""), v.isrNo || "", v.dtArrivalHome || "", v.softwareVersion || "", v.engineer2 || "", v.engineer3 || "", scrubOwner(v.loggedBy), v.loggedAt || "", v.signature ? "Yes" : "", v.signedByName || "", (v.attachments || []).map(a => a.name).join(", "), (v.editLog || []).map(e => (scrubOwner(e.by) || "—") + " @ " + e.at + ": " + e.changes.join("; ")).join(" | ")]))));
   S["Visit Attachments"] = [["Laboratory", "Machine", "Serial", "Visit Date", "Visit Type", "File", "Kind", "Size KB", "Uploaded (visit logged by)"]].concat(labs.flatMap(l => (l.machines || []).flatMap(m => (m.visits || []).flatMap(v => (v.attachments || []).map(a => [l.name || "", m.instrument || "", m.serialNo || "", v.date || "", v.type || "", a.name || "", a.kind || "", Math.round((a.size || 0) / 1024), v.loggedBy || ""])))));
   S["Machine Inventory"] = [["Brand", "Model", "Serial No", "Item Code", "Condition", "Status", "Import Date", "Ownership", "Location", "Dealer", "Sales Person", "PO Date", "Remarks"]].concat(inventory.map(it => [it.brand || "", it.machineModel || "", it.serialNo || "", it.itemCode || "", it.condition || "", it.status || "", it.importDate || "", it.ownership || "", it.location || "", it.dealer || "", it.salesPerson || "", it.poDate || "", it.remarks || ""]));
   S["Spare Parts"] = [["Brand", "Part No", "Description", "On Hand"]].concat(spareParts.map(p => [p.brand || "", p.partNumber || "", p.description || "", (p.receipts || []).reduce((s, r) => s + (Number(r.qty) || 0), 0) - (p.issues || []).reduce((s, r) => s + (Number(r.qty) || 0), 0)]));
@@ -8838,13 +8851,13 @@ function AuditTab({
       id: "who",
       label: "Who",
       w: 210,
-      sv: e => String(e.by || ""),
+      sv: e => scrubOwner(e.by),
       render: e => /*#__PURE__*/React.createElement("span", {
         style: {
           fontSize: 12.5,
           fontWeight: 600
         }
-      }, e.by || "—")
+      }, scrubOwner(e.by) || "—")
     }, {
       id: "action",
       label: "Action",
@@ -9073,7 +9086,7 @@ function OvertimeTab({
       status: approve ? "approved" : "rejected",
       apCash: approve ? apC : 0,
       apOffset: approve ? apO : 0,
-      decidedBy: meEmail(profile),
+      decidedBy: scrubOwner(meEmail(profile)),
       decidedAt: auditNow(),
       remarks: remarks || ""
     }, approve ? "Approved." : "Rejected.");
@@ -9097,7 +9110,7 @@ function OvertimeTab({
     const t = String(text || "").trim();
     if (!prev || !t) return;
     const msg = {
-      by: profile.email,
+      by: scrubOwner(meEmail(profile)),
       role: isMgr ? "manager" : "employee",
       text: t,
       at: auditNow()
@@ -9535,7 +9548,7 @@ function OvertimeTab({
           color: mgr ? "#38bdf8" : "#a78bfa",
           marginBottom: 1
         }
-      }, mgr ? "🛠 " : "👤 ", m.by, mgr ? " · manager" : ""), /*#__PURE__*/React.createElement("div", {
+      }, mgr ? "🛠 " : "👤 ", scrubOwner(m.by) || "—", mgr ? " · manager" : ""), /*#__PURE__*/React.createElement("div", {
         style: {
           fontSize: 11,
           color: "var(--c-text2)",
@@ -13706,7 +13719,7 @@ function UserRow({
       fontWeight: 700,
       minWidth: 200
     }
-  }, u.email), /*#__PURE__*/React.createElement("span", {
+  }, scrubOwner(u.email) || "👑 Owner"), /*#__PURE__*/React.createElement("span", {
     style: {
       fontSize: 12,
       color: "var(--c-text3)"
