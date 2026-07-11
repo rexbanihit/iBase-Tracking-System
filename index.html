@@ -10461,10 +10461,10 @@ function OtSettingsModal({
 // machine becomes its installation date.
 const IMP_SYN = {
   date: ["date", "visitdate", "dateofvisit", "servicedate", "dov", "dateofservice", "dateperformed", "dateconducted", "dateofpm", "pmdate", "dateofrepair", "datevisited", "dateofwork", "visitdt", "dt"],
-  dtDeparture: ["dateandtimeofdeparture", "datetimedeparture", "departure", "departuretime"],
-  dtWorkStarted: ["dateandtimeworkstarted", "datetimeworkstarted", "workstarted", "timestarted"],
+  dtDeparture: ["dateandtimeofdeparture", "datetimeofdeparture", "datetimedeparture", "departure", "departuretime"],
+  dtWorkStarted: ["dateandtimeworkstarted", "datetimeworkstarted", "dateandtimeworkstarted", "workstarted", "timestarted"],
   dtWorkEnded: ["dateandtimeworkended", "datetimeworkended", "workended", "timeended"],
-  dtArrivalHome: ["dateandtimeofarrivaltohome", "arrivaltohome", "datetimearrivalhome", "arrivalhome", "dateandtimearrivaltohome"],
+  dtArrivalHome: ["dateandtimeofarrivaltohome", "datetimeofarrivaltohome", "arrivaltohome", "datetimearrivalhome", "arrivalhome", "dateandtimearrivaltohome"],
   lab: ["laboratory", "lab", "labname", "account", "accountname", "institution", "hospital", "customer", "client", "site", "enduser", "endusername", "clientname", "customername", "hospitalname", "institutionname", "facility", "facilityname", "branch", "nameofinstitution", "nameofhospital", "accountlaboratory", "laboratoryname", "labaccount", "companyname"],
   location: ["location", "address", "region", "area", "city", "province"],
   subRegion: ["subregion", "subarea", "district"],
@@ -10479,7 +10479,7 @@ const IMP_SYN = {
   remarks: ["remarks", "workdescription", "description", "work", "findings", "actiontaken", "action", "notes", "comment", "comments", "details", "workdone", "workperformed", "jobdescription", "complaint", "resolution", "servicereport", "actiondone", "report", "observation", "descriptionofwork"],
   supportType: ["supporttype", "typeofsupport"],
   dtReported: ["dateandtimereported", "datetimereported", "datereported", "timereported", "reported"],
-  dtArrivalAccount: ["dateandtimeofarrivaltoaccount", "arrivaltoaccount", "datetimearrivalaccount", "arrivalaccount", "dateandtimearrivaltoaccount"],
+  dtArrivalAccount: ["dateandtimeofarrivaltoaccount", "datetimeofarrivaltoaccount", "arrivaltoaccount", "datetimearrivalaccount", "arrivalaccount", "dateandtimearrivaltoaccount"],
   problemDesc: ["problemdescription", "problem", "problemreported"],
   systemCondition: ["systemcondition", "machinecondition"],
   recommendation: ["recommendation", "recommendations"],
@@ -10487,6 +10487,11 @@ const IMP_SYN = {
   priority: ["priority", "urgency"],
   softwareVersion: ["softwareversion", "swversion", "software"],
   srcTimestamp: ["timestamp"],
+  // System-owned columns present in a LOGS export — recognized so re-importing an
+  // exported file doesn't flag them as "unknown". They are intentionally ignored:
+  // "Logged by" is set by the importer; "Attachment" holds files added in-app.
+  _ignoreLogged: ["loggedby"],
+  _ignoreAttachment: ["attachment", "attachments"],
   installDate: ["installdate", "dateinstalled", "installationdate", "dateofinstallation"]
 };
 // Inventory-destination header map (Machine Inventory)
@@ -10569,10 +10574,18 @@ function impDate(v) {
 // Used by BOTH the automatic detector and the manual column-mapping panel.
 function impRowsFromGrid(grid, hi, map) {
   const rows = [];
+  const ignoreIdx = {};
+  Object.keys(map).forEach(k => {
+    if (k.indexOf("_ignore") === 0) {
+      ignoreIdx[map[k]] = true;
+      delete map[k];
+    }
+  });
   const mappedIdx = {};
   Object.keys(map).forEach(k => {
     if (map[k] !== undefined) mappedIdx[map[k]] = true;
   });
+  Object.keys(ignoreIdx).forEach(i => mappedIdx[i] = true); // system columns: recognized, not imported, not flagged as extras
   const header = grid[hi] || [];
   const unmapped = header.map((h, i) => ({
     h: String(h || "").trim(),
