@@ -2688,10 +2688,29 @@ function DashboardTab({
     m,
     lab: l
   })));
-  const live = rows.filter(r => !isPull(r.m));
-  const machines = rows.length,
-    activeN = live.length;
-  const flagged = live.map(r => ({
+  // A machine is "retired" from the active base when its status is pulled-out,
+  // scrapped, decommissioned, released or inactive — these are NOT counted.
+  const isRetiredUnit = r => isPull(r.m) || retiredStatus(r.m.status);
+  const live = rows.filter(r => !isRetiredUnit(r));
+  // De-duplicate by serial so a pulled-out record + its re-installed record for
+  // the SAME serial count as one live instrument (newest install wins).
+  const bySerial = {};
+  live.forEach(r => {
+    const key = String(r.m.serialNo || "").trim().toLowerCase();
+    if (!key) {
+      bySerial["__nokey_" + (r.m.id || Math.random())] = r;
+      return;
+    }
+    const cur = bySerial[key];
+    const rd = pmAnchor(r.m) || "",
+      cd = cur ? pmAnchor(cur.m) || "" : "";
+    if (!cur || rd >= cd) bySerial[key] = r; // keep the most-recently-anchored record
+  });
+  const liveUnique = Object.values(bySerial);
+  const retiredN = rows.length - live.length;
+  const machines = liveUnique.length,
+    activeN = liveUnique.length;
+  const flagged = liveUnique.map(r => ({
     ...r,
     flag: pmFlag(r.m),
     next: pmComputedNext(r.m)
@@ -2701,7 +2720,7 @@ function DashboardTab({
   const compliance = Math.round((Math.max(activeN, 0) - overdue) / Math.max(activeN, 1) * 100);
   // installed base by instrument (active units)
   const instCounts = {};
-  live.forEach(r => {
+  liveUnique.forEach(r => {
     const n = String(r.m.instrument || "").trim() || "(Unspecified)";
     instCounts[n] = (instCounts[n] || 0) + 1;
   });
@@ -2732,17 +2751,17 @@ function DashboardTab({
     color: "#38bdf8",
     sub: "customer sites"
   }), /*#__PURE__*/React.createElement(KPICard, {
-    title: "Total Machines",
+    title: "Active Instruments",
     value: machines,
     icon: "🔬",
     color: "#a78bfa",
-    sub: "all instruments"
+    sub: "in service (by serial)"
   }), /*#__PURE__*/React.createElement(KPICard, {
-    title: "Active Units",
-    value: activeN,
-    icon: "✅",
-    color: "#34d399",
-    sub: machines ? Math.round(activeN / machines * 100) + "% of total" : "—"
+    title: "Retired / Pulled-out",
+    value: retiredN,
+    icon: "📦",
+    color: "#94a3b8",
+    sub: "not in active base"
   }), /*#__PURE__*/React.createElement(KPICard, {
     title: "Overdue PM",
     value: overdue,
