@@ -10582,6 +10582,12 @@ function impRowsFromGrid(grid, hi, map) {
     const r = grid[i] || [];
     if (!r.some(x => String(x == null ? "" : x).trim())) continue;
     const g = k => map[k] === undefined ? "" : String(r[map[k]] == null ? "" : r[map[k]]).trim();
+    // "Preventive Maintenance" (any spelling) equals the system's "PM".
+    const normType = t => {
+      const s = String(t || "").trim();
+      if (/^(pm|p\.m\.|preventive\s*maintenance|preventative\s*maintenance|preventive\s*maint\.?)$/i.test(s)) return "PM";
+      return s;
+    };
     const date = impDate(map.date !== undefined ? r[map.date] : "");
     const lab = g("lab") || "(Unassigned imports)";
     const serial = g("serial");
@@ -10602,7 +10608,7 @@ function impRowsFromGrid(grid, hi, map) {
       subRegion: g("subRegion"),
       instrument,
       serial,
-      type: g("type") || "Corrective",
+      type: normType(g("type")) || "Corrective",
       isr: g("isr"),
       engineer: g("engineer"),
       engineer2: g("engineer2"),
@@ -10616,6 +10622,8 @@ function impRowsFromGrid(grid, hi, map) {
       endorsedTo: g("endorsedTo"),
       priority: g("priority"),
       softwareVersion: g("softwareVersion"),
+      firmwareVersion: g("firmwareVersion"),
+      brand: g("brand"),
       dtReported: gdt("dtReported"),
       dtDeparture: gdt("dtDeparture") || "",
       dtArrivalAccount: gdt("dtArrivalAccount"),
@@ -10800,6 +10808,7 @@ function impBuildPlan(rows, labs, importerEmail, includeExtras) {
         endorsedTo: r.endorsedTo || "",
         priority: r.priority || "",
         softwareVersion: r.softwareVersion || "",
+        firmwareVersion: r.firmwareVersion || "",
         srcTimestamp: r.srcTimestamp || "",
         remarks: r.remarks || "",
         signature: "",
@@ -11477,7 +11486,7 @@ function ImportExcel({
       })
     }, /*#__PURE__*/React.createElement("option", {
       value: "ignore"
-    }, "— keep as extra column —"), [["date", "Date"], ["lab", "Laboratory"], ["location", "Location"], ["subRegion", "Sub-region"], ["instrument", "Machine / Instrument"], ["serial", "Serial No"], ["type", "Visit type"], ["isr", "ISR / Report no"], ["engineer", "Engineer"], ["engineer2", "Engineer 2"], ["engineer3", "Engineer 3"], ["status", "Status after"], ["remarks", "Remarks / Work description"]].map(([v, l]) => /*#__PURE__*/React.createElement("option", {
+    }, "— keep as extra column —"), [["srcTimestamp", "Timestamp"], ["engineer", "Name (Engineer)"], ["engineer2", "Name 2"], ["engineer3", "Name 3"], ["type", "Activity/Job type"], ["supportType", "Support type"], ["lab", "Account / Laboratory"], ["brand", "Brand"], ["instrument", "Instrument"], ["serial", "Serial number"], ["isr", "ISR no."], ["dtReported", "Date & Time reported"], ["dtDeparture", "Date & Time of Departure"], ["dtArrivalAccount", "Date & Time of Arrival to Account"], ["dtWorkStarted", "Date & Time work started"], ["dtWorkEnded", "Date & Time work ended"], ["dtArrivalHome", "Date & Time of Arrival to Home"], ["problemDesc", "Problem Description"], ["systemCondition", "System Condition"], ["status", "Instrument Status"], ["recommendation", "Recommendation"], ["endorsedTo", "Endorsed to"], ["priority", "Priority"], ["remarks", "Description of Work"], ["softwareVersion", "Software Version"], ["firmwareVersion", "Firmware Version"], ["location", "Location / Region"], ["subRegion", "Sub-region"], ["installDate", "Install date"]].map(([v, l]) => /*#__PURE__*/React.createElement("option", {
       key: v,
       value: v
     }, l))));
