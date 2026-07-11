@@ -1775,8 +1775,17 @@ function pmComputedNext(m) {
   const nx = typeof nextPMDate === "function" ? nextPMDate(pmAnchor(anchorM), m.pmInterval) : null;
   return nx || String(m.nextPM || "").slice(0, 10); // fall back to stored nextPM
 }
+// v127 rule (retired machines are silent): Inactive / Scrapped / Pulled-out —
+// and this edition's "Released" — never raise PM reminders.
+function retiredStatus(s) {
+  return /inactive|scrapped|pulled|released/i.test(String(s || ""));
+}
 function pmFlag(m) {
-  if (m && isPull(m)) return "OK";
+  // v127 getPMFlag, faithfully: retirement silences reminders; weekly is
+  // day-level; every other interval is decided PURELY by calendar month —
+  // the day of the month is never used (a PM due on the 5th is still
+  // "Due This Month" on the 20th, NOT "Overdue").
+  if (m && (isPull(m) || retiredStatus(m.status))) return "OK";
   const d = pmComputedNext(m);
   if (!d) return "OK";
   const t = today();
@@ -1788,12 +1797,13 @@ function pmFlag(m) {
     if (days <= 7) return "Due This Week";
     return "OK";
   }
-  if (d < t) return "Overdue";
-  const [ty, tm] = t.split("-").map(Number),
-    [y, mo] = d.split("-").map(Number);
-  if (y === ty && mo === tm) return "Due This Month";
-  const nm = tm === 12 ? [ty + 1, 1] : [ty, tm + 1];
-  if (y === nm[0] && mo === nm[1]) return "Due Next Month";
+  const now = new Date(t + "T00:00:00"),
+    pm = new Date(d + "T00:00:00");
+  if (isNaN(pm)) return "OK";
+  const monthDiff = (pm.getFullYear() - now.getFullYear()) * 12 + (pm.getMonth() - now.getMonth());
+  if (monthDiff < 0) return "Overdue";
+  if (monthDiff === 0) return "Due This Month";
+  if (monthDiff === 1) return "Due Next Month";
   return "OK";
 }
 // Who installed a machine: the engineer on the earliest Installation visit,
@@ -3008,6 +3018,25 @@ function LabsTab({
   const [instF, setInstF] = useState("");
   const [brandF, setBrandF] = useState("");
   const [flagF, setFlagF] = useState("");
+  const [pmFrom, setPmFrom] = useState("");
+  const [pmTo, setPmTo] = useState("");
+  const [qYear, setQYear] = useState(String(new Date().getFullYear()));
+  const setQuarter = qn => {
+    const y = String(Number(qYear) || new Date().getFullYear());
+    const R = {
+      "1": [y + "-01-01", y + "-03-31"],
+      "2": [y + "-04-01", y + "-06-30"],
+      "3": [y + "-07-01", y + "-09-30"],
+      "4": [y + "-10-01", y + "-12-31"]
+    }[qn];
+    if (R) {
+      setPmFrom(R[0]);
+      setPmTo(R[1]);
+    } else {
+      setPmFrom("");
+      setPmTo("");
+    }
+  };
   const [tSort, setTSort] = useState({
     col: "lab",
     dir: 1
@@ -3024,7 +3053,7 @@ function LabsTab({
     _flag: pmFlag(m),
     _next: pmComputedNext(m)
   }))), [labs]);
-  const matchesFilters = m => (!instF || String(m.instrument || "").trim() === instF) && (!brandF || brandFromModel(m.instrument, (labs.find(l => (l.machines || []).some(x => x.id === m.id)) || {}).brand) === brandF) && (!flagF || pmFlag(m) === flagF);
+  const matchesFilters = m => (!instF || String(m.instrument || "").trim() === instF) && (!brandF || brandFromModel(m.instrument, (labs.find(l => (l.machines || []).some(x => x.id === m.id)) || {}).brand) === brandF) && (!flagF || pmFlag(m) === flagF) && (!(pmFrom || pmTo) || m._next && (!pmFrom || m._next >= pmFrom) && (!pmTo || m._next <= pmTo));
   const shown = labs.filter(l => {
     if ((instF || brandF || flagF) && !(l.machines || []).some(matchesFilters)) return false;
     const s = q.toLowerCase();
@@ -3076,7 +3105,7 @@ function LabsTab({
       numeric: true,
       sensitivity: "base"
     }));
-  }, [allMachines, q, instF, flagF, tSort]);
+  }, [allMachines, q, instF, flagF, pmFrom, pmTo, tSort]);
   async function addLab(name, location, subRegion) {
     const dup = labs.find(l => labNameNorm(l.name) === labNameNorm(name));
     if (dup) {
@@ -3156,7 +3185,92 @@ function LabsTab({
     value: ""
   }, "All PM flags"), ["Overdue", "Due This Week", "Due This Month", "Due Next Month", "OK"].map(f => /*#__PURE__*/React.createElement("option", {
     key: f
-  }, f))), (q || instF || brandF || flagF) && /*#__PURE__*/React.createElement("button", {
+  }, f))), /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("label", {
+    style: {
+      fontSize: 10,
+      color: "var(--c-text5)",
+      display: "block"
+    }
+  }, "Next PM from"), /*#__PURE__*/React.createElement("input", {
+    type: "date",
+    style: {
+      ...inputSt(),
+      padding: "6px 8px",
+      fontSize: 12
+    },
+    value: pmFrom,
+    onChange: e => setPmFrom(e.target.value)
+  })), /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("label", {
+    style: {
+      fontSize: 10,
+      color: "var(--c-text5)",
+      display: "block"
+    }
+  }, "to"), /*#__PURE__*/React.createElement("input", {
+    type: "date",
+    style: {
+      ...inputSt(),
+      padding: "6px 8px",
+      fontSize: 12
+    },
+    value: pmTo,
+    onChange: e => setPmTo(e.target.value)
+  })), /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("label", {
+    style: {
+      fontSize: 10,
+      color: "var(--c-text5)",
+      display: "block"
+    }
+  }, "Quarter"), /*#__PURE__*/React.createElement("select", {
+    style: {
+      ...inputSt(),
+      padding: "6px 8px",
+      fontSize: 12,
+      cursor: "pointer"
+    },
+    value: "",
+    onChange: e => {
+      setQuarter(e.target.value);
+      e.target.value = "";
+    }
+  }, /*#__PURE__*/React.createElement("option", {
+    value: ""
+  }, "— pick —"), /*#__PURE__*/React.createElement("option", {
+    value: "1"
+  }, "Q1 · Jan–Mar"), /*#__PURE__*/React.createElement("option", {
+    value: "2"
+  }, "Q2 · Apr–Jun"), /*#__PURE__*/React.createElement("option", {
+    value: "3"
+  }, "Q3 · Jul–Sep"), /*#__PURE__*/React.createElement("option", {
+    value: "4"
+  }, "Q4 · Oct–Dec"))), /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("label", {
+    style: {
+      fontSize: 10,
+      color: "var(--c-text5)",
+      display: "block"
+    }
+  }, "Year"), /*#__PURE__*/React.createElement("input", {
+    type: "number",
+    style: {
+      ...inputSt(),
+      padding: "6px 8px",
+      fontSize: 12,
+      width: 78
+    },
+    value: qYear,
+    onChange: e => setQYear(e.target.value)
+  })), (pmFrom || pmTo) && /*#__PURE__*/React.createElement("button", {
+    style: {
+      ...btnSt("var(--c-border)", "var(--c-text3)"),
+      padding: "6px 10px",
+      fontSize: 11,
+      alignSelf: "flex-end"
+    },
+    onClick: () => {
+      setPmFrom("");
+      setPmTo("");
+    }
+  }, "✕ Clear range"), (q || instF || brandF || flagF) && /*#__PURE__*/React.createElement("button", {
     style: btnSt("var(--c-border)", "var(--c-text2)"),
     onClick: () => {
       setQ("");
@@ -8004,9 +8118,29 @@ function VisitsTab({
     style: _lblS
   }, "Columns"), /*#__PURE__*/React.createElement("button", {
     title: "Show or hide columns — affects only YOUR view, never other users' layouts",
-    style: btnSt("var(--c-border)", "var(--c-text2)"),
+    style: {
+      ...btnSt("var(--c-border)", "var(--c-text2)"),
+      minWidth: 132,
+      position: "relative"
+    },
     onClick: () => setColMenu(m => !m)
-  }, "👁 Show / Hide", hiddenCols.length ? " (" + hiddenCols.length + " hidden)" : ""), " ", /*#__PURE__*/React.createElement("button", {
+  }, "👁 Show / Hide", hiddenCols.length ? /*#__PURE__*/React.createElement("span", {
+    style: {
+      position: "absolute",
+      top: -7,
+      right: -7,
+      minWidth: 17,
+      height: 17,
+      lineHeight: "17px",
+      borderRadius: 999,
+      fontSize: 10,
+      fontWeight: 800,
+      background: "#f59e0b",
+      color: "#1a1a1a",
+      textAlign: "center",
+      padding: "0 4px"
+    }
+  }, hiddenCols.length) : null), " ", /*#__PURE__*/React.createElement("button", {
     title: "Restore the default column order, widths, visibility and row height (your view only)",
     style: btnSt("var(--c-border)", "var(--c-text2)"),
     onClick: () => {
