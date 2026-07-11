@@ -148,6 +148,8 @@
       table.ibt tbody tr:hover td { background: rgba(56,189,248,.07); }
   .ibrow { cursor: pointer; }
   .ibrow:hover { background: rgba(56,189,248,.07) !important; }
+  /* One password toggle everywhere: suppress Edge's built-in reveal (and IE's clear) */
+  input::-ms-reveal, input::-ms-clear { display: none; }
   body { background: var(--c-bg); color: var(--c-text); margin:0; font-family:'DM Sans','Segoe UI',system-ui,sans-serif; font-size:14px; }
   * { box-sizing: border-box; } input, select, button { font-family: inherit; }
 </style>
@@ -1706,6 +1708,36 @@ const EMAIL_RX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 // The signed-in user's email with a bullet-proof fallback: if the profile
 // document ever lacks its email field, fall back to the Auth account's email —
 // Firestore refuses ANY write containing an undefined value.
+// Password-reveal icons in the Microsoft Edge (Fluent) style — a clean outlined
+// eye, and the same eye struck through while the password is shown. Replaces
+// the emoji toggle and is the ONE toggle in every browser (Edge's built-in
+// reveal is suppressed via CSS so it can't double up).
+function EyeIcon({
+  off
+}) {
+  return /*#__PURE__*/React.createElement("svg", {
+    width: "16",
+    height: "16",
+    viewBox: "0 0 24 24",
+    fill: "none",
+    stroke: "currentColor",
+    strokeWidth: "1.7",
+    strokeLinecap: "round",
+    strokeLinejoin: "round",
+    "aria-hidden": "true"
+  }, /*#__PURE__*/React.createElement("path", {
+    d: "M2.5 12s3.5-6.5 9.5-6.5S21.5 12 21.5 12s-3.5 6.5-9.5 6.5S2.5 12 2.5 12z"
+  }), /*#__PURE__*/React.createElement("circle", {
+    cx: "12",
+    cy: "12",
+    r: "2.8"
+  }), off ? /*#__PURE__*/React.createElement("line", {
+    x1: "4",
+    y1: "20",
+    x2: "20",
+    y2: "4"
+  }) : null);
+}
 function meEmail(p) {
   return p && p.email || auth.currentUser && auth.currentUser.email || "";
 }
@@ -2201,11 +2233,14 @@ function Login({
       background: "none",
       border: "none",
       cursor: "pointer",
-      fontSize: 16,
       color: "var(--c-text4)",
-      padding: 4
+      padding: 4,
+      display: "flex",
+      alignItems: "center"
     }
-  }, showPw ? "🙈" : "👁")), /*#__PURE__*/React.createElement("button", {
+  }, showPw ? /*#__PURE__*/React.createElement(EyeIcon, {
+    off: true
+  }) : /*#__PURE__*/React.createElement(EyeIcon, null))), /*#__PURE__*/React.createElement("button", {
     style: {
       ...btnSt("var(--c-key)", "var(--c-bg)"),
       width: "100%",
