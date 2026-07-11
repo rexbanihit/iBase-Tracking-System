@@ -8933,7 +8933,7 @@ function OvertimeTab({
 }) {
   const isMgr = pIsOtManager(profile);
   const editable = pCanTab(profile, "overtime", "edit");
-  const myName = profile.engineerName || "";
+  // resolved below, after engineerNames exists (case-insensitive matching)
   const otSettingsRaw = useDoc("config/otSettings", true);
   // Merge stored settings over the defaults so a PARTIAL document (e.g. missing
   // the weekly schedule) can never crash the overtime engine into a blank screen.
@@ -8974,6 +8974,19 @@ function OvertimeTab({
     }));
     return Object.keys(set).sort();
   }, [users, allVisits]);
+  // Which employee is THIS account? engineerName first (case-insensitive), then
+  // the profile/display name, then the email's local part — so a user whose
+  // linked name differs only in casing/spacing still sees their own ledger.
+  const myName = useMemo(() => {
+    const direct = String(profile.engineerName || "").trim();
+    if (direct) {
+      const hit = engineerNames.find(n => n.toLowerCase() === direct.toLowerCase());
+      return hit || direct;
+    }
+    const cands = [profile.name, profile.displayName, String(profile.email || "").split("@")[0].replace(/[._]/g, " ")].map(x => String(x || "").trim().toLowerCase()).filter(Boolean);
+    const hit = engineerNames.find(n => cands.includes(n.toLowerCase()));
+    return hit || "";
+  }, [profile, engineerNames]);
   const visibleEngineers = isMgr ? engineerNames : myName ? [myName] : [];
   const [selectedEng, setSelectedEng] = useState(isMgr ? "__all__" : "");
   const [period, setPeriod] = useState("__allhist__");
@@ -9572,6 +9585,24 @@ function OvertimeTab({
   }) {
     const days = daysInPeriod(engName);
     const totals = totalsFor(engName);
+    const [openDays, setOpenDays] = useState({});
+    // the exact visits the engine used for one day — same involvement + same
+    // time fields (departure||work-started → arrival-home||work-ended)
+    const dayVisits = dateKey => allVisits.filter(v => {
+      const involved = v.engineer === engName || v.engineer2 === engName || v.engineer3 === engName;
+      if (!involved) return false;
+      const s = otParseDT(v.dtDeparture) || otParseDT(v.dtWorkStarted);
+      const e = otParseDT(v.dtArrivalHome) || otParseDT(v.dtWorkEnded);
+      if (!s || !e || e.getTime() <= s.getTime()) return false;
+      return (v.date || s.toISOString().slice(0, 10)) === dateKey;
+    });
+    const h12 = t => {
+      let h = t.getHours(),
+        m = String(t.getMinutes()).padStart(2, "0");
+      const ap = h >= 12 ? "PM" : "AM";
+      h = h % 12 || 12;
+      return h + ":" + m + " " + ap;
+    };
     return /*#__PURE__*/React.createElement("div", {
       style: cardSt
     }, /*#__PURE__*/React.createElement("div", {
@@ -9602,24 +9633,45 @@ function OvertimeTab({
         width: "100%",
         borderCollapse: "collapse"
       }
-    }, /*#__PURE__*/React.createElement("thead", null, /*#__PURE__*/React.createElement("tr", null, ["Date", "Visits", "Total Hrs", "Regular", "OT Hrs", "OT Time", "OT Application (Cash / Offset)", "Notes"].map(h => /*#__PURE__*/React.createElement("th", {
+    }, /*#__PURE__*/React.createElement("thead", null, /*#__PURE__*/React.createElement("tr", null, ["Date", "Visits", "ISR No.", "Total Hrs", "Regular", "OT Hrs", "OT Time", "OT Application (Cash / Offset)", "Notes"].map(h => /*#__PURE__*/React.createElement("th", {
       key: h,
       style: thSt
-    }, h)))), /*#__PURE__*/React.createElement("tbody", null, days.map(d => /*#__PURE__*/React.createElement("tr", {
+    }, h)))), /*#__PURE__*/React.createElement("tbody", null, days.map(d => /*#__PURE__*/React.createElement(React.Fragment, {
       key: d.date
-    }, /*#__PURE__*/React.createElement("td", {
+    }, /*#__PURE__*/React.createElement("tr", null, /*#__PURE__*/React.createElement("td", {
       style: {
         ...tdSt,
         whiteSpace: "nowrap"
       }
-    }, fmtDate(d.date)), /*#__PURE__*/React.createElement("td", {
+    }, /*#__PURE__*/React.createElement("button", {
+      title: "Show how this day's hours were computed",
+      style: {
+        background: "none",
+        border: "none",
+        cursor: "pointer",
+        color: "var(--c-key)",
+        padding: "0 6px 0 0",
+        fontSize: 11
+      },
+      onClick: () => setOpenDays(s => ({
+        ...s,
+        [d.date]: !s[d.date]
+      }))
+    }, openDays[d.date] ? "▾" : "▸"), fmtDate(d.date)), /*#__PURE__*/React.createElement("td", {
       style: {
         ...tdSt,
         fontSize: 12,
         color: "var(--c-text3)"
       },
       title: (d.sources || []).join(String.fromCharCode(10))
-    }, d.visitCount, d.isrNos && d.isrNos.length ? " (" + d.isrNos.join(", ") + ")" : ""), /*#__PURE__*/React.createElement("td", {
+    }, d.visitCount), /*#__PURE__*/React.createElement("td", {
+      style: {
+        ...tdSt,
+        fontSize: 11.5,
+        fontFamily: "monospace",
+        color: "var(--c-text3)"
+      }
+    }, d.isrNos && d.isrNos.length ? d.isrNos.join(", ") : "—"), /*#__PURE__*/React.createElement("td", {
       style: {
         ...tdSt,
         fontFamily: "monospace"
@@ -9675,8 +9727,44 @@ function OvertimeTab({
         fontSize: 11,
         color: "var(--c-text4)"
       }
-    }, [d.holidayName, (d.sources || []).join("; ")].filter(Boolean).join(" · ") || ""))), days.length === 0 && /*#__PURE__*/React.createElement("tr", null, /*#__PURE__*/React.createElement("td", {
-      colSpan: 7,
+    }, [d.holidayName, (d.sources || []).join("; ")].filter(Boolean).join(" · ") || "")), openDays[d.date] && /*#__PURE__*/React.createElement("tr", null, /*#__PURE__*/React.createElement("td", {
+      colSpan: 9,
+      style: {
+        ...tdSt,
+        background: "var(--c-card2)",
+        padding: "10px 14px"
+      }
+    }, /*#__PURE__*/React.createElement("div", {
+      style: {
+        fontSize: 10.5,
+        fontWeight: 800,
+        color: "var(--c-text4)",
+        textTransform: "uppercase",
+        marginBottom: 6
+      }
+    }, "How these hours were computed"), dayVisits(d.date).map((v, i) => {
+      const s = otParseDT(v.dtDeparture) || otParseDT(v.dtWorkStarted);
+      const e = otParseDT(v.dtArrivalHome) || otParseDT(v.dtWorkEnded);
+      return /*#__PURE__*/React.createElement("div", {
+        key: v.id || i,
+        style: {
+          fontSize: 11.5,
+          color: "var(--c-text3)",
+          marginBottom: 4
+        }
+      }, "• ", /*#__PURE__*/React.createElement("b", null, v.isrNo || "no ISR"), " · ", v._src || "—", " · ", h12(s), " → ", h12(e), e.toDateString() !== s.toDateString() ? " (+1d)" : "", /*#__PURE__*/React.createElement("span", {
+        style: {
+          color: "var(--c-text5)"
+        }
+      }, " (", v.dtDeparture ? "departure" : "work started", " → ", v.dtArrivalHome ? "arrival home" : "work ended", ")"));
+    }), /*#__PURE__*/React.createElement("div", {
+      style: {
+        fontSize: 11,
+        color: "var(--c-text5)",
+        marginTop: 6
+      }
+    }, "Day span = earliest start → latest end across the visits above.", " ", d.isHoliday || d.restDay ? (d.isHoliday ? "Holiday (" + d.holidayName + ")" : "Scheduled rest day") + ": the ENTIRE span counts as overtime." : "Ordinary weekday: overtime counts from 6:30 PM onwards (office end + grace); hours before that are regular."))))), days.length === 0 && /*#__PURE__*/React.createElement("tr", null, /*#__PURE__*/React.createElement("td", {
+      colSpan: 9,
       style: {
         ...tdSt,
         color: "var(--c-text4)"
