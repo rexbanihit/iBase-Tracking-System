@@ -4941,7 +4941,16 @@ function VisitModal({
   }, "*")), /*#__PURE__*/React.createElement("select", {
     style: inputSt(),
     value: f.type,
-    onChange: e => set("type", e.target.value)
+    onChange: e => {
+      const v = e.target.value;
+      // choosing the "Phone support" TYPE auto-fills the Support type;
+      // choosing "Phone support" as the SUPPORT TYPE leaves the type free.
+      setF(x => ({
+        ...x,
+        type: v,
+        supportType: v === "Phone support" ? "Phone support" : x.supportType
+      }));
+    }
   }, sortAlpha(VISIT_TYPES).map(t => /*#__PURE__*/React.createElement("option", {
     key: t
   }, t)))), /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("label", {
@@ -10572,8 +10581,28 @@ function impDate(v) {
 }
 // Build normalized visit rows from a grid given a header index + column map.
 // Used by BOTH the automatic detector and the manual column-mapping panel.
+// Rows excluded by rule during import:
+//  • serial is a placeholder: -, ., na, n/a, not applicable, tf, to follow, blank, or empty
+//  • account is Office / FAS - Manila / Not Applicable → never written to LOGS or Institutions
+const IMP_JUNK_SERIALS = {
+  "": 1,
+  "-": 1,
+  ".": 1,
+  "na": 1,
+  "n/a": 1,
+  "not applicable": 1,
+  "tf": 1,
+  "to follow": 1,
+  "blank": 1
+};
+const IMP_SKIP_ACCOUNTS = {
+  "office": 1,
+  "fasmanila": 1,
+  "notapplicable": 1
+};
 function impRowsFromGrid(grid, hi, map) {
   const rows = [];
+  let skippedByRule = 0;
   const ignoreIdx = {};
   Object.keys(map).forEach(k => {
     if (k.indexOf("_ignore") === 0) {
@@ -10604,6 +10633,14 @@ function impRowsFromGrid(grid, hi, map) {
     const date = impDate(map.date !== undefined ? r[map.date] : "");
     const lab = g("lab") || "(Unassigned imports)";
     const serial = g("serial");
+    if (IMP_JUNK_SERIALS[serial.trim().toLowerCase().replace(/\s+/g, " ")]) {
+      skippedByRule++;
+      continue;
+    }
+    if (IMP_SKIP_ACCOUNTS[labNameNorm(g("lab"))]) {
+      skippedByRule++;
+      continue;
+    }
     const instrument = g("instrument") || (serial ? "" : "(Unspecified machine)");
     const extra = {};
     unmapped.forEach(u => {
@@ -10651,7 +10688,8 @@ function impRowsFromGrid(grid, hi, map) {
   }
   return {
     rows,
-    unmapped: unmapped.map(u => u.h)
+    unmapped: unmapped.map(u => u.h),
+    skippedByRule
   };
 }
 function impParseWorkbook(wb) {
@@ -10687,6 +10725,7 @@ function impParseWorkbook(wb) {
     }
     const built = impRowsFromGrid(grid, hi, map);
     built.rows.forEach(r => rows.push(r));
+    skipped += built.skippedByRule || 0;
     sheetInfo.push({
       name,
       used: true,
@@ -10785,17 +10824,24 @@ function impBuildPlan(rows, labs, importerEmail, includeExtras) {
         newM++;
       }
       const existingKeys = {};
-      (m.visits || []).forEach(v => existingKeys[impVisitKey({
-        date: String(v.date || "").slice(0, 10),
-        type: v.type,
-        isr: v.isrNo,
-        engineer: v.engineer,
-        srcTimestamp: v.srcTimestamp,
-        dtDeparture: v.dtDeparture,
-        dtWorkStarted: v.dtWorkStarted
-      })] = 1);
+      const existingKeysB = {};
+      (m.visits || []).forEach(v => {
+        existingKeys[impVisitKey({
+          date: String(v.date || "").slice(0, 10),
+          type: v.type,
+          isr: v.isrNo,
+          engineer: v.engineer,
+          srcTimestamp: v.srcTimestamp,
+          dtDeparture: v.dtDeparture,
+          dtWorkStarted: v.dtWorkStarted
+        })] = 1;
+        // Timestamp rule: within this machine (= same account + instrument + serial),
+        // the same Timestamp + Name + ISR no. is the SAME visit — regardless of type.
+        if (v.srcTimestamp) existingKeysB[[String(v.srcTimestamp), String(v.engineer || "").toLowerCase(), String(v.isrNo || "").toLowerCase()].join("|")] = 1;
+      });
       const key = impVisitKey(r);
-      if (existingKeys[key]) {
+      const keyB = r.srcTimestamp ? [String(r.srcTimestamp), String(r.engineer || "").toLowerCase(), String(r.isr || "").toLowerCase()].join("|") : "";
+      if (existingKeys[key] || keyB && existingKeysB[keyB]) {
         dup++;
         return;
       }
@@ -11026,6 +11072,8 @@ function ImportExcel({
   const [meta, setMeta] = useState(null);
   const [rawRows, setRawRows] = useState(null);
   const [withExtras, setWithExtras] = useState(false);
+  const [skipCols, setSkipCols] = useState(false);
+  const [skipFields, setSkipFields] = useState(false);
   const [grids, setGrids] = useState(null); // { sheetName: grid } for manual mapping
   const [mapUI, setMapUI] = useState(null); // { sheet, headerRow, assigns:{colIdx:field} }
   const [fieldsAdded, setFieldsAdded] = useState(false);
@@ -11117,6 +11165,8 @@ function ImportExcel({
         setRawRows(null);
         setWithExtras(false);
         setFieldsAdded(false);
+        setSkipCols(false);
+        setSkipFields(false);
         notify("I couldn't recognize the headers automatically — assign the columns below and press Apply.", "error");
         return;
       }
@@ -11538,7 +11588,11 @@ function ImportExcel({
       color: "var(--c-text2)",
       lineHeight: 1.7
     }
-  }, /*#__PURE__*/React.createElement("b", null, meta.rows), " data row(s) read (empty lines and the header don't count)", meta.incomplete ? " · " + meta.incomplete + " with missing fields kept under “(Unassigned imports)” / blank dates" : "", " · sheets used: ", meta.sheets.filter(s => s.used).map(s => s.name + " (" + s.rows + ")").join(", ") || "none", /*#__PURE__*/React.createElement("br", null), "Will write: ", /*#__PURE__*/React.createElement("b", null, plan.tNewLabs), " new laborator", plan.tNewLabs === 1 ? "y" : "ies", " · ", /*#__PURE__*/React.createElement("b", null, plan.tNewMachines), " new machine(s) · ", /*#__PURE__*/React.createElement("b", null, plan.tNewVisits), " new visit(s) · ", /*#__PURE__*/React.createElement("b", null, plan.tDupes), " duplicate(s) skipped", " — ", /*#__PURE__*/React.createElement("b", null, plan.tNewVisits, " + ", plan.tDupes, " = ", plan.tNewVisits + plan.tDupes), plan.tNewVisits + plan.tDupes === meta.rows ? " ✓ every row accounted for" : " (rows routed by serial to existing machines are counted where they land)", plan.tHealed ? /*#__PURE__*/React.createElement(React.Fragment, null, /*#__PURE__*/React.createElement("br", null), "🩹 ", /*#__PURE__*/React.createElement("b", null, plan.tHealed), " previously-imported visit(s) will be repaired — their dates filled from their Timestamps, so installation dates appear.") : null), (meta.unmapped || []).length > 0 && /*#__PURE__*/React.createElement("div", {
+  }, /*#__PURE__*/React.createElement("b", null, meta.rows), " data row(s) read (empty lines and the header don't count)", meta.incomplete ? " · " + meta.incomplete + " with missing fields kept under “(Unassigned imports)” / blank dates" : "", " · sheets used: ", meta.sheets.filter(s => s.used).map(s => s.name + " (" + s.rows + ")").join(", ") || "none", /*#__PURE__*/React.createElement("br", null), "Will write: ", /*#__PURE__*/React.createElement("b", null, plan.tNewLabs), " new laborator", plan.tNewLabs === 1 ? "y" : "ies", " · ", /*#__PURE__*/React.createElement("b", null, plan.tNewMachines), " new machine(s) · ", /*#__PURE__*/React.createElement("b", null, plan.tNewVisits), " new visit(s) · ", /*#__PURE__*/React.createElement("b", null, plan.tDupes), " duplicate(s) skipped", meta && meta.skipped > 0 ? /*#__PURE__*/React.createElement("span", null, " · ", /*#__PURE__*/React.createElement("b", {
+    style: {
+      color: "#f59e0b"
+    }
+  }, meta.skipped), " row(s) excluded by rule (placeholder serial, or Office / FAS - Manila / Not Applicable account)") : null, " — ", /*#__PURE__*/React.createElement("b", null, plan.tNewVisits, " + ", plan.tDupes, " = ", plan.tNewVisits + plan.tDupes), plan.tNewVisits + plan.tDupes === meta.rows ? " ✓ every row accounted for" : " (rows routed by serial to existing machines are counted where they land)", plan.tHealed ? /*#__PURE__*/React.createElement(React.Fragment, null, /*#__PURE__*/React.createElement("br", null), "🩹 ", /*#__PURE__*/React.createElement("b", null, plan.tHealed), " previously-imported visit(s) will be repaired — their dates filled from their Timestamps, so installation dates appear.") : null), (meta.unmapped || []).length > 0 && /*#__PURE__*/React.createElement("div", {
     style: {
       marginTop: 8,
       padding: "8px 10px",
@@ -11548,11 +11602,11 @@ function ImportExcel({
     }
   }, /*#__PURE__*/React.createElement("div", {
     style: {
-      color: withExtras ? "#10b981" : "#f59e0b",
+      color: withExtras ? "#10b981" : skipCols ? "#94a3b8" : "#f59e0b",
       fontWeight: 800,
       marginBottom: 4
     }
-  }, withExtras ? "✅ Extra columns will be imported" : "⚠️ Your file has " + meta.unmapped.length + " column(s) the system doesn't have fields for:"), /*#__PURE__*/React.createElement("div", {
+  }, withExtras ? "✅ Extra columns will be imported" : skipCols ? "⏭ Extra columns will be SKIPPED — the import proceeds without them" : "⚠️ Your file has " + meta.unmapped.length + " column(s) the system doesn't have fields for:"), /*#__PURE__*/React.createElement("div", {
     style: {
       color: "var(--c-text3)",
       marginBottom: 6
@@ -11568,16 +11622,26 @@ function ImportExcel({
     onClick: () => {
       const p = impBuildPlan(rawRows, labs, profile.email, true);
       setWithExtras(true);
+      setSkipCols(false);
       setPlan(p);
     }
-  }, "➕ Yes — add these missing columns to the visits") : /*#__PURE__*/React.createElement("button", {
+  }, "➕ Add these missing columns to the visits") : /*#__PURE__*/React.createElement("button", {
     style: btnSt("var(--c-border)", "var(--c-text2)"),
     onClick: () => {
       const p = impBuildPlan(rawRows, labs, profile.email, false);
       setWithExtras(false);
       setPlan(p);
     }
-  }, "Skip the extra columns instead"), !fieldsAdded ? /*#__PURE__*/React.createElement("button", {
+  }, "↩ Undo — don't add the columns"), !withExtras && !skipCols && /*#__PURE__*/React.createElement("button", {
+    title: "Import WITHOUT these columns — their values are simply left out",
+    style: btnSt("var(--c-border)", "var(--c-text2)"),
+    onClick: () => {
+      const p = impBuildPlan(rawRows, labs, profile.email, false);
+      setSkipCols(true);
+      setWithExtras(false);
+      setPlan(p);
+    }
+  }, "⏭ Skip adding columns to visits"), !fieldsAdded ? /*#__PURE__*/React.createElement("button", {
     title: "Adds these as permanent input fields on the + Visit form, so future manual visits can fill them too",
     style: btnSt("var(--c-border)", "#38bdf8"),
     onClick: async () => {
@@ -11600,7 +11664,17 @@ function ImportExcel({
       fontWeight: 700,
       alignSelf: "center"
     }
-  }, "🧩 Added to the Visit form ✓")), /*#__PURE__*/React.createElement("div", {
+  }, "🧩 Added to the Visit form ✓"), !fieldsAdded && !skipFields && /*#__PURE__*/React.createElement("button", {
+    title: "Do NOT add these as Visit-form input fields",
+    style: btnSt("var(--c-border)", "var(--c-text2)"),
+    onClick: () => setSkipFields(true)
+  }, "⏭ Skip adding as Visit-form fields"), skipFields && !fieldsAdded && /*#__PURE__*/React.createElement("span", {
+    style: {
+      color: "#94a3b8",
+      fontWeight: 700,
+      alignSelf: "center"
+    }
+  }, "⏭ Form fields skipped")), /*#__PURE__*/React.createElement("div", {
     style: {
       color: "var(--c-text5)",
       marginTop: 6
