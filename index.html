@@ -5754,6 +5754,7 @@ function MachineInv({
     initial: editing === "new" ? null : editing,
     brands: brands,
     brandOk: brandOk,
+    models: catalog && catalog.machines || [],
     isAdmin: profile.isAdmin,
     onSave: save,
     onClose: () => setEditing(null)
@@ -5767,6 +5768,7 @@ function InvModal({
   initial,
   brands,
   brandOk,
+  models,
   isAdmin,
   onSave,
   onClose
@@ -5813,11 +5815,30 @@ function InvModal({
     disabled: !isAdmin && !brandOk(b)
   }, b, !isAdmin && !brandOk(b) ? " (locked)" : "")))), /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("label", {
     style: labelSt
-  }, "Machine Model"), /*#__PURE__*/React.createElement("input", {
-    style: inputSt(),
+  }, "Machine Model"), /*#__PURE__*/React.createElement("select", {
+    style: {
+      ...inputSt(),
+      cursor: "pointer"
+    },
     value: f.machineModel,
-    onChange: e => set("machineModel", e.target.value)
-  })), /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("label", {
+    onChange: e => {
+      const v = e.target.value;
+      // selecting a registered model auto-fills its item code (still editable)
+      const hit = (models || []).find(m2 => m2.model === v && (!f.brand || m2.brand === f.brand)) || (models || []).find(m2 => m2.model === v);
+      setF(x => ({
+        ...x,
+        machineModel: v,
+        itemCode: hit && hit.itemCode ? hit.itemCode : x.itemCode
+      }));
+    }
+  }, /*#__PURE__*/React.createElement("option", {
+    value: ""
+  }, "— select a registered model —"), (models || []).filter(m2 => !f.brand || m2.brand === f.brand).slice().sort((a, b) => String(a.model).localeCompare(String(b.model))).map((m2, i2) => /*#__PURE__*/React.createElement("option", {
+    key: m2.model + i2,
+    value: m2.model
+  }, m2.model, m2.itemCode ? "  ·  " + m2.itemCode : "")), f.machineModel && !(models || []).some(m2 => m2.model === f.machineModel) ? /*#__PURE__*/React.createElement("option", {
+    value: f.machineModel
+  }, f.machineModel, " (unregistered)") : null)), /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("label", {
     style: labelSt
   }, "Serial No"), /*#__PURE__*/React.createElement("input", {
     style: inputSt(),
@@ -10511,7 +10532,7 @@ const IMP_SYN = {
   dtArrivalHome: ["dateandtimeofarrivaltohome", "datetimeofarrivaltohome", "arrivaltohome", "datetimearrivalhome", "arrivalhome", "dateandtimearrivaltohome"],
   lab: ["laboratory", "lab", "labname", "account", "accountname", "institution", "hospital", "customer", "client", "site", "enduser", "endusername", "clientname", "customername", "hospitalname", "institutionname", "facility", "facilityname", "branch", "nameofinstitution", "nameofhospital", "accountlaboratory", "laboratoryname", "labaccount", "companyname"],
   location: ["location", "address", "region", "area", "city", "province"],
-  subRegion: ["subregion", "subarea", "district"],
+  subRegion: ["subregion", "subarea", "district", "sublocation", "sublocationname"],
   instrument: ["machine", "instrument", "model", "machinemodel", "equipment", "unit", "analyzer", "item", "equipmentname", "instrumentname", "machinename", "product", "productname", "unitmodel", "modelname", "typeofmachine", "machinetype", "brandmodel", "equipmentmodel", "machineinstrument"],
   serial: ["serial", "serialno", "serialnumber", "sn", "serialnum", "snno", "serialnonumber", "machineserial", "equipmentserial", "serialn", "esn"],
   type: ["type", "visittype", "typeofvisit", "servicetype", "service", "nature", "natureofvisit", "activity", "category", "classification", "jobtype", "natureofservice", "typeofservice", "kindofvisit", "visitcategory", "natureofwork", "activityjobtype"],
@@ -10678,6 +10699,10 @@ function impRowsFromGrid(grid, hi, map) {
       skippedByRule++;
       continue;
     }
+    if (!g("location").trim()) {
+      skippedByRule++;
+      continue;
+    } // Location must not be empty (Sub-location may be)
     const instrument = g("instrument") || (serial ? "" : "(Unspecified machine)");
     const extra = {};
     unmapped.forEach(u => {
@@ -11111,6 +11136,7 @@ function ImportExcel({
   const [withExtras, setWithExtras] = useState(false);
   const [skipCols, setSkipCols] = useState(false);
   const [skipFields, setSkipFields] = useState(false);
+  const [instPick, setInstPick] = useState({}); // NEW accounts: checked unless explicitly false
   const [grids, setGrids] = useState(null); // { sheetName: grid } for manual mapping
   const [mapUI, setMapUI] = useState(null); // { sheet, headerRow, assigns:{colIdx:field} }
   const [fieldsAdded, setFieldsAdded] = useState(false);
@@ -11204,6 +11230,7 @@ function ImportExcel({
         setFieldsAdded(false);
         setSkipCols(false);
         setSkipFields(false);
+        setInstPick({});
         notify("I couldn't recognize the headers automatically — assign the columns below and press Apply.", "error");
         return;
       }
@@ -11213,6 +11240,26 @@ function ImportExcel({
       setRawRows(parsed.rows);
       setWithExtras(false);
       const p = dest === "institutions" ? impBuildInstPlan(parsed.rows, labs) : impBuildPlan(parsed.rows, labs, profile.email, false);
+      // Required headers: every used sheet must carry Location and Sub-location.
+      const hdrMissing = [];
+      (parsed.sheetInfo || []).filter(s2 => s2.used && s2.map).forEach(s2 => {
+        const miss = [s2.map.location === undefined && "Location", s2.map.subRegion === undefined && "Sub-location"].filter(Boolean);
+        if (miss.length) hdrMissing.push(s2.name + ": " + miss.join(" + "));
+      });
+      if (hdrMissing.length) {
+        setMeta({
+          file: file.name,
+          rows: parsed.rows.length,
+          skipped: parsed.skipped,
+          sheets: parsed.sheetInfo,
+          unmapped: parsed.unmappedAll,
+          incomplete: parsed.incomplete,
+          hdrErr: hdrMissing
+        });
+        setPlan(null);
+        notify("Import blocked — required header(s) missing:\n" + hdrMissing.join("\n") + "\n\nAdd a Location and Sub-location column (Location values must not be empty; Sub-location may be).", "error");
+        return;
+      }
       setMeta({
         file: file.name,
         rows: parsed.rows.length,
@@ -11231,7 +11278,12 @@ function ImportExcel({
     setBusy(true);
     let done = 0,
       failed = 0;
+    let skippedAcc = 0;
     for (const op of plan.ops) {
+      if (!op.labId && instPick[labNameNorm(op.name)] === false) {
+        skippedAcc++;
+        continue;
+      } // account unchecked → skip entirely
       const clean = JSON.parse(JSON.stringify({
         name: op.name,
         location: op.location,
@@ -11605,7 +11657,27 @@ function ImportExcel({
       setMapUI(null);
       setGrids(null);
     }
-  }, "Cancel"))), plan && meta && /*#__PURE__*/React.createElement("div", {
+  }, "Cancel"))), meta && meta.hdrErr && /*#__PURE__*/React.createElement("div", {
+    style: {
+      marginTop: 10,
+      padding: "10px 12px",
+      borderRadius: 8,
+      border: "1px solid #f87171",
+      color: "#fca5a5",
+      fontSize: 12
+    }
+  }, /*#__PURE__*/React.createElement("b", null, "⛔ Import blocked — required header(s) missing:"), /*#__PURE__*/React.createElement("div", {
+    style: {
+      marginTop: 4
+    }
+  }, meta.hdrErr.map((h, i2) => /*#__PURE__*/React.createElement("div", {
+    key: i2
+  }, "• ", h))), /*#__PURE__*/React.createElement("div", {
+    style: {
+      marginTop: 6,
+      color: "var(--c-text4)"
+    }
+  }, "Every sheet needs a ", /*#__PURE__*/React.createElement("b", null, "Location"), " and a ", /*#__PURE__*/React.createElement("b", null, "Sub-location"), " column. Location values must not be empty; Sub-location may be. Fix the file and choose it again.")), plan && meta && /*#__PURE__*/React.createElement("div", {
     style: {
       marginTop: 12,
       padding: 12,
@@ -11629,7 +11701,7 @@ function ImportExcel({
     style: {
       color: "#f59e0b"
     }
-  }, meta.skipped), " row(s) excluded by rule (placeholder serial, or Office / FAS - Manila / Not Applicable account)") : null, " — ", /*#__PURE__*/React.createElement("b", null, plan.tNewVisits, " + ", plan.tDupes, " = ", plan.tNewVisits + plan.tDupes), plan.tNewVisits + plan.tDupes === meta.rows ? " ✓ every row accounted for" : " (rows routed by serial to existing machines are counted where they land)", plan.tHealed ? /*#__PURE__*/React.createElement(React.Fragment, null, /*#__PURE__*/React.createElement("br", null), "🩹 ", /*#__PURE__*/React.createElement("b", null, plan.tHealed), " previously-imported visit(s) will be repaired — their dates filled from their Timestamps, so installation dates appear.") : null), (meta.unmapped || []).length > 0 && /*#__PURE__*/React.createElement("div", {
+  }, meta.skipped), " row(s) excluded by rule (placeholder serial, blank Location, or Office / FAS - Manila / Not Applicable account)") : null, " — ", /*#__PURE__*/React.createElement("b", null, plan.tNewVisits, " + ", plan.tDupes, " = ", plan.tNewVisits + plan.tDupes), plan.tNewVisits + plan.tDupes === meta.rows ? " ✓ every row accounted for" : " (rows routed by serial to existing machines are counted where they land)", plan.tHealed ? /*#__PURE__*/React.createElement(React.Fragment, null, /*#__PURE__*/React.createElement("br", null), "🩹 ", /*#__PURE__*/React.createElement("b", null, plan.tHealed), " previously-imported visit(s) will be repaired — their dates filled from their Timestamps, so installation dates appear.") : null), (meta.unmapped || []).length > 0 && /*#__PURE__*/React.createElement("div", {
     style: {
       marginTop: 8,
       padding: "8px 10px",
@@ -11722,18 +11794,67 @@ function ImportExcel({
       overflowY: "auto",
       marginTop: 8
     }
-  }, plan.ops.map((op, i) => /*#__PURE__*/React.createElement("div", {
+  }, plan.ops.some(o => !o.labId) && /*#__PURE__*/React.createElement("label", {
+    style: {
+      display: "flex",
+      alignItems: "center",
+      gap: 6,
+      fontSize: 11.5,
+      fontWeight: 800,
+      color: "var(--c-text3)",
+      padding: "4px 0",
+      cursor: "pointer",
+      borderBottom: "1px dashed var(--c-border)"
+    }
+  }, /*#__PURE__*/React.createElement("input", {
+    type: "checkbox",
+    style: {
+      cursor: "pointer"
+    },
+    checked: plan.ops.filter(o => !o.labId).every(o => instPick[labNameNorm(o.name)] !== false),
+    ref: el => {
+      if (el) {
+        const ns = plan.ops.filter(o => !o.labId);
+        const on = ns.filter(o => instPick[labNameNorm(o.name)] !== false).length;
+        el.indeterminate = on > 0 && on < ns.length;
+      }
+    },
+    onChange: e => {
+      const on = e.target.checked;
+      const next = {
+        ...instPick
+      };
+      plan.ops.filter(o => !o.labId).forEach(o => {
+        next[labNameNorm(o.name)] = on;
+      });
+      setInstPick(next);
+    }
+  }), "Select all NEW accounts to add to Institutions (", plan.ops.filter(o => !o.labId).length, ") — unchecked ones (and all their rows) are skipped"), plan.ops.map((op, i) => /*#__PURE__*/React.createElement("div", {
     key: i,
     style: {
       fontSize: 11.5,
       color: "var(--c-text4)",
-      padding: "2px 0"
+      padding: "2px 0",
+      display: "flex",
+      alignItems: "center",
+      gap: 6
     }
-  }, op.labId ? "◦ merge into" : "★ create", " ", /*#__PURE__*/React.createElement("b", {
+  }, !op.labId && /*#__PURE__*/React.createElement("input", {
+    type: "checkbox",
     style: {
-      color: "var(--c-text2)"
+      cursor: "pointer"
+    },
+    checked: instPick[labNameNorm(op.name)] !== false,
+    onChange: e => setInstPick(s => ({
+      ...s,
+      [labNameNorm(op.name)]: e.target.checked
+    }))
+  }), /*#__PURE__*/React.createElement("span", null, op.labId ? "◦ merge into" : "★ create", " ", /*#__PURE__*/React.createElement("b", {
+    style: {
+      color: !op.labId && instPick[labNameNorm(op.name)] === false ? "var(--c-text5)" : "var(--c-text2)",
+      textDecoration: !op.labId && instPick[labNameNorm(op.name)] === false ? "line-through" : "none"
     }
-  }, op.name), " — +", op.newM, " machine(s), +", op.newV, " visit(s)", op.dup ? ", " + op.dup + " duplicate(s) skipped" : ""))), /*#__PURE__*/React.createElement("div", {
+  }, op.name), " — +", op.newM, " machine(s), +", op.newV, " visit(s)", op.dup ? ", " + op.dup + " duplicate(s) skipped" : "")))), /*#__PURE__*/React.createElement("div", {
     style: {
       display: "flex",
       gap: 10,
@@ -13240,7 +13361,26 @@ function SettingsTab({
       fontSize: 11,
       color: "var(--c-text4)"
     }
-  }, m.itemCode) : null))))), models.length === 0 && /*#__PURE__*/React.createElement("div", {
+  }, m.itemCode) : null, /*#__PURE__*/React.createElement("button", {
+    title: "Set / change this model's item code",
+    onClick: e => {
+      e.stopPropagation();
+      const v = prompt("Item code for " + m.model + ":", m.itemCode || "");
+      if (v === null) return;
+      saveModels(models.map(x => x === m ? {
+        ...x,
+        itemCode: v.trim()
+      } : x));
+    },
+    style: {
+      background: "none",
+      border: "none",
+      cursor: "pointer",
+      color: "var(--c-text4)",
+      fontSize: 11,
+      padding: "0 2px"
+    }
+  }, "✏️")))))), models.length === 0 && /*#__PURE__*/React.createElement("div", {
     style: {
       fontSize: 12,
       color: "var(--c-text4)",
@@ -13277,15 +13417,27 @@ function SettingsTab({
     value: nmModel,
     onChange: e => setNmModel(e.target.value),
     placeholder: "e.g. Capillarys 3 Octa"
+  })), /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("label", {
+    style: labelSt
+  }, "Item code"), /*#__PURE__*/React.createElement("input", {
+    style: {
+      ...inputSt(),
+      minWidth: 130
+    },
+    value: nmCode,
+    onChange: e => setNmCode(e.target.value),
+    placeholder: "e.g. 1234-XYZ"
   })), /*#__PURE__*/React.createElement("button", {
     style: btnSt("var(--c-key)", "var(--c-bg)"),
     disabled: !nmBrand || !nmModel.trim() || models.some(m => String(m.model || "").trim().toLowerCase() === nmModel.trim().toLowerCase() && m.brand === nmBrand),
     onClick: () => {
       saveModels([...models, {
         brand: nmBrand,
-        model: nmModel.trim()
+        model: nmModel.trim(),
+        itemCode: nmCode.trim()
       }]);
       setNmModel("");
+      setNmCode("");
     }
   }, "+ Add model"), /*#__PURE__*/React.createElement("button", {
     style: btnSt("#3a1d1d", "#fca5a5"),
