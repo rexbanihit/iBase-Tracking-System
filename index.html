@@ -150,6 +150,28 @@
   .ibrow:hover { background: rgba(56,189,248,.07) !important; }
   /* One password toggle everywhere: suppress Edge's built-in reveal (and IE's clear) */
   input::-ms-reveal, input::-ms-clear { display: none; }
+  /* ═══ Tab-switch animations (v98) ═══ */
+  @media (prefers-reduced-motion: no-preference) {
+    .ibase-tab-panel { animation: ibase-tab-in .3s cubic-bezier(.2,.8,.25,1); }
+    @keyframes ibase-tab-in {
+      from { opacity: 0; transform: translateY(12px) scale(.995); }
+      to   { opacity: 1; transform: none; }
+    }
+    .ib-nav-btn { transition: background .25s ease, color .25s ease, transform .12s ease; }
+    .ib-nav-btn:active { transform: scale(.94); }
+    .ib-nav-on { animation: ibase-icon-pop .45s cubic-bezier(.34,1.56,.64,1); }
+    @keyframes ibase-icon-pop {
+      0%   { transform: scale(1); }
+      45%  { transform: scale(1.35) rotate(-5deg); }
+      100% { transform: scale(1); }
+    }
+    .ib-nav-active { animation: ibase-nav-glow .5s ease; }
+    @keyframes ibase-nav-glow {
+      0%   { box-shadow: inset 0 0 0 0 transparent; }
+      40%  { box-shadow: inset 4px 0 18px -6px var(--c-key); }
+      100% { box-shadow: inset 0 0 0 0 transparent; }
+    }
+  }
   body { background: var(--c-bg); color: var(--c-text); margin:0; font-family:'DM Sans','Segoe UI',system-ui,sans-serif; font-size:14px; }
   * { box-sizing: border-box; } input, select, button { font-family: inherit; }
 </style>
@@ -1830,7 +1852,7 @@ function pmComputedNext(m) {
   // latest PM evidence = later of lastPM and the newest PM-type visit date
   let latestPM = String(m.lastPM || "").slice(0, 10);
   (Array.isArray(m.visits) ? m.visits : []).forEach(v => {
-    if (String(v.type || "").trim().toUpperCase() === "PM" && v.date) {
+    if ((String(v.type || "").trim().toUpperCase() === "PM" || /^pm completed$/i.test(String(v.machineStatus || ""))) && v.date) {
       const d = String(v.date).slice(0, 10);
       if (d > latestPM) latestPM = d;
     }
@@ -4190,8 +4212,8 @@ function LabDetail({
         };
         // status follows the most-recent visit after the correction → PM flag updates
         nm.status = statusFromVisits(nm, m.status);
-        // keep the PM schedule truthful after a corrected PM date/type
-        const pmDates = nm.visits.filter(x => String(x.type || "").toUpperCase() === "PM" && x.date).map(x => x.date).sort();
+        // keep the PM schedule truthful after a corrected PM date/type/status
+        const pmDates = nm.visits.filter(x => (String(x.type || "").toUpperCase() === "PM" || /^pm completed$/i.test(String(x.machineStatus || ""))) && x.date).map(x => x.date).sort();
         if (pmDates.length && (!nm.lastPM || pmDates[pmDates.length - 1] !== nm.lastPM)) {
           nm.lastPM = pmDates[pmDates.length - 1];
           const nx = nextPMDate(pmAnchor(nm), nm.pmInterval);
@@ -4318,7 +4340,8 @@ function LabDetail({
         };
         nm.status = statusFromVisits(nm, m.status);
         // PM VISIT RENEWS THE SCHEDULE (v126 behavior): advance lastPM, recompute next PM.
-        if (String(v.type).toUpperCase() === "PM" && v.date && (!nm.lastPM || v.date > nm.lastPM)) {
+        // Counts as PM evidence: type = PM, OR "Instrument after the visit" = PM Completed.
+        if ((String(v.type).toUpperCase() === "PM" || /^pm completed$/i.test(String(v.machineStatus || ""))) && v.date && (!nm.lastPM || v.date > nm.lastPM)) {
           nm.lastPM = v.date;
           const nx = nextPMDate(pmAnchor(nm), nm.pmInterval);
           if (nx) nm.nextPM = nx;
@@ -8182,7 +8205,7 @@ function VisitsTab({
       };
       // status follows the most-recent visit AFTER the correction, so the PM flag updates
       nm.status = statusFromVisits(nm, m.status);
-      const pmDates = nm.visits.filter(x => String(x.type || "").toUpperCase() === "PM" && x.date).map(x => x.date).sort();
+      const pmDates = nm.visits.filter(x => (String(x.type || "").toUpperCase() === "PM" || /^pm completed$/i.test(String(x.machineStatus || ""))) && x.date).map(x => x.date).sort();
       if (pmDates.length && (!nm.lastPM || pmDates[pmDates.length - 1] !== nm.lastPM)) {
         nm.lastPM = pmDates[pmDates.length - 1];
         const nx = nextPMDate(pmAnchor(nm), nm.pmInterval);
@@ -15222,6 +15245,7 @@ function App() {
     const active = tab === t.id;
     return /*#__PURE__*/React.createElement("button", {
       key: t.id,
+      className: "ib-nav-btn" + (active ? " ib-nav-active" : ""),
       onClick: () => setTab(t.id),
       title: name,
       style: {
@@ -15237,9 +15261,11 @@ function App() {
         gap: 4
       }
     }, /*#__PURE__*/React.createElement("span", {
+      className: active ? "ib-nav-on" : "",
       style: {
         fontSize: 19,
-        position: "relative"
+        position: "relative",
+        display: "inline-block"
       }
     }, icon, t.id === "bin" && binItems.length > 0 && /*#__PURE__*/React.createElement("span", {
       title: binItems.length + " item(s) waiting in the Bin",
@@ -15408,6 +15434,9 @@ function App() {
     }
   }, "You're signed in, but there's no profile document for your account, so the server grants you nothing. If you're the first administrator, create it once in the Firestore console: collection ", /*#__PURE__*/React.createElement("b", null, "users"), ", document ID = ", /*#__PURE__*/React.createElement("b", null, user.uid), ", fields ", /*#__PURE__*/React.createElement("b", null, "isAdmin"), " (boolean true), ", /*#__PURE__*/React.createElement("b", null, "email"), ", ", /*#__PURE__*/React.createElement("b", null, "displayName"), ".")), signedProfile && /*#__PURE__*/React.createElement(TabBoundary, {
     tabId: tab
+  }, /*#__PURE__*/React.createElement("div", {
+    key: tab,
+    className: "ibase-tab-panel"
   }, tab === "dashboard" && pCanTab(signedProfile, "dashboard", "view") && /*#__PURE__*/React.createElement(DashboardTab, {
     labs: labs
   }), tab === "labs" && pCanTab(signedProfile, "labs", "view") && /*#__PURE__*/React.createElement(LabsTab, {
@@ -15449,7 +15478,7 @@ function App() {
     labs: labs,
     notify: notify,
     dlCfg: dlCfg
-  }))), /*#__PURE__*/React.createElement("div", {
+  })))), /*#__PURE__*/React.createElement("div", {
     style: {
       textAlign: "center",
       padding: "10px 0 26px",
