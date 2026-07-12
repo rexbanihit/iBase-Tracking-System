@@ -8580,10 +8580,45 @@ function VisitsTab({
       fontSize: 11.5,
       color: "var(--c-text4)"
     }
-  }, shown.length, " of ", all.length, " visit(s) · ", labs.reduce((s, l) => s + (l.machines || []).length, 0), " machine(s) across ", labs.length, " laborator", labs.length === 1 ? "y" : "ies", selCount ? " · " + selCount + " highlighted" : ""), canEditLabs && selCount > 0 && /*#__PURE__*/React.createElement("button", {
+  }, shown.length, " of ", all.length, " visit(s) · ", labs.reduce((s, l) => s + (l.machines || []).length, 0), " machine(s) across ", labs.length, " laborator", labs.length === 1 ? "y" : "ies", selCount ? " · " + selCount + " highlighted" : ""), canEditLabs && shown.length > 0 && /*#__PURE__*/React.createElement("label", {
+    title: shown.every((v, i) => selected[v.id || v._mId + "-" + i]) ? "Clear the selection" : "Select ALL " + shown.length + " row(s) in the current view — then untick any row (click it) before deleting",
     style: {
-      ...btnSt("#3a1d1d", "#fca5a5"),
-      marginLeft: "auto"
+      display: "inline-flex",
+      alignItems: "center",
+      gap: 6,
+      fontSize: 11.5,
+      fontWeight: 700,
+      color: "var(--c-text3)",
+      cursor: "pointer",
+      marginLeft: "auto",
+      userSelect: "none"
+    }
+  }, /*#__PURE__*/React.createElement("input", {
+    type: "checkbox",
+    style: {
+      cursor: "pointer"
+    },
+    checked: shown.length > 0 && shown.every((v, i) => selected[v.id || v._mId + "-" + i]),
+    ref: el => {
+      if (el) el.indeterminate = selCount > 0 && !shown.every((v, i) => selected[v.id || v._mId + "-" + i]);
+    },
+    onChange: () => {
+      const all = shown.every((v, i) => selected[v.id || v._mId + "-" + i]);
+      if (all) {
+        setSelected({});
+        return;
+      }
+      const next = {
+        ...selected
+      };
+      shown.forEach((v, i) => {
+        next[v.id || v._mId + "-" + i] = true;
+      });
+      setSelected(next);
+    }
+  }), shown.every((v, i) => selected[v.id || v._mId + "-" + i]) ? "All " + shown.length + " selected" : selCount > 0 ? selCount + " selected — tick to select all " + shown.length : "Select all (" + shown.length + ")"), canEditLabs && selCount > 0 && /*#__PURE__*/React.createElement("button", {
+    style: {
+      ...btnSt("#3a1d1d", "#fca5a5")
     },
     disabled: bulkBusy,
     onClick: async () => {
@@ -10495,6 +10530,8 @@ const IMP_SYN = {
   endorsedTo: ["endorsedto", "endorseto", "endorsed"],
   priority: ["priority", "urgency"],
   softwareVersion: ["softwareversion", "swversion", "software"],
+  firmwareVersion: ["firmwareversion", "fwversion", "firmware"],
+  brand: ["brand", "make", "manufacturer"],
   srcTimestamp: ["timestamp"],
   // System-owned columns present in a LOGS export — recognized so re-importing an
   // exported file doesn't flag them as "unknown". They are intentionally ignored:
@@ -10876,7 +10913,7 @@ function impBuildPlan(rows, labs, importerEmail, includeExtras) {
         ...(includeExtras && r.extra && Object.keys(r.extra).length ? {
           extra: r.extra
         } : {}),
-        loggedBy: importerEmail,
+        loggedBy: "excel",
         loggedAt: nowIso,
         imported: true
       });
