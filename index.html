@@ -167,6 +167,10 @@
     .anim-rise    { animation: ibase-anim-rise .32s cubic-bezier(.2,.8,.25,1); }
     .anim-skew    { animation: ibase-anim-skew .34s cubic-bezier(.2,.8,.25,1); }
     .anim-glow    { animation: ibase-anim-glow .45s ease; }
+    .ib-dash-bar { transform-origin: left center; animation: ib-bar-grow .6s cubic-bezier(.2,.8,.25,1) backwards; }
+    @keyframes ib-bar-grow { from { transform: scaleX(0); } to { transform: scaleX(1); } }
+    .ib-dash-pie { animation: ib-pie-in .55s cubic-bezier(.2,.8,.25,1); transform-origin: 50% 50%; }
+    @keyframes ib-pie-in { from { opacity:0; transform: rotate(-70deg) scale(.85); } to { opacity:1; transform: none; } }
     .ib-nav-fx   { display: inline-block; }
     @keyframes ibase-anim-spin    { from { opacity:0; transform: rotate(-90deg) scale(.7); } to { opacity:1; transform: none; } }
     @keyframes ibase-anim-elastic { 0% { opacity:0; transform: scale(.7,1.25); } 40% { opacity:1; transform: scale(1.12,.88); } 65% { transform: scale(.95,1.05); } 85% { transform: scale(1.03,.98); } 100% { transform: none; } }
@@ -2563,8 +2567,11 @@ function ITable({
     window.addEventListener("mousemove", move);
     window.addEventListener("mouseup", up);
   }
-  const laidOut = st.order && st.order.length || st.w && Object.keys(st.w).length || st.sort;
-  return /*#__PURE__*/React.createElement("div", null, (filter !== false || laidOut) && /*#__PURE__*/React.createElement("div", {
+  const hidden = st.hidden || {};
+  const visOrder = order.filter(cid => !hidden[cid]);
+  const [colsOpen, setColsOpen] = useState(false);
+  const laidOut = st.order && st.order.length || st.w && Object.keys(st.w).length || st.sort || Object.keys(hidden).some(k => hidden[k]);
+  return /*#__PURE__*/React.createElement("div", null, (filter !== false || laidOut || cols.length > 1) && /*#__PURE__*/React.createElement("div", {
     style: {
       display: "flex",
       gap: 8,
@@ -2582,8 +2589,16 @@ function ITable({
     value: q,
     onChange: e => setQ(e.target.value),
     placeholder: filterPlaceholder || "🔍 Filter…"
-  }), laidOut ? /*#__PURE__*/React.createElement("button", {
-    title: "Restore default column order, widths and sorting (your view only)",
+  }), cols.length > 1 && /*#__PURE__*/React.createElement("button", {
+    title: "Show / hide columns (your view only)",
+    style: {
+      ...btnSt(colsOpen ? "var(--c-key)" : "var(--c-border)", colsOpen ? "var(--c-bg)" : "var(--c-text2)"),
+      padding: "6px 10px",
+      fontSize: 11.5
+    },
+    onClick: () => setColsOpen(o => !o)
+  }, "🧩 Columns", Object.keys(hidden).filter(k => hidden[k]).length ? " (" + visOrder.length + "/" + order.length + ")" : ""), laidOut ? /*#__PURE__*/React.createElement("button", {
+    title: "Restore default column order, widths, visibility and sorting (your view only)",
     style: {
       ...btnSt("var(--c-border)", "var(--c-text2)"),
       padding: "6px 10px",
@@ -2595,7 +2610,55 @@ function ITable({
       } catch (e) {}
       setSt({});
     }
-  }, "↺ Reset") : null), /*#__PURE__*/React.createElement("div", {
+  }, "↺ Reset") : null), colsOpen && /*#__PURE__*/React.createElement("div", {
+    style: {
+      display: "flex",
+      gap: 12,
+      flexWrap: "wrap",
+      padding: "8px 12px",
+      marginBottom: 8,
+      border: "1px dashed var(--c-border)",
+      borderRadius: 8
+    }
+  }, order.map(cid => {
+    const c = colDef(cid);
+    if (!c) return null;
+    const on = !hidden[cid];
+    const lastOne = on && visOrder.length === 1;
+    return /*#__PURE__*/React.createElement("label", {
+      key: cid,
+      title: lastOne ? "At least one column must stay visible" : on ? "Hide this column" : "Show this column",
+      style: {
+        display: "inline-flex",
+        alignItems: "center",
+        gap: 5,
+        fontSize: 11.5,
+        color: on ? "var(--c-text2)" : "var(--c-text5)",
+        cursor: lastOne ? "not-allowed" : "pointer",
+        userSelect: "none"
+      }
+    }, /*#__PURE__*/React.createElement("input", {
+      type: "checkbox",
+      checked: on,
+      disabled: lastOne,
+      style: {
+        cursor: lastOne ? "not-allowed" : "pointer"
+      },
+      onChange: () => save(s => ({
+        ...s,
+        hidden: {
+          ...(s.hidden || {}),
+          [cid]: on
+        }
+      }))
+    }), c.label || cid);
+  }), /*#__PURE__*/React.createElement("span", {
+    style: {
+      fontSize: 10.5,
+      color: "var(--c-text5)",
+      alignSelf: "center"
+    }
+  }, "drag a header to move a column · drag its right edge to resize")), /*#__PURE__*/React.createElement("div", {
     className: "ibt",
     style: {
       maxHeight: maxH || 440,
@@ -2608,7 +2671,7 @@ function ITable({
       minWidth: "100%",
       borderCollapse: "collapse"
     }
-  }, /*#__PURE__*/React.createElement("thead", null, /*#__PURE__*/React.createElement("tr", null, order.map(cid => {
+  }, /*#__PURE__*/React.createElement("thead", null, /*#__PURE__*/React.createElement("tr", null, visOrder.map(cid => {
     const c = colDef(cid);
     if (!c) return null;
     const w = st.w && st.w[cid] || c.w || 120;
@@ -2681,7 +2744,7 @@ function ITable({
         setSelKey(s => s === k ? null : k);
         onRowClick && onRowClick(r);
       }
-    }, order.map(cid => {
+    }, visOrder.map(cid => {
       const c = colDef(cid);
       if (!c) return null;
       const w = st.w && st.w[cid] || c.w || 120;
@@ -2933,12 +2996,14 @@ function DashboardTab({
       overflow: "hidden"
     }
   }, /*#__PURE__*/React.createElement("div", {
+    className: "ib-dash-bar",
     style: {
       width: Math.max(4, d.value / instMax * 100) + "%",
       height: "100%",
       borderRadius: 5,
       background: CHART_PALETTE[i % CHART_PALETTE.length],
-      transition: "width .4s"
+      transition: "width .4s",
+      animationDelay: Math.min(i, 20) * 0.035 + "s"
     }
   })), /*#__PURE__*/React.createElement("span", {
     style: {
@@ -2970,6 +3035,7 @@ function DashboardTab({
       gap: 12
     }
   }, /*#__PURE__*/React.createElement("div", {
+    className: "ib-dash-pie",
     style: {
       width: "52%"
     }
@@ -3184,10 +3250,6 @@ function LabsTab({
       setPmTo("");
     }
   };
-  const [tSort, setTSort] = useState({
-    col: "lab",
-    dir: 1
-  });
   const brandOpts = useMemo(() => sortAlpha(Array.from(new Set(labs.flatMap(l => (l.machines || []).map(m => brandFromModel(m.instrument, l.brand))).filter(Boolean)))), [labs, catalog]);
   const instrumentOpts = useMemo(() => sortAlpha(Array.from(new Set(labs.flatMap(l => (l.machines || []).map(m => String(m.instrument || "").trim())).filter(Boolean)))), [labs]);
 
@@ -3212,35 +3274,80 @@ function LabsTab({
   const TCOLS = [{
     id: "lab",
     label: "Laboratory",
-    sv: m => m._lab || ""
+    w: 220,
+    sv: m => m._lab || "",
+    render: m => /*#__PURE__*/React.createElement("span", {
+      style: {
+        fontWeight: 600
+      }
+    }, m._lab)
   }, {
     id: "brand",
     label: "Brand",
-    sv: m => brandFromModel(m.instrument, m._labBrand)
+    w: 120,
+    sv: m => brandFromModel(m.instrument, m._labBrand),
+    render: m => /*#__PURE__*/React.createElement("span", {
+      style: {
+        fontWeight: 700,
+        color: "var(--c-key)"
+      }
+    }, brandFromModel(m.instrument, m._labBrand) || "—")
   }, {
     id: "inst",
     label: "Instrument",
+    w: 200,
     sv: m => m.instrument || ""
   }, {
     id: "serial",
     label: "Serial No",
-    sv: m => m.serialNo || ""
+    w: 130,
+    sv: m => m.serialNo || "",
+    render: m => /*#__PURE__*/React.createElement("span", {
+      style: {
+        fontFamily: "monospace",
+        fontSize: 12
+      }
+    }, m.serialNo)
   }, {
     id: "inst2",
     label: "Installed",
-    sv: m => m.installDate || ""
+    w: 110,
+    sv: m => m.installDate || "",
+    render: m => /*#__PURE__*/React.createElement("span", null, m.installDate ? fmtDate(m.installDate) : "—")
   }, {
     id: "next",
     label: "Next PM",
-    sv: m => m._next || ""
+    w: 110,
+    sv: m => m._next || "",
+    render: m => /*#__PURE__*/React.createElement("span", null, m._next ? fmtDate(m._next) : "—")
   }, {
     id: "flag",
     label: "PM Flag",
-    sv: m => m._flag || ""
+    w: 150,
+    sv: m => m._flag || "",
+    render: m => /*#__PURE__*/React.createElement("span", {
+      style: {
+        display: "inline-block",
+        minWidth: 112,
+        textAlign: "center",
+        fontSize: 10.5,
+        fontWeight: 800,
+        padding: "2px 9px",
+        borderRadius: 999,
+        color: FLAG_COLORS[m._flag],
+        border: "1px solid " + FLAG_COLORS[m._flag] + "55"
+      }
+    }, m._flag)
   }, {
     id: "status",
     label: "Status",
-    sv: m => m.status || ""
+    w: 130,
+    sv: m => m.status || "",
+    render: m => /*#__PURE__*/React.createElement("span", {
+      style: {
+        fontSize: 12
+      }
+    }, m.status || "—")
   }];
   const tableRows = useMemo(() => {
     const rows = allMachines.filter(m => {
@@ -3249,12 +3356,8 @@ function LabsTab({
       if (!s) return true;
       return [m._lab, m.instrument, m.serialNo].some(x => String(x || "").toLowerCase().includes(s));
     });
-    const c = TCOLS.find(x => x.id === tSort.col) || TCOLS[0];
-    return rows.sort((a, b) => tSort.dir * String(c.sv(a)).localeCompare(String(c.sv(b)), undefined, {
-      numeric: true,
-      sensitivity: "base"
-    }));
-  }, [allMachines, q, instF, flagF, pmFrom, pmTo, tSort]);
+    return rows;
+  }, [allMachines, q, instF, flagF, pmFrom, pmTo]);
   async function addLab(name, location, subRegion) {
     const dup = labs.find(l => labNameNorm(l.name) === labNameNorm(name));
     if (dup) {
@@ -3283,7 +3386,7 @@ function LabsTab({
       gap: 10,
       marginBottom: 14,
       flexWrap: "wrap",
-      alignItems: "center"
+      alignItems: "flex-end"
     }
   }, /*#__PURE__*/React.createElement("input", {
     style: {
@@ -3484,91 +3587,20 @@ function LabsTab({
       color: "var(--c-text4)",
       marginBottom: 8
     }
-  }, tableRows.length, " instrument record(s) across ", labs.length, " institution(s) — click a row to open its laboratory · click a header to sort"), /*#__PURE__*/React.createElement("table", {
-    className: "ibt",
-    style: {
-      width: "100%",
-      borderCollapse: "collapse"
-    }
-  }, /*#__PURE__*/React.createElement("thead", null, /*#__PURE__*/React.createElement("tr", null, TCOLS.map(c => /*#__PURE__*/React.createElement("th", {
-    key: c.id,
-    style: {
-      ...thSt,
-      textAlign: c.id === "flag" ? "center" : "left",
-      cursor: "pointer",
-      userSelect: "none",
-      position: "sticky",
-      top: 0,
-      background: "var(--c-bg2)",
-      zIndex: 5
-    },
-    onClick: () => setTSort(s => s.col === c.id ? {
-      col: c.id,
-      dir: -s.dir
-    } : {
-      col: c.id,
+  }, tableRows.length, " instrument record(s) across ", labs.length, " institution(s) — click a row to open its laboratory · click a header to sort"), /*#__PURE__*/React.createElement(ITable, {
+    id: "institutions",
+    cols: TCOLS,
+    rows: tableRows,
+    rowKey: m => (m.id || m.serialNo || "") + "-" + m._labId,
+    initSort: {
+      col: "lab",
       dir: 1
-    })
-  }, c.label, tSort.col === c.id ? tSort.dir === 1 ? " ▲" : " ▼" : "")))), /*#__PURE__*/React.createElement("tbody", null, tableRows.map((m, i) => /*#__PURE__*/React.createElement("tr", {
-    key: (m.id || i) + "-" + m._labId,
-    onClick: () => setOpenLab(m._labId),
-    style: {
-      cursor: "pointer"
     },
-    onMouseEnter: e => e.currentTarget.style.background = "var(--c-card2)",
-    onMouseLeave: e => e.currentTarget.style.background = ""
-  }, /*#__PURE__*/React.createElement("td", {
-    style: {
-      ...tdSt,
-      fontWeight: 600
-    }
-  }, m._lab), /*#__PURE__*/React.createElement("td", {
-    style: {
-      ...tdSt,
-      fontWeight: 700,
-      color: "var(--c-key)"
-    }
-  }, brandFromModel(m.instrument, m._labBrand) || "—"), /*#__PURE__*/React.createElement("td", {
-    style: tdSt
-  }, m.instrument), /*#__PURE__*/React.createElement("td", {
-    style: {
-      ...tdSt,
-      fontFamily: "monospace",
-      fontSize: 12
-    }
-  }, m.serialNo), /*#__PURE__*/React.createElement("td", {
-    style: tdSt
-  }, m.installDate ? fmtDate(m.installDate) : "—"), /*#__PURE__*/React.createElement("td", {
-    style: tdSt
-  }, m._next ? fmtDate(m._next) : "—"), /*#__PURE__*/React.createElement("td", {
-    style: {
-      ...tdSt,
-      textAlign: "center"
-    }
-  }, /*#__PURE__*/React.createElement("span", {
-    style: {
-      display: "inline-block",
-      minWidth: 112,
-      textAlign: "center",
-      fontSize: 10.5,
-      fontWeight: 800,
-      padding: "2px 9px",
-      borderRadius: 999,
-      color: FLAG_COLORS[m._flag],
-      border: "1px solid " + FLAG_COLORS[m._flag] + "55"
-    }
-  }, m._flag)), /*#__PURE__*/React.createElement("td", {
-    style: {
-      ...tdSt,
-      fontSize: 12
-    }
-  }, m.status || "—"))), tableRows.length === 0 && /*#__PURE__*/React.createElement("tr", null, /*#__PURE__*/React.createElement("td", {
-    colSpan: 7,
-    style: {
-      ...tdSt,
-      color: "var(--c-text4)"
-    }
-  }, "No instruments match."))))), view === "cards" && /*#__PURE__*/React.createElement("div", {
+    filter: false,
+    maxH: "calc(100vh - 320px)",
+    onRowClick: m => setOpenLab(m._labId),
+    empty: "No instruments match."
+  })), view === "cards" && /*#__PURE__*/React.createElement("div", {
     style: {
       display: "grid",
       gridTemplateColumns: "repeat(auto-fill,minmax(300px,1fr))",
@@ -6325,6 +6357,92 @@ function SpareParts({
       notify("SERVER REFUSED:\n" + e.message, "error");
     }
   }
+  const SCOLS = [{
+    id: "brand",
+    label: "Brand",
+    w: 140,
+    sv: p => p.brand || ""
+  }, {
+    id: "part",
+    label: "Part No",
+    w: 150,
+    sv: p => p.partNumber || "",
+    render: p => /*#__PURE__*/React.createElement("span", {
+      style: {
+        fontFamily: "monospace",
+        fontSize: 12,
+        color: "var(--c-key)"
+      }
+    }, p.partNumber)
+  }, {
+    id: "desc",
+    label: "Description",
+    w: 280,
+    sv: p => p.description || ""
+  }, {
+    id: "hand",
+    label: "On Hand",
+    w: 90,
+    sv: p => String(onHand(p)),
+    render: p => /*#__PURE__*/React.createElement("span", {
+      style: {
+        fontWeight: 800,
+        color: onHand(p) > 0 ? "#34d399" : "#f87171"
+      }
+    }, onHand(p))
+  }, {
+    id: "act",
+    label: "",
+    w: 180,
+    sv: () => "",
+    render: p => /*#__PURE__*/React.createElement("span", {
+      style: {
+        whiteSpace: "nowrap"
+      }
+    }, canEdit && (brandOk(p.brand) ? /*#__PURE__*/React.createElement(React.Fragment, null, /*#__PURE__*/React.createElement("button", {
+      title: "Receive stock",
+      style: {
+        ...btnSt("#10b981", "#fff"),
+        padding: "4px 9px",
+        fontSize: 11
+      },
+      onClick: () => setStockFor({
+        part: p,
+        dir: "in"
+      })
+    }, "📥"), " ", /*#__PURE__*/React.createElement("button", {
+      title: "Issue stock",
+      style: {
+        ...btnSt("#f59e0b", "#1a1205"),
+        padding: "4px 9px",
+        fontSize: 11
+      },
+      onClick: () => setStockFor({
+        part: p,
+        dir: "out"
+      })
+    }, "📤"), " ", /*#__PURE__*/React.createElement("button", {
+      style: {
+        ...btnSt("var(--c-border)", "var(--c-text2)"),
+        padding: "4px 9px",
+        fontSize: 11
+      },
+      onClick: () => setEditing(p)
+    }, "✏️"), " ", /*#__PURE__*/React.createElement("button", {
+      title: "Move to Bin",
+      style: {
+        ...btnSt("#3a1d1d", "#fca5a5"),
+        padding: "4px 9px",
+        fontSize: 11
+      },
+      onClick: () => delPart(p)
+    }, "🗑")) : /*#__PURE__*/React.createElement("span", {
+      title: "Your account can't edit " + (p.brand || "this brand") + " spare parts",
+      style: {
+        color: "var(--c-text5)"
+      }
+    }, "🔒")))
+  }];
   return /*#__PURE__*/React.createElement("div", {
     style: cardSt
   }, /*#__PURE__*/React.createElement("div", {
@@ -6345,87 +6463,19 @@ function SpareParts({
   }), canEdit && /*#__PURE__*/React.createElement("button", {
     style: btnSt("var(--c-key)", "var(--c-bg)"),
     onClick: () => setEditing("new")
-  }, "+ New Spare Part")), /*#__PURE__*/React.createElement("table", {
-    style: {
-      width: "100%",
-      borderCollapse: "collapse"
-    }
-  }, /*#__PURE__*/React.createElement("thead", null, /*#__PURE__*/React.createElement("tr", null, ["Brand", "Part No", "Description", "On Hand", ""].map(h => /*#__PURE__*/React.createElement("th", {
-    key: h,
-    style: thSt
-  }, h)))), /*#__PURE__*/React.createElement("tbody", null, shown.map(p => /*#__PURE__*/React.createElement("tr", {
-    key: p.id
-  }, /*#__PURE__*/React.createElement("td", {
-    style: tdSt
-  }, p.brand), /*#__PURE__*/React.createElement("td", {
-    style: {
-      ...tdSt,
-      fontFamily: "monospace",
-      fontSize: 12,
-      color: "var(--c-key)"
-    }
-  }, p.partNumber), /*#__PURE__*/React.createElement("td", {
-    style: tdSt
-  }, p.description), /*#__PURE__*/React.createElement("td", {
-    style: {
-      ...tdSt,
-      fontWeight: 800,
-      color: onHand(p) > 0 ? "#34d399" : "#f87171"
-    }
-  }, onHand(p)), /*#__PURE__*/React.createElement("td", {
-    style: {
-      ...tdSt,
-      whiteSpace: "nowrap"
-    }
-  }, canEdit && (brandOk(p.brand) ? /*#__PURE__*/React.createElement(React.Fragment, null, /*#__PURE__*/React.createElement("button", {
-    title: "Receive stock",
-    style: {
-      ...btnSt("#10b981", "#fff"),
-      padding: "4px 9px",
-      fontSize: 11
+  }, "+ New Spare Part")), /*#__PURE__*/React.createElement(ITable, {
+    id: "spares",
+    cols: SCOLS,
+    rows: shown,
+    rowKey: p => p.id,
+    initSort: {
+      col: "brand",
+      dir: 1
     },
-    onClick: () => setStockFor({
-      part: p,
-      dir: "in"
-    })
-  }, "📥"), " ", /*#__PURE__*/React.createElement("button", {
-    title: "Issue stock",
-    style: {
-      ...btnSt("#f59e0b", "#1a1205"),
-      padding: "4px 9px",
-      fontSize: 11
-    },
-    onClick: () => setStockFor({
-      part: p,
-      dir: "out"
-    })
-  }, "📤"), " ", /*#__PURE__*/React.createElement("button", {
-    style: {
-      ...btnSt("var(--c-border)", "var(--c-text2)"),
-      padding: "4px 9px",
-      fontSize: 11
-    },
-    onClick: () => setEditing(p)
-  }, "✏️"), " ", /*#__PURE__*/React.createElement("button", {
-    title: "Move to Bin",
-    style: {
-      ...btnSt("#3a1d1d", "#fca5a5"),
-      padding: "4px 9px",
-      fontSize: 11
-    },
-    onClick: () => delPart(p)
-  }, "🗑")) : /*#__PURE__*/React.createElement("span", {
-    title: "Your account can't edit " + (p.brand || "this brand") + " spare parts",
-    style: {
-      color: "var(--c-text5)"
-    }
-  }, "🔒"))))), shown.length === 0 && /*#__PURE__*/React.createElement("tr", null, /*#__PURE__*/React.createElement("td", {
-    colSpan: 5,
-    style: {
-      ...tdSt,
-      color: "var(--c-text4)"
-    }
-  }, "No spare parts", q ? " match the search." : " yet.")))), editing && /*#__PURE__*/React.createElement(Modal, {
+    filter: false,
+    maxH: "calc(100vh - 360px)",
+    empty: "No spare parts" + (q ? " match the search." : " yet.")
+  }), editing && /*#__PURE__*/React.createElement(Modal, {
     title: editing === "new" ? "New Spare Part" : "Edit Spare Part",
     onClose: () => setEditing(null)
   }, /*#__PURE__*/React.createElement(SparePartForm, {
@@ -8177,6 +8227,7 @@ function VisitsTab({
   notify
 }) {
   const canEditLabs = pCanTab(profile, "labs", "edit") || profile.isAdmin;
+  const canDeleteLogs = !!profile.isAdmin; // deleting LOGS is for administrators only
   // ✏️ Visit corrections (enabled by administrators in Settings)
   const editEnabled = !!(catalog && catalog.visitEditEnabled);
   const [editV, setEditV] = useState(null);
@@ -8807,7 +8858,7 @@ function VisitsTab({
       fontSize: 11.5,
       color: "var(--c-text4)"
     }
-  }, shown.length, " of ", all.length, " visit(s) · ", labs.reduce((s, l) => s + (l.machines || []).length, 0), " machine(s) across ", labs.length, " laborator", labs.length === 1 ? "y" : "ies", selCount ? " · " + selCount + " highlighted" : ""), canEditLabs && shown.length > 0 && /*#__PURE__*/React.createElement("label", {
+  }, shown.length, " of ", all.length, " visit(s) · ", labs.reduce((s, l) => s + (l.machines || []).length, 0), " machine(s) across ", labs.length, " laborator", labs.length === 1 ? "y" : "ies", selCount ? " · " + selCount + " highlighted" : ""), canDeleteLogs && shown.length > 0 && /*#__PURE__*/React.createElement("label", {
     title: shown.every((v, i) => selected[v.id || v._mId + "-" + i]) ? "Clear the selection" : "Select ALL " + shown.length + " row(s) in the current view — then untick any row (click it) before deleting",
     style: {
       display: "inline-flex",
@@ -8843,7 +8894,7 @@ function VisitsTab({
       });
       setSelected(next);
     }
-  }), shown.every((v, i) => selected[v.id || v._mId + "-" + i]) ? "All " + shown.length + " selected" : selCount > 0 ? selCount + " selected — tick to select all " + shown.length : "Select all (" + shown.length + ")"), canEditLabs && selCount > 0 && /*#__PURE__*/React.createElement("button", {
+  }), shown.every((v, i) => selected[v.id || v._mId + "-" + i]) ? "All " + shown.length + " selected" : selCount > 0 ? selCount + " selected — tick to select all " + shown.length : "Select all (" + shown.length + ")"), canDeleteLogs && selCount > 0 && /*#__PURE__*/React.createElement("button", {
     style: {
       ...btnSt("#3a1d1d", "#fca5a5")
     },
@@ -9084,8 +9135,8 @@ function VisitsTab({
         color: "var(--c-text5)",
         marginRight: 5
       }
-    }, "🔒"), /*#__PURE__*/React.createElement("button", {
-      title: "Move to Bin",
+    }, "🔒"), canDeleteLogs && /*#__PURE__*/React.createElement("button", {
+      title: "Move to Bin — administrators only",
       style: {
         ...btnSt("#3a1d1d", "#fca5a5"),
         padding: "3px 8px",
@@ -15606,13 +15657,13 @@ function App() {
       fontWeight: 800,
       marginBottom: 8
     }
-  }, "No profile yet"), /*#__PURE__*/React.createElement("div", {
+  }, "⏳ Can't load your profile right now"), /*#__PURE__*/React.createElement("div", {
     style: {
       fontSize: 13,
       color: "var(--c-text3)",
       lineHeight: 1.6
     }
-  }, "You're signed in, but there's no profile document for your account, so the server grants you nothing. If you're the first administrator, create it once in the Firestore console: collection ", /*#__PURE__*/React.createElement("b", null, "users"), ", document ID = ", /*#__PURE__*/React.createElement("b", null, user.uid), ", fields ", /*#__PURE__*/React.createElement("b", null, "isAdmin"), " (boolean true), ", /*#__PURE__*/React.createElement("b", null, "email"), ", ", /*#__PURE__*/React.createElement("b", null, "displayName"), ".")), signedProfile && /*#__PURE__*/React.createElement(TabBoundary, {
+  }, "This usually means the connection dropped. Check your internet connection — this page keeps retrying automatically. If you're online and this message stays, ask your administrator to check your account's access.")), signedProfile && /*#__PURE__*/React.createElement(TabBoundary, {
     tabId: tab
   }, /*#__PURE__*/React.createElement("div", {
     key: tab,
