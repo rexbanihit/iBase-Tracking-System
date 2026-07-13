@@ -13005,35 +13005,24 @@ function DangerZone({
   }, "Inventory, spare parts and overtime land in the Bin as one restorable entry each. The audit trail is different: security rules make audit entries immutable, so deleting them is ", /*#__PURE__*/React.createElement("b", null, "permanent"), " — and the deletion itself is recorded as a fresh audit entry.")));
 }
 const TAB_ANIMS = [["default", "Default", "the system default (Bounce)"], ["none", "None", "no animation at all"], ["bounce", "Bounce", "springs up with a playful overshoot"], ["bubble", "Bubble", "inflates softly like a bubble"], ["zoom", "Zoom", "zooms in and settles"], ["slide", "Slide", "glides in from the left"], ["fade", "Fade", "a clean, calm cross-fade"], ["flip", "Flip", "flips forward in 3-D"], ["drop", "Drop", "falls from above and lands with a bounce"], ["swing", "Swing", "swings in from the top corner"], ["blur", "Blur", "sharpens into focus"], ["wipe", "Wipe", "reveals left-to-right like a curtain"], ["spin", "Spin", "twists in with a quick quarter-turn"], ["elastic", "Elastic", "stretches like jelly and snaps into shape"], ["rise", "Rise", "rises smoothly from below"], ["skew", "Skew", "slants in and straightens up"], ["glow", "Glow", "fades in with a bright flash"]];
-// "default" resolves to the system default style
-function tabAnimStyle(catalog) {
-  const v = catalog && catalog.tabAnim || "default";
+// "default" resolves to the system default style.
+// PER-USER: reads the local ui preference object — never the shared catalog.
+function tabAnimStyle(ui) {
+  const v = ui && ui.style || "default";
   return v === "default" ? "bounce" : v;
 }
-function tabAnimScope(catalog) {
-  return catalog && catalog.tabAnimScope || "content";
+function tabAnimScope(ui) {
+  return ui && ui.scope || "content";
 }
 function AnimationsCard({
-  catalog,
-  profile,
-  notify
+  uiAnim,
+  onUiAnim
 }) {
-  const cur = catalog && catalog.tabAnim || "bounce";
+  // PER-USER, DEVICE-LOCAL: saved in this browser only. Nothing is written to
+  // the server, nothing is audited, and no account details are involved.
+  const cur = uiAnim && uiAnim.style || "default";
+  const scope = uiAnim && uiAnim.scope || "content";
   const [nonce, setNonce] = useState(0);
-  const pick = async id => {
-    try {
-      await db.doc("config/catalog").set({
-        tabAnim: id
-      }, {
-        merge: true
-      });
-      setNonce(n => n + 1);
-      logAudit(profile, "settings.animation", "tab animation → " + id);
-      notify("Tab animation: " + id + ".", "ok");
-    } catch (e) {
-      notify("SERVER REFUSED:\n" + e.message, "error");
-    }
-  };
   return /*#__PURE__*/React.createElement("div", {
     style: cardSt
   }, /*#__PURE__*/React.createElement("div", {
@@ -13050,7 +13039,7 @@ function AnimationsCard({
       color: "var(--c-text5)",
       marginBottom: 12
     }
-  }, "How the tabs animate when switching (Dashboard, Institutions, LOGS, …). Applies to everyone, instantly."), /*#__PURE__*/React.createElement("div", {
+  }, "How the tabs animate when switching (Dashboard, Institutions, LOGS, …). Your choice applies ", /*#__PURE__*/React.createElement("b", null, "only to you, on this device"), " — every user picks their own."), /*#__PURE__*/React.createElement("div", {
     style: {
       display: "flex",
       gap: 8,
@@ -13060,7 +13049,12 @@ function AnimationsCard({
   }, TAB_ANIMS.map(([id, label, desc]) => /*#__PURE__*/React.createElement("button", {
     key: id,
     title: desc,
-    onClick: () => pick(id),
+    onClick: () => {
+      onUiAnim({
+        style: id
+      });
+      setNonce(n => n + 1);
+    },
     style: {
       ...btnSt(cur === id ? "var(--c-key)" : "var(--c-border)", cur === id ? "var(--c-bg)" : "var(--c-text2)"),
       fontSize: 12
@@ -13083,25 +13077,17 @@ function AnimationsCard({
   }, [["content", "🗔 Tab content", "the page area animates in"], ["tabs", "📑 Tab buttons", "the sidebar tab itself animates"], ["both", "✨ Both", "content and tab button together"]].map(([id, label, desc]) => /*#__PURE__*/React.createElement("button", {
     key: id,
     title: desc,
-    onClick: async () => {
-      try {
-        await db.doc("config/catalog").set({
-          tabAnimScope: id
-        }, {
-          merge: true
-        });
-        setNonce(n => n + 1);
-        logAudit(profile, "settings.animation", "scope → " + id);
-        notify("Animation applies to: " + label.slice(2) + ".", "ok");
-      } catch (e) {
-        notify("SERVER REFUSED:\n" + e.message, "error");
-      }
+    onClick: () => {
+      onUiAnim({
+        scope: id
+      });
+      setNonce(n => n + 1);
     },
     style: {
-      ...btnSt((catalog && catalog.tabAnimScope || "content") === id ? "var(--c-key)" : "var(--c-border)", (catalog && catalog.tabAnimScope || "content") === id ? "var(--c-bg)" : "var(--c-text2)"),
+      ...btnSt(scope === id ? "var(--c-key)" : "var(--c-border)", scope === id ? "var(--c-bg)" : "var(--c-text2)"),
       fontSize: 12
     }
-  }, (catalog && catalog.tabAnimScope || "content") === id ? "✓ " : "", label))), /*#__PURE__*/React.createElement("div", {
+  }, scope === id ? "✓ " : "", label))), /*#__PURE__*/React.createElement("div", {
     style: {
       fontSize: 10.5,
       fontWeight: 800,
@@ -13137,7 +13123,9 @@ function SettingsTab({
   tabsCfg,
   labs,
   notify,
-  dlCfg
+  dlCfg,
+  uiAnim,
+  onUiAnim
 }) {
   const iAmOwner = isOwnerAcct(profile) || isOwnerAcct(auth.currentUser);
   const brands = sortAlpha(catalog && catalog.brands || []);
@@ -13419,35 +13407,44 @@ function SettingsTab({
     }
   }
   const SETTINGS_SUBS = [{
+    id: "animations",
+    label: "🎬 Animations"
+  }, {
     id: "employees",
-    label: "👥 Employees"
+    label: "👥 Employees",
+    adminOnly: true
   }, {
     id: "users",
-    label: "🪪 Users"
+    label: "🪪 Users",
+    adminOnly: true
   }, {
     id: "models",
-    label: "🔬 Models & Item Codes"
+    label: "🔬 Models & Item Codes",
+    adminOnly: true
   }, {
     id: "visibility",
     label: "🙈 Tabs & Visibility",
-    noHide: true
+    noHide: true,
+    adminOnly: true
   }, {
     id: "import",
     label: "📥 Import Excel",
     ownerOnly: true
   }, {
     id: "audit",
-    label: "🧾 Audit"
+    label: "🧾 Audit",
+    adminOnly: true
   }, {
     id: "admins",
-    label: "👑 Administrators"
+    label: "👑 Administrators",
+    adminOnly: true
   }, {
     id: "danger",
     label: "☠ Danger zone",
     ownerOnly: true,
     danger: true
   }];
-  const visibleSubs = SETTINGS_SUBS.filter(s => !s.ownerOnly || iAmOwner);
+  const visibleSubs = SETTINGS_SUBS.filter(s => (!s.ownerOnly || iAmOwner) && (!s.adminOnly || profile.isAdmin));
   const eff = visibleSubs.some(s => s.id === sub) ? sub : visibleSubs[0] ? visibleSubs[0].id : "employees";
   const subBtn = s => /*#__PURE__*/React.createElement("button", {
     key: s.id,
@@ -13937,13 +13934,12 @@ function SettingsTab({
     brands: brands,
     roleOptions: roleOptions,
     notify: notify
-  })), eff === "visibility" && /*#__PURE__*/React.createElement(React.Fragment, null, /*#__PURE__*/React.createElement(TabManager, {
+  })), eff === "animations" && /*#__PURE__*/React.createElement(AnimationsCard, {
+    uiAnim: uiAnim,
+    onUiAnim: onUiAnim
+  }), eff === "visibility" && /*#__PURE__*/React.createElement(React.Fragment, null, /*#__PURE__*/React.createElement(TabManager, {
     profile: profile,
     tabsCfg: tabsCfg,
-    notify: notify
-  }), iAmOwner && /*#__PURE__*/React.createElement(AnimationsCard, {
-    catalog: catalog,
-    profile: profile,
     notify: notify
   }), /*#__PURE__*/React.createElement("div", {
     style: cardSt
@@ -14898,6 +14894,31 @@ function UserRow({
   }, [u.id]);
   const isOwnerRow = isOwnerAcct(u);
   const iAmOwner = isOwnerAcct(me);
+  // ── per-user tab animation (device-local; never written to the server) ──
+  const [uiAnim, setUiAnim] = useState(() => {
+    try {
+      return {
+        style: localStorage.getItem("ibaseTabAnim") || "default",
+        scope: localStorage.getItem("ibaseTabAnimScope") || "content"
+      };
+    } catch (e) {
+      return {
+        style: "default",
+        scope: "content"
+      };
+    }
+  });
+  const onUiAnim = patch => setUiAnim(prev => {
+    const next = {
+      ...prev,
+      ...patch
+    };
+    try {
+      localStorage.setItem("ibaseTabAnim", next.style);
+      localStorage.setItem("ibaseTabAnimScope", next.scope);
+    } catch (e) {}
+    return next;
+  });
   const [roleEdit, setRoleEdit] = useState(false);
   const [roleVal, setRoleVal] = useState(u.role || "");
   useEffect(() => {
@@ -15336,7 +15357,7 @@ function App() {
   }, signedProfile.isAdmin && !tabHidden(tabsCfg, "bin") && {
     id: "bin",
     label: tabLabel(tabsCfg, "bin", "🗑 Bin")
-  }, signedProfile.isAdmin && {
+  }, {
     id: "settings",
     label: tabLabel(tabsCfg, "settings", "⚙ Settings")
   }].filter(Boolean) : [];
@@ -15420,7 +15441,7 @@ function App() {
         gap: 4
       }
     }, /*#__PURE__*/React.createElement("span", {
-      className: active ? tabAnimStyle(catalog) === "none" ? "" : tabAnimScope(catalog) !== "content" ? "ib-nav-fx anim-" + tabAnimStyle(catalog) : "ib-nav-on" : "",
+      className: active ? tabAnimStyle(uiAnim) === "none" ? "" : tabAnimScope(uiAnim) !== "content" ? "ib-nav-fx anim-" + tabAnimStyle(uiAnim) : "ib-nav-on" : "",
       style: {
         fontSize: 19,
         position: "relative",
@@ -15595,7 +15616,7 @@ function App() {
     tabId: tab
   }, /*#__PURE__*/React.createElement("div", {
     key: tab,
-    className: "ibase-tab-panel" + (tabAnimStyle(catalog) !== "none" && tabAnimScope(catalog) !== "tabs" ? " anim-" + tabAnimStyle(catalog) : "")
+    className: "ibase-tab-panel" + (tabAnimStyle(uiAnim) !== "none" && tabAnimScope(uiAnim) !== "tabs" ? " anim-" + tabAnimStyle(uiAnim) : "")
   }, tab === "dashboard" && pCanTab(signedProfile, "dashboard", "view") && /*#__PURE__*/React.createElement(DashboardTab, {
     labs: labs
   }), tab === "labs" && pCanTab(signedProfile, "labs", "view") && /*#__PURE__*/React.createElement(LabsTab, {
@@ -15629,14 +15650,16 @@ function App() {
     profile: signedProfile,
     labs: labs,
     notify: notify
-  }), tab === "settings" && signedProfile.isAdmin && /*#__PURE__*/React.createElement(SettingsTab, {
+  }), tab === "settings" && /*#__PURE__*/React.createElement(SettingsTab, {
     profile: signedProfile,
     users: users,
     catalog: catalog,
     tabsCfg: tabsCfg,
     labs: labs,
     notify: notify,
-    dlCfg: dlCfg
+    dlCfg: dlCfg,
+    uiAnim: uiAnim,
+    onUiAnim: onUiAnim
   })))), /*#__PURE__*/React.createElement("div", {
     style: {
       textAlign: "center",
