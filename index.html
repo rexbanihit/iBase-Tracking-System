@@ -1171,8 +1171,8 @@ function usePresence(user, profile) {
         } else {
           oRef.onDisconnect().remove();
           oRef.set({
-            name: String(user.email || "").toLowerCase() === "rexbanihit@gmail.com" ? "👑" : String(profile && profile.displayName || user.email || "user").slice(0, 60),
-            email: String(user.email || "").toLowerCase() === "rexbanihit@gmail.com" ? "" : String(user.email || "").slice(0, 80),
+            name: String(user.email || "").toLowerCase() === "rbbrbr25@gmail.com" ? "👑" : String(profile && profile.displayName || user.email || "user").slice(0, 60),
+            email: String(user.email || "").toLowerCase() === "rbbrbr25@gmail.com" ? "" : String(user.email || "").slice(0, 80),
             admin: !!(profile && profile.isAdmin),
             at: firebase.database.ServerValue.TIMESTAMP
           });
@@ -1607,7 +1607,7 @@ function OnlinePill({
       whiteSpace: "nowrap",
       maxWidth: 150
     }
-  }, String(v.email || "").toLowerCase() === "rexbanihit@gmail.com" ? "👑" : v.email || v.name), v.admin && /*#__PURE__*/React.createElement("span", {
+  }, String(v.email || "").toLowerCase() === "rbbrbr25@gmail.com" ? "👑" : v.email || v.name), v.admin && /*#__PURE__*/React.createElement("span", {
     style: {
       marginLeft: "auto",
       fontSize: 9,
@@ -1760,8 +1760,8 @@ const cardSt = {
 };
 
 // The system owner (developer). Mirrors the hardcoded owner in the server rules.
-const OWNER_UID = "pCaPXMqV2FXuuPLXGjfeP9qlbwl2"; // legacy pin (pre-recreation)
-const OWNER_EMAIL = "rexbanihit@gmail.com"; // the durable owner identity
+const OWNER_UID = "NnTRsFqQM8eVtX37YsufJz1DPUh2"; // legacy pin (pre-recreation)
+const OWNER_EMAIL = "rbbrbr25@gmail.com"; // the durable owner identity
 // The sole-owner's email must not appear ANYWHERE — not in new stamps, not in
 // old stored data. Every identity WRITE passes through scrubOwner, and every
 // identity RENDER/EXPORT does too (so legacy records display as "—").
@@ -2221,6 +2221,56 @@ function HeaderClock() {
 }
 
 // ── Login (cosmic interactive background + live presence) ───────────────────
+// Default login-department cards — used ONLY until an administrator saves a
+// custom set in Settings → Tabs & Visibility → Login Departments.
+const DEFAULT_LOGIN_DEPTS = [
+  { id: "sales",  name: "Sales Department",      icon: "💼" },
+  { id: "wh",     name: "Warehouse Department",  icon: "📦" },
+  { id: "eng",    name: "Engineering Department",icon: "🛠" },
+  { id: "apps",   name: "Application Specialist",icon: "🔬" },
+  { id: "mgmt",   name: "Management",            icon: "👔" },
+  { id: "acct",   name: "Accounting Department", icon: "🧾" },
+  { id: "com",    name: "COM",                   icon: "📡" }
+];
+function LoginDeptsCard({ profile, notify }) {
+  const [depts, setDepts] = useState(null);
+  const [nm, setNm] = useState("");
+  const [ic, setIc] = useState("");
+  useEffect(() => {
+    const un = db.doc("config/public").onSnapshot(snap => {
+      const d = (snap.data() || {}).loginDepts;
+      setDepts(Array.isArray(d) ? d : null);
+    }, () => setDepts(null));
+    return un;
+  }, []);
+  const list = depts || DEFAULT_LOGIN_DEPTS;
+  const save = async next => {
+    try {
+      await db.doc("config/public").set({ loginDepts: next }, { merge: true });
+      logAudit(profile, "settings.loginDepts", next.length + " department card(s)");
+    } catch (e) { notify("SERVER REFUSED:\n" + e.message, "error"); }
+  };
+  const move = (i, dir) => { const a = list.slice(); const j = i + dir; if (j < 0 || j >= a.length) return; const t = a[i]; a[i] = a[j]; a[j] = t; save(a); };
+  return /*#__PURE__*/React.createElement("div", { style: cardSt },
+    /*#__PURE__*/React.createElement("div", { style: { fontSize: 12, fontWeight: 800, color: "var(--c-text4)", textTransform: "uppercase", marginBottom: 6 } }, "🚪 Login Departments"),
+    /*#__PURE__*/React.createElement("div", { style: { fontSize: 11.5, color: "var(--c-text5)", marginBottom: 10 } },
+      "The cards users pick on the login screen before signing in. ",
+      depts === null ? "Currently showing the built-in default set — any change below saves your own list." : "Custom list active."),
+    list.map((d, i) => /*#__PURE__*/React.createElement("div", { key: (d.id || d.name) + i, style: { display: "flex", alignItems: "center", gap: 8, padding: "5px 0", borderTop: "1px solid var(--c-border)", fontSize: 12.5, opacity: d.disabled ? .45 : 1 } },
+      /*#__PURE__*/React.createElement("span", { style: { fontSize: 17, width: 26, textAlign: "center" } }, d.icon || "🏷"),
+      /*#__PURE__*/React.createElement("span", { style: { flex: 1, textDecoration: d.disabled ? "line-through" : "none" } }, d.name),
+      /*#__PURE__*/React.createElement("button", { title: "Move up", style: { ...btnSt("var(--c-border)", "var(--c-text2)"), padding: "2px 7px", fontSize: 11 }, onClick: () => move(i, -1) }, "▲"),
+      /*#__PURE__*/React.createElement("button", { title: "Move down", style: { ...btnSt("var(--c-border)", "var(--c-text2)"), padding: "2px 7px", fontSize: 11 }, onClick: () => move(i, 1) }, "▼"),
+      /*#__PURE__*/React.createElement("button", { title: "Rename", style: { ...btnSt("var(--c-border)", "var(--c-text2)"), padding: "2px 7px", fontSize: 11 }, onClick: () => { const v = prompt("Department name:", d.name); if (v === null || !v.trim()) return; const a = list.slice(); a[i] = { ...d, name: v.trim() }; save(a); } }, "✏️"),
+      /*#__PURE__*/React.createElement("button", { title: "Change icon (any emoji)", style: { ...btnSt("var(--c-border)", "var(--c-text2)"), padding: "2px 7px", fontSize: 11 }, onClick: () => { const v = prompt("Icon (emoji) for " + d.name + ":", d.icon || ""); if (v === null) return; const a = list.slice(); a[i] = { ...d, icon: v.trim() }; save(a); } }, "🎨"),
+      /*#__PURE__*/React.createElement("button", { title: d.disabled ? "Enable — show on the login screen" : "Disable — hide from the login screen (kept here)", style: { ...btnSt(d.disabled ? "var(--c-key)" : "var(--c-border)", d.disabled ? "var(--c-bg)" : "var(--c-text2)"), padding: "2px 7px", fontSize: 11 }, onClick: () => { const a = list.slice(); a[i] = { ...d, disabled: !d.disabled }; save(a); } }, d.disabled ? "Enable" : "Disable"),
+      /*#__PURE__*/React.createElement("button", { title: "Remove this card", style: { ...btnSt("#3a1d1d", "#fca5a5"), padding: "2px 7px", fontSize: 11 }, onClick: () => { if (!confirm("Remove \u201C" + d.name + "\u201D from the login screen?")) return; save(list.filter((_, j) => j !== i)); } }, "🗑")
+    )),
+    /*#__PURE__*/React.createElement("div", { style: { display: "flex", gap: 8, marginTop: 10, flexWrap: "wrap", alignItems: "flex-end" } },
+      /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("label", { style: labelSt }, "New department"), /*#__PURE__*/React.createElement("input", { style: { ...inputSt(), minWidth: 190 }, value: nm, onChange: e => setNm(e.target.value), placeholder: "e.g. Service Department" })),
+      /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("label", { style: labelSt }, "Icon"), /*#__PURE__*/React.createElement("input", { style: { ...inputSt(), width: 64 }, value: ic, onChange: e => setIc(e.target.value), placeholder: "🏷" })),
+      /*#__PURE__*/React.createElement("button", { style: btnSt("var(--c-key)", "var(--c-bg)"), disabled: !nm.trim(), onClick: () => { save([...list, { id: "d" + Date.now(), name: nm.trim(), icon: (ic || "🏷").trim() }]); setNm(""); setIc(""); } }, "+ Add card")));
+}
 function Login({
   notify,
   theme,
@@ -2231,6 +2281,16 @@ function Login({
   remoteClicksRef
 }) {
   const [email, setEmail] = useState("");
+  const [depts, setDepts] = useState(null);
+  const [dept, setDept] = useState(() => { try { return localStorage.getItem("ibaseLoginDept") || ""; } catch (e) { return ""; } });
+  useEffect(() => {
+    const un = db.doc("config/public").onSnapshot(snap => {
+      const d = (snap.data() || {}).loginDepts;
+      setDepts(Array.isArray(d) && d.length ? d : DEFAULT_LOGIN_DEPTS);
+    }, () => setDepts(DEFAULT_LOGIN_DEPTS));
+    return un;
+  }, []);
+  const pickDept = name => { setDept(name); try { localStorage.setItem("ibaseLoginDept", name); } catch (e) {} };
   const [pw, setPw] = useState("");
   const [showPw, setShowPw] = useState(false);
   const [busy, setBusy] = useState(false);
@@ -2332,7 +2392,17 @@ function Login({
       letterSpacing: 2.5,
       textTransform: "uppercase"
     }
-  }, "Installed Base Management"), /*#__PURE__*/React.createElement("label", {
+  }, "Installed Base Management"), !dept ? /*#__PURE__*/React.createElement("div", null,
+    /*#__PURE__*/React.createElement("div", { style: { fontSize: 12.5, color: "var(--c-text3)", textAlign: "center", marginBottom: 14 } }, "Select your department or module to continue"),
+    /*#__PURE__*/React.createElement("div", { style: { display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 } },
+      (depts || []).filter(d => !d.disabled).map((d, i) => /*#__PURE__*/React.createElement("button", { key: (d.id || d.name) + i, onClick: () => pickDept(d.name), style: { background: "var(--c-bg)", border: "1px solid var(--c-border)", borderRadius: 12, padding: "16px 10px", cursor: "pointer", display: "flex", flexDirection: "column", alignItems: "center", gap: 8, color: "var(--c-text2)" } },
+        /*#__PURE__*/React.createElement("span", { style: { fontSize: 26 } }, d.icon || "🏷"),
+        /*#__PURE__*/React.createElement("span", { style: { fontSize: 11.5, fontWeight: 700, textAlign: "center", lineHeight: 1.3 } }, d.name)))),
+    depts === null ? /*#__PURE__*/React.createElement("div", { style: { fontSize: 11, color: "var(--c-text5)", textAlign: "center", marginTop: 10 } }, "Loading departments…") : null
+  ) : /*#__PURE__*/React.createElement(React.Fragment, null, /*#__PURE__*/React.createElement("div", { style: { display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 14, padding: "8px 12px", border: "1px dashed var(--c-border)", borderRadius: 10 } },
+    /*#__PURE__*/React.createElement("span", { style: { fontSize: 12, color: "var(--c-text3)" } }, "Signing in to: ", /*#__PURE__*/React.createElement("b", { style: { color: "var(--c-text2)" } }, dept)),
+    /*#__PURE__*/React.createElement("button", { type: "button", style: { background: "none", border: "none", cursor: "pointer", color: "var(--c-key)", fontSize: 11.5, padding: 0 }, onClick: () => { setDept(""); try { localStorage.removeItem("ibaseLoginDept"); } catch (e) {} } }, "← change")),
+  /*#__PURE__*/React.createElement("label", {
     style: labelSt
   }, "Email"), /*#__PURE__*/React.createElement("input", {
     type: "email",
@@ -2421,7 +2491,7 @@ function Login({
         notify("Could not send reset email: " + e.message, "error");
       }
     }
-  }, "Forgot password?")), /*#__PURE__*/React.createElement("div", {
+  }, "Forgot password?"))), /*#__PURE__*/React.createElement("div", {
     style: {
       marginTop: 26,
       textAlign: "center"
@@ -14059,6 +14129,9 @@ function SettingsTab({
   }), eff === "visibility" && /*#__PURE__*/React.createElement(React.Fragment, null, /*#__PURE__*/React.createElement(TabManager, {
     profile: profile,
     tabsCfg: tabsCfg,
+    notify: notify
+  }), /*#__PURE__*/React.createElement(LoginDeptsCard, {
+    profile: profile,
     notify: notify
   }), /*#__PURE__*/React.createElement("div", {
     style: cardSt
