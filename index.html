@@ -6843,6 +6843,18 @@ function BinTab({
         ...data
       } = e.payload;
       await db.collection("spareParts").add(data);
+    } else if (e.kind === "reagent") {
+      const {
+        id,
+        ...data
+      } = e.payload;
+      await db.collection("reagents").add(data);
+    } else if (e.kind === "sale") {
+      const {
+        id,
+        ...data
+      } = e.payload;
+      await db.collection("sales").add(data);
     } else if (e.kind === "cfgRole") {
       const snapR = await db.doc("config/catalog").get();
       const catR = snapR.data() || {};
@@ -7190,6 +7202,12 @@ const MANAGED_TABS = [{
 }, {
   id: "overtime",
   def: "🕒 Overtime"
+}, {
+  id: "reagents",
+  def: "🧪 Reagents"
+}, {
+  id: "sales",
+  def: "📊 Sales"
 }, {
   id: "bin",
   def: "🗑 Bin",
@@ -15334,6 +15352,277 @@ function UserRow({
 }
 
 // ── App shell ────────────────────────────────────────────────────────────────
+// ═══════════════ REAGENTS / CONSUMABLES INVENTORY + INDEPENDENT LOGS ═══════════════
+const RG_h = React.createElement;
+function ReagentItemModal({ initial, onSave, onClose }) {
+  const [f, setF] = useState(initial ? { itemId: initial.itemId || "", name: initial.name || "", unitMode: initial.unitMode || "piece" } : { itemId: "", name: "", unitMode: "piece" });
+  const set = (k, v) => setF(x => ({ ...x, [k]: v }));
+  return RG_h(Modal, { title: initial ? "Edit Item" : "New Reagent / Consumable", onClose: onClose },
+    RG_h("label", { style: labelSt }, "Item ID Number *"),
+    RG_h("input", { style: { ...inputSt(), marginBottom: 10 }, value: f.itemId, onChange: e => set("itemId", e.target.value), placeholder: "e.g. RG-1024" }),
+    RG_h("label", { style: labelSt }, "Item name / description *"),
+    RG_h("input", { style: { ...inputSt(), marginBottom: 10 }, value: f.name, onChange: e => set("name", e.target.value), placeholder: "e.g. Capillarys B2 Buffer" }),
+    RG_h("label", { style: labelSt }, "Quantity is counted"),
+    RG_h("select", { style: { ...inputSt(), marginBottom: 14, cursor: "pointer" }, value: f.unitMode, onChange: e => set("unitMode", e.target.value) },
+      RG_h("option", { value: "piece" }, "Per piece"),
+      RG_h("option", { value: "kit" }, "Per kit")),
+    RG_h("div", { style: { display: "flex", gap: 10 } },
+      RG_h("button", { style: btnSt("var(--c-key)", "var(--c-bg)"), onClick: () => {
+        if (!f.itemId.trim() || !f.name.trim()) { notifyG("Item ID and name are required.", "error"); return; }
+        onSave({ itemId: f.itemId.trim(), name: f.name.trim(), unitMode: f.unitMode });
+      } }, "Save"),
+      RG_h("button", { style: btnSt("var(--c-border)", "var(--c-text2)"), onClick: onClose }, "Cancel")));
+}
+function ReagentMoveModal({ item, type, labs, employees, onSave, onClose }) {
+  const isIn = type === "in";
+  const [f, setF] = useState({ refNumber: "", lot: "", expiry: "", qty: "", date: today(), salesRep: "", releasedBy: "", drNumber: "", account: "", deliveredBy: "" });
+  const set = (k, v) => setF(x => ({ ...x, [k]: v }));
+  const unit = item.unitMode === "kit" ? "kit(s)" : "piece(s)";
+  const F = (label, key, props) => RG_h("div", null, RG_h("label", { style: labelSt }, label), RG_h("input", Object.assign({ style: inputSt(), value: f[key], onChange: e => set(key, e.target.value) }, props || {})));
+  return RG_h(Modal, { title: (isIn ? "⬇ Inventory IN — " : "⬆ Inventory OUT — ") + item.itemId, onClose: onClose, wide: true },
+    RG_h("div", { style: { fontSize: 12, color: "var(--c-text4)", marginBottom: 10 } }, item.name, " · counted per ", item.unitMode === "kit" ? "kit" : "piece"),
+    RG_h("div", { style: { display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 } },
+      F("Reference Number" + (isIn ? " *" : ""), "refNumber"),
+      isIn ? F("Lot Number", "lot") : F("Delivery Receipt (DR) Number *", "drNumber"),
+      isIn ? F("Expiration Date", "expiry", { type: "date" }) : RG_h("div", null, RG_h("label", { style: labelSt }, "Customer / Account *"),
+        RG_h("input", { style: inputSt(), value: f.account, onChange: e => set("account", e.target.value), list: "rg-accounts" }),
+        RG_h("datalist", { id: "rg-accounts" }, (labs || []).map(l => RG_h("option", { key: l.id, value: l.name })))),
+      F((isIn ? "Quantity received per shipment *" : "Quantity released *") + "  (" + unit + ")", "qty", { type: "number", min: "0" }),
+      F(isIn ? "Date Received *" : "Date *", "date", { type: "date" }),
+      RG_h("div", null, RG_h("label", { style: labelSt }, "Sales Representative"),
+        RG_h("input", { style: inputSt(), value: f.salesRep, onChange: e => set("salesRep", e.target.value), list: "rg-emps" }),
+        RG_h("datalist", { id: "rg-emps" }, (employees || []).map((n, i) => RG_h("option", { key: n + i, value: n })))),
+      isIn ? null : F("Releasing Personnel *", "releasedBy", { list: "rg-emps" }),
+      F("Delivered By", "deliveredBy"),
+      isIn ? F("Delivery Receipt (DR) Number", "drNumber") : F("Lot Number", "lot")),
+    RG_h("div", { style: { display: "flex", gap: 10, marginTop: 16 } },
+      RG_h("button", { style: btnSt("var(--c-key)", "var(--c-bg)"), onClick: () => {
+        const q = Number(f.qty);
+        const need = isIn ? [[f.refNumber, "Reference Number"], [q > 0, "Quantity"], [f.date, "Date Received"]] : [[f.drNumber, "DR Number"], [f.account, "Customer / Account"], [q > 0, "Quantity"], [f.date, "Date"], [f.releasedBy, "Releasing Personnel"]];
+        const missing = need.filter(x => !x[0]).map(x => x[1]);
+        if (missing.length) { notifyG("Please complete: " + missing.join(", "), "error"); return; }
+        onSave({ type: type, refNumber: f.refNumber.trim(), lot: f.lot.trim(), expiry: f.expiry, qty: q, date: f.date, salesRep: f.salesRep.trim(), releasedBy: f.releasedBy.trim(), drNumber: f.drNumber.trim(), account: f.account.trim(), deliveredBy: f.deliveredBy.trim() });
+      } }, isIn ? "Record IN" : "Record OUT"),
+      RG_h("button", { style: btnSt("var(--c-border)", "var(--c-text2)"), onClick: onClose }, "Cancel")));
+}
+function ReagentsTab({ profile, labs, catalog, notify }) {
+  window.__rgNotify = notify;
+  const [items, setItems] = useState(null);
+  const [invItems, setInvItems] = useState([]);
+  const [spares, setSpares] = useState([]);
+  const [sub, setSub] = useState("stock");
+  const [logKind, setLogKind] = useState("reagents");
+  const [editing, setEditing] = useState(null);
+  const [moveFor, setMoveFor] = useState(null);
+  const [histFor, setHistFor] = useState(null);
+  useEffect(() => { const un = db.collection("reagents").onSnapshot(s2 => setItems(s2.docs.map(d => ({ id: d.id, ...d.data() }))), e => notify("Reagents: " + e.message, "error")); return un; }, []);
+  useEffect(() => { const un = db.collection("inventory").onSnapshot(s2 => setInvItems(s2.docs.map(d => ({ id: d.id, ...d.data() }))), () => {}); return un; }, []);
+  useEffect(() => { const un = db.collection("spareParts").onSnapshot(s2 => setSpares(s2.docs.map(d => ({ id: d.id, ...d.data() }))), () => {}); return un; }, []);
+  const canEdit = !!profile.isAdmin || pCanTab(profile, "reagents", "edit");
+  const employees = useMemo(() => Array.from(new Set(((catalog && catalog.departments) || []).flatMap(d => Array.isArray(d.employees) ? d.employees : []).concat(((catalog && catalog.employees) || []).map(e2 => e2 && (e2.name || e2))).map(x => String(x || "").trim()).filter(Boolean))).sort(), [catalog]);
+  const onHand = it => (it.movements || []).reduce((s2, m) => s2 + (m.type === "in" ? 1 : -1) * (Number(m.qty) || 0), 0);
+  const nearestExpiry = it => { const ds = (it.movements || []).filter(m => m.type === "in" && m.expiry).map(m => m.expiry).sort(); return ds[0] || ""; };
+  const expiryColor = d => { if (!d) return "var(--c-text5)"; const days = Math.floor((new Date(d) - new Date()) / 864e5); return days < 0 ? "#f87171" : days < 60 ? "#f59e0b" : "#34d399"; };
+  const saveMove = async mv => {
+    const it = moveFor.item;
+    if (mv.type === "out" && mv.qty > onHand(it)) { notify("Only " + onHand(it) + " on hand — cannot release " + mv.qty + ".", "error"); return; }
+    try {
+      await db.collection("reagents").doc(it.id).set({ movements: [...(it.movements || []), { ...mv, at: auditNow(), by: scrubOwner(meEmail(profile)) }] }, { merge: true });
+      logAudit(profile, "reagents." + mv.type, it.itemId + " ×" + mv.qty);
+      notify((mv.type === "in" ? "⬇ Received " : "⬆ Released ") + mv.qty + " — " + it.itemId, "ok");
+      setMoveFor(null);
+    } catch (e2) { notify("SERVER REFUSED:\n" + e2.message, "error"); }
+  };
+  const RCOLS = [
+    { id: "itemId", label: "Item ID", w: 110, sv: it => it.itemId || "", render: it => RG_h("span", { style: { fontFamily: "monospace", fontSize: 12, color: "var(--c-key)" } }, it.itemId) },
+    { id: "name", label: "Item", w: 240, sv: it => it.name || "" },
+    { id: "unit", label: "Unit", w: 70, sv: it => it.unitMode || "piece", render: it => RG_h("span", { style: { fontSize: 11.5 } }, it.unitMode === "kit" ? "kit" : "piece") },
+    { id: "hand", label: "On Hand", w: 90, sv: it => String(onHand(it)), render: it => RG_h("span", { style: { fontWeight: 800, color: onHand(it) > 0 ? "#34d399" : "#f87171" } }, onHand(it)) },
+    { id: "exp", label: "Nearest Expiry", w: 115, sv: it => nearestExpiry(it), render: it => { const d = nearestExpiry(it); return RG_h("span", { style: { color: expiryColor(d), fontSize: 12 } }, d ? fmtDate(d) : "—"); } },
+    { id: "moves", label: "Moves", w: 70, sv: it => String((it.movements || []).length) },
+    { id: "act", label: "", w: 210, sv: () => "", render: it => RG_h("span", { onClick: e2 => e2.stopPropagation(), style: { whiteSpace: "nowrap" } },
+      canEdit ? RG_h("button", { title: "Inventory IN — receive stock", style: { ...btnSt("var(--c-border)", "#34d399"), padding: "3px 8px", fontSize: 11, marginRight: 4 }, onClick: () => setMoveFor({ item: it, type: "in" }) }, "⬇ IN") : null,
+      canEdit ? RG_h("button", { title: "Inventory OUT — release stock", style: { ...btnSt("var(--c-border)", "#f59e0b"), padding: "3px 8px", fontSize: 11, marginRight: 4 }, onClick: () => setMoveFor({ item: it, type: "out" }) }, "⬆ OUT") : null,
+      canEdit ? RG_h("button", { title: "Edit item", style: { ...btnSt("var(--c-border)", "var(--c-text2)"), padding: "3px 8px", fontSize: 11, marginRight: 4 }, onClick: () => setEditing(it) }, "✏️") : null,
+      profile.isAdmin ? RG_h("button", { title: "Move to Bin", style: { ...btnSt("#3a1d1d", "#fca5a5"), padding: "3px 8px", fontSize: 11 }, onClick: async () => {
+        if (!confirm("Move " + it.itemId + " (" + it.name + ") and its whole movement history to the Bin?")) return;
+        try { await binIt("reagent", it.itemId + " · " + it.name, { id: it.id, ...it }, profile.email); await db.collection("reagents").doc(it.id).delete(); } catch (e2) { notify("SERVER REFUSED:\n" + e2.message, "error"); }
+      } }, "🗑") : null) }
+  ];
+  const mvRow = (it, m, i) => ({ _k: it.id + "-" + i, date: m.date || (m.at || "").slice(0, 10), item: it.itemId + " · " + it.name, type: m.type === "in" ? "IN" : "OUT", qty: (m.type === "in" ? "+" : "−") + m.qty + " " + (it.unitMode === "kit" ? "kit" : "pc"), ref: m.refNumber || "", dr: m.drNumber || "", lot: m.lot || "", expiry: m.expiry || "", account: m.account || "", salesRep: m.salesRep || "", releasedBy: m.releasedBy || "", deliveredBy: m.deliveredBy || "", by: scrubOwner(m.by) });
+  const reagentLog = useMemo(() => (items || []).flatMap(it => (it.movements || []).map((m, i) => mvRow(it, m, i))).sort((a, b) => String(b.date).localeCompare(String(a.date))), [items]);
+  const sparesLog = useMemo(() => (spares || []).flatMap(p => [
+    ...(p.receipts || []).map((r, i) => ({ _k: p.id + "-r" + i, date: r.date || "", item: (p.brand || "") + " " + (p.partNumber || ""), desc: p.description || "", type: "IN", qty: "+" + (r.qty || 0), note: r.note || r.remarks || "", by: scrubOwner(r.by) })),
+    ...(p.issues || []).map((r, i) => ({ _k: p.id + "-i" + i, date: r.date || "", item: (p.brand || "") + " " + (p.partNumber || ""), desc: p.description || "", type: "OUT", qty: "−" + (r.qty || 0), note: r.note || r.to || r.remarks || "", by: scrubOwner(r.by) }))
+  ]).sort((a, b) => String(b.date).localeCompare(String(a.date))), [spares]);
+  const machineLog = useMemo(() => (invItems || []).flatMap(m => (m.editLog || []).filter(e2 => scrubOwner(e2.by)).map((e2, i) => ({ _k: m.id + "-" + i, at: String(e2.at || "").replace("T", " ").slice(0, 16), item: (m.brand || "") + " " + (m.machineModel || "") + " · " + (m.serialNo || ""), by: scrubOwner(e2.by), changes: (e2.changes || []).join("; ") }))).sort((a, b) => String(b.at).localeCompare(String(a.at))), [invItems]);
+  const LOGCOLS = {
+    reagents: [ { id: "date", label: "Date", w: 95, sv: r => r.date }, { id: "type", label: "Type", w: 60, sv: r => r.type, render: r => RG_h("b", { style: { color: r.type === "IN" ? "#34d399" : "#f59e0b" } }, r.type) }, { id: "item", label: "Item", w: 220, sv: r => r.item }, { id: "qty", label: "Qty", w: 80, sv: r => r.qty }, { id: "ref", label: "Ref No", w: 100, sv: r => r.ref }, { id: "dr", label: "DR No", w: 100, sv: r => r.dr }, { id: "lot", label: "Lot", w: 90, sv: r => r.lot }, { id: "expiry", label: "Expiry", w: 95, sv: r => r.expiry }, { id: "account", label: "Customer/Account", w: 170, sv: r => r.account }, { id: "salesRep", label: "Sales Rep", w: 120, sv: r => r.salesRep }, { id: "releasedBy", label: "Released By", w: 120, sv: r => r.releasedBy }, { id: "deliveredBy", label: "Delivered By", w: 120, sv: r => r.deliveredBy }, { id: "by", label: "Recorded By", w: 140, sv: r => r.by } ],
+    spares: [ { id: "date", label: "Date", w: 95, sv: r => r.date }, { id: "type", label: "Type", w: 60, sv: r => r.type, render: r => RG_h("b", { style: { color: r.type === "IN" ? "#34d399" : "#f59e0b" } }, r.type) }, { id: "item", label: "Part", w: 190, sv: r => r.item }, { id: "desc", label: "Description", w: 230, sv: r => r.desc }, { id: "qty", label: "Qty", w: 70, sv: r => r.qty }, { id: "note", label: "Note / To", w: 200, sv: r => r.note }, { id: "by", label: "Recorded By", w: 140, sv: r => r.by } ],
+    machines: [ { id: "at", label: "When", w: 130, sv: r => r.at }, { id: "item", label: "Machine", w: 250, sv: r => r.item }, { id: "by", label: "By", w: 150, sv: r => r.by }, { id: "changes", label: "Changes", w: 420, sv: r => r.changes } ]
+  };
+  const logRows = logKind === "reagents" ? reagentLog : logKind === "spares" ? sparesLog : machineLog;
+  return RG_h("div", null,
+    RG_h("div", { style: { display: "flex", gap: 8, marginBottom: 14, flexWrap: "wrap" } },
+      RG_h("button", { style: btnSt(sub === "stock" ? "var(--c-key)" : "var(--c-border)", sub === "stock" ? "var(--c-bg)" : "var(--c-text2)"), onClick: () => setSub("stock") }, "🧪 Reagents & Consumables"),
+      RG_h("button", { style: btnSt(sub === "logs" ? "var(--c-key)" : "var(--c-border)", sub === "logs" ? "var(--c-bg)" : "var(--c-text2)"), onClick: () => setSub("logs") }, "🧾 Transaction Logs"),
+      sub === "stock" && canEdit ? RG_h("button", { style: { ...btnSt("var(--c-key)", "var(--c-bg)"), marginLeft: "auto" }, onClick: () => setEditing("new") }, "+ New Item") : null),
+    sub === "stock" ? RG_h("div", null,
+      items === null ? RG_h("div", { style: { color: "var(--c-text4)", fontSize: 13 } }, "Loading…") :
+      RG_h(ITable, { id: "reagents", cols: RCOLS, rows: items, rowKey: it => it.id, initSort: { col: "itemId", dir: 1 }, filterPlaceholder: "🔍 Filter items…", maxH: "calc(100vh - 300px)", empty: "No reagents / consumables yet — add the first item.", onRowClick: it => setHistFor(it) })) :
+    RG_h("div", null,
+      RG_h("div", { style: { display: "flex", gap: 8, marginBottom: 10, flexWrap: "wrap" } },
+        [["machines", "🔬 Machine Logs"], ["spares", "🔧 Spare Parts Logs"], ["reagents", "🧪 Reagents / Consumables Logs"]].map(p =>
+          RG_h("button", { key: p[0], style: btnSt(logKind === p[0] ? "var(--c-key)" : "var(--c-border)", logKind === p[0] ? "var(--c-bg)" : "var(--c-text2)"), onClick: () => setLogKind(p[0]) }, p[1]))),
+      RG_h("div", { style: { fontSize: 11, color: "var(--c-text5)", marginBottom: 8 } }, "Each log is independent — its own search, sort, column layout and export scope."),
+      RG_h(ITable, { id: "log-" + logKind, cols: LOGCOLS[logKind], rows: logRows, rowKey: r => r._k, initSort: null, filterPlaceholder: "🔍 Search this log…", maxH: "calc(100vh - 340px)", empty: "No entries in this log yet." })),
+    editing ? RG_h(ReagentItemModal, { initial: editing === "new" ? null : editing, onClose: () => setEditing(null), onSave: async f => {
+      try {
+        if (editing === "new") { await db.collection("reagents").add({ ...f, movements: [], createdAt: auditNow() }); notify("Item added.", "ok"); }
+        else {
+          const base = { ...f };
+          const changes = ["itemId", "name", "unitMode"].filter(k => String(editing[k] || "") !== String(f[k] || "")).map(k => k + ": \u201C" + (editing[k] || "—") + "\u201D \u2192 \u201C" + (f[k] || "—") + "\u201D");
+          if (changes.length && !isOwnerAcct(profile)) base.editLog = [...(editing.editLog || []), { by: meEmail(profile), at: auditNow(), changes: changes }];
+          await db.collection("reagents").doc(editing.id).set(base, { merge: true }); notify("Item updated.", "ok");
+        }
+        setEditing(null);
+      } catch (e2) { notify("SERVER REFUSED:\n" + e2.message, "error"); }
+    } }) : null,
+    moveFor ? RG_h(ReagentMoveModal, { item: moveFor.item, type: moveFor.type, labs: labs, employees: employees, onClose: () => setMoveFor(null), onSave: saveMove }) : null,
+    histFor ? RG_h(Modal, { title: "🕓 Movements — " + histFor.itemId, onClose: () => setHistFor(null), wide: true },
+      RG_h("div", { style: { fontSize: 12, color: "var(--c-text4)", marginBottom: 8 } }, histFor.name, " · on hand: ", RG_h("b", null, onHand(items.find(x => x.id === histFor.id) || histFor))),
+      RG_h(ITable, { id: "rg-hist", cols: LOGCOLS.reagents.filter(c => c.id !== "item"), rows: ((items.find(x => x.id === histFor.id) || histFor).movements || []).map((m, i) => mvRow(histFor, m, i)), rowKey: r => r._k, initSort: null, filter: false, maxH: 380, empty: "No movements yet." })) : null);
+}
+function notifyG(msg, kind) { if (window.__rgNotify) window.__rgNotify(msg, kind); }
+// ═══════════════ SALES PERFORMANCE TRACKER ═══════════════
+function SaleModal({ profile, labs, catalog, onSave, onClose }) {
+  const myName = (profile.displayName || meEmail(profile) || "").trim();
+  const [f, setF] = useState({ date: today(), account: "", brand: "", model: "", territory: "", amount: "", units: "1", notes: "", rep: myName });
+  const set = (k, v) => setF(x => ({ ...x, [k]: v }));
+  const models = (catalog && catalog.machines) || [];
+  const brands = Array.from(new Set(models.map(m => m.brand).filter(Boolean))).sort();
+  const pickAccount = v => {
+    const lab = (labs || []).find(l => labNameNorm(l.name) === labNameNorm(v));
+    setF(x => ({ ...x, account: v, territory: x.territory || (lab ? lab.subRegion || lab.location || "" : "") }));
+  };
+  return RG_h(Modal, { title: "💰 Record a Sale", onClose: onClose, wide: true },
+    RG_h("div", { style: { display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 } },
+      RG_h("div", null, RG_h("label", { style: labelSt }, "Date *"), RG_h("input", { type: "date", style: inputSt(), value: f.date, onChange: e => set("date", e.target.value) })),
+      RG_h("div", null, RG_h("label", { style: labelSt }, "Customer / Account *"), RG_h("input", { style: inputSt(), value: f.account, onChange: e => pickAccount(e.target.value), list: "sl-acc" }), RG_h("datalist", { id: "sl-acc" }, (labs || []).map(l => RG_h("option", { key: l.id, value: l.name })))),
+      RG_h("div", null, RG_h("label", { style: labelSt }, "Brand"), RG_h("input", { style: inputSt(), value: f.brand, onChange: e => set("brand", e.target.value), list: "sl-br" }), RG_h("datalist", { id: "sl-br" }, brands.map(b => RG_h("option", { key: b, value: b })))),
+      RG_h("div", null, RG_h("label", { style: labelSt }, "Machine / Model"), RG_h("input", { style: inputSt(), value: f.model, onChange: e => set("model", e.target.value), list: "sl-md" }), RG_h("datalist", { id: "sl-md" }, models.filter(m => !f.brand || m.brand === f.brand).map((m, i) => RG_h("option", { key: m.model + i, value: m.model })))),
+      RG_h("div", null, RG_h("label", { style: labelSt }, "Assigned Area / Territory"), RG_h("input", { style: inputSt(), value: f.territory, onChange: e => set("territory", e.target.value), placeholder: "auto-fills from the account" })),
+      RG_h("div", null, RG_h("label", { style: labelSt }, "Amount (\u20B1) *"), RG_h("input", { type: "number", min: "0", style: inputSt(), value: f.amount, onChange: e => set("amount", e.target.value) })),
+      RG_h("div", null, RG_h("label", { style: labelSt }, "Units"), RG_h("input", { type: "number", min: "1", style: inputSt(), value: f.units, onChange: e => set("units", e.target.value) })),
+      profile.isAdmin ? RG_h("div", null, RG_h("label", { style: labelSt }, "Sales Representative"), RG_h("input", { style: inputSt(), value: f.rep, onChange: e => set("rep", e.target.value) })) : RG_h("div", null, RG_h("label", { style: labelSt }, "Sales Representative"), RG_h("input", { style: { ...inputSt(), opacity: .6 }, value: myName, disabled: true })),
+      RG_h("div", { style: { gridColumn: "1 / -1" } }, RG_h("label", { style: labelSt }, "Notes"), RG_h("input", { style: inputSt(), value: f.notes, onChange: e => set("notes", e.target.value) }))),
+    RG_h("div", { style: { display: "flex", gap: 10, marginTop: 16 } },
+      RG_h("button", { style: btnSt("var(--c-key)", "var(--c-bg)"), onClick: () => {
+        const amt = Number(f.amount);
+        const missing = [[f.date, "Date"], [f.account.trim(), "Customer / Account"], [amt > 0, "Amount"]].filter(x => !x[0]).map(x => x[1]);
+        if (missing.length) { notifyG("Please complete: " + missing.join(", "), "error"); return; }
+        onSave({ date: f.date, account: f.account.trim(), brand: f.brand.trim(), model: f.model.trim(), territory: f.territory.trim(), amount: amt, units: Math.max(1, Number(f.units) || 1), notes: f.notes.trim(), rep: (profile.isAdmin ? f.rep.trim() : myName) || myName });
+      } }, "Save Sale"),
+      RG_h("button", { style: btnSt("var(--c-border)", "var(--c-text2)"), onClick: onClose }, "Cancel")));
+}
+function SalesTab({ profile, labs, catalog, notify }) {
+  window.__rgNotify = notify;
+  const [sales, setSales] = useState(null);
+  const [adding, setAdding] = useState(false);
+  const [rep, setRep] = useState(profile.isAdmin ? "all" : "me");
+  const [period, setPeriod] = useState("mtd");
+  const [from, setFrom] = useState("");
+  const [to, setTo] = useState("");
+  useEffect(() => { const un = db.collection("sales").onSnapshot(s2 => setSales(s2.docs.map(d => ({ id: d.id, ...d.data() }))), e => notify("Sales: " + e.message, "error")); return un; }, []);
+  const myName = (profile.displayName || meEmail(profile) || "").trim();
+  const reps = useMemo(() => Array.from(new Set((sales || []).map(s2 => s2.rep).filter(Boolean))).sort(), [sales]);
+  const inPeriod = d => {
+    if (!d) return false;
+    const now = new Date(); const dd = String(d).slice(0, 10);
+    if (period === "custom") return (!from || dd >= from) && (!to || dd <= to);
+    const y = String(now.getFullYear());
+    if (period === "ytd") return dd.slice(0, 4) === y && dd <= now.toISOString().slice(0, 10);
+    const m = y + "-" + String(now.getMonth() + 1).padStart(2, "0");
+    return dd.slice(0, 7) === m;
+  };
+  const mine = s2 => String(s2.rep || "").trim().toLowerCase() === myName.toLowerCase();
+  const visible = useMemo(() => (sales || []).filter(s2 => inPeriod(s2.date) && (profile.isAdmin ? (rep === "all" ? true : rep === "me" ? mine(s2) : s2.rep === rep) : mine(s2))), [sales, rep, period, from, to]);
+  const peso = n => "\u20B1" + Number(n || 0).toLocaleString();
+  const tot = visible.reduce((a, s2) => a + (Number(s2.amount) || 0), 0);
+  const totU = visible.reduce((a, s2) => a + (Number(s2.units) || 0), 0);
+  const accounts = new Set(visible.map(s2 => s2.account)).size;
+  const groupBy = key => { const m = {}; visible.forEach(s2 => { const k = String(s2[key] || "—") || "—"; if (!m[k]) m[k] = { k: k, amt: 0, units: 0, n: 0 }; m[k].amt += Number(s2.amount) || 0; m[k].units += Number(s2.units) || 0; m[k].n++; }); return Object.values(m).sort((a, b) => b.amt - a.amt); };
+  const Breakdown = (title, key) => { const rows = groupBy(key); const max = rows.length ? rows[0].amt : 1; return RG_h("div", { style: { ...cardSt, flex: "1 1 340px", minWidth: 320 } },
+    RG_h("div", { style: { fontSize: 12, fontWeight: 800, color: "var(--c-text4)", textTransform: "uppercase", marginBottom: 8 } }, title),
+    rows.length === 0 ? RG_h("div", { style: { fontSize: 12, color: "var(--c-text5)" } }, "No sales in this period.") :
+    rows.slice(0, 12).map((r, i) => RG_h("div", { key: r.k + i, style: { marginBottom: 7 } },
+      RG_h("div", { style: { display: "flex", justifyContent: "space-between", fontSize: 12 } },
+        RG_h("span", { style: { color: "var(--c-text2)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", maxWidth: "60%" } }, r.k),
+        RG_h("span", { style: { color: "var(--c-text3)", fontWeight: 700 } }, peso(r.amt), RG_h("span", { style: { color: "var(--c-text5)", fontWeight: 400 } }, "  · " + r.units + "u · " + r.n + " sale(s)"))),
+      RG_h("div", { style: { height: 6, borderRadius: 4, background: "var(--c-bg)", overflow: "hidden", marginTop: 3 } },
+        RG_h("div", { className: "ib-dash-bar", style: { width: Math.max(3, r.amt / max * 100) + "%", height: "100%", borderRadius: 4, background: CHART_PALETTE[i % CHART_PALETTE.length] } }))))); };
+  const monthly = useMemo(() => { const m = {}; visible.forEach(s2 => { const k = String(s2.date || "").slice(0, 7); if (!k) return; m[k] = (m[k] || 0) + (Number(s2.amount) || 0); }); return Object.keys(m).sort().map(k => ({ k: k, amt: m[k] })); }, [visible]);
+  const KPI = (label, val) => RG_h("div", { style: { ...cardSt, flex: "1 1 150px", textAlign: "center" } },
+    RG_h("div", { style: { fontSize: 22, fontWeight: 900, color: "var(--c-key)" } }, val),
+    RG_h("div", { style: { fontSize: 10.5, color: "var(--c-text4)", textTransform: "uppercase", fontWeight: 700, marginTop: 4 } }, label));
+  return RG_h("div", null,
+    RG_h("div", { style: { display: "flex", gap: 8, marginBottom: 12, flexWrap: "wrap", alignItems: "flex-end" } },
+      profile.isAdmin ? RG_h("select", { style: { ...inputSt(), maxWidth: 230, cursor: "pointer" }, value: rep, onChange: e => setRep(e.target.value) },
+        RG_h("option", { value: "all" }, "👔 All representatives (management)"),
+        RG_h("option", { value: "me" }, "🙋 My sales"),
+        reps.map(r => RG_h("option", { key: r, value: r }, r))) :
+        RG_h("div", { style: { fontSize: 13, fontWeight: 800, color: "var(--c-text2)", padding: "8px 0" } }, "🙋 My performance — ", myName),
+      RG_h("select", { style: { ...inputSt(), maxWidth: 190, cursor: "pointer" }, value: period, onChange: e => setPeriod(e.target.value) },
+        RG_h("option", { value: "mtd" }, "Month-to-Date (MTD)"),
+        RG_h("option", { value: "ytd" }, "Year-to-Date (YTD)"),
+        RG_h("option", { value: "custom" }, "Custom range")),
+      period === "custom" ? RG_h("div", null, RG_h("label", { style: labelSt }, "From"), RG_h("input", { type: "date", style: inputSt(), value: from, onChange: e => setFrom(e.target.value) })) : null,
+      period === "custom" ? RG_h("div", null, RG_h("label", { style: labelSt }, "To"), RG_h("input", { type: "date", style: inputSt(), value: to, onChange: e => setTo(e.target.value) })) : null,
+      RG_h("button", { style: { ...btnSt("var(--c-key)", "var(--c-bg)"), marginLeft: "auto" }, onClick: () => setAdding(true) }, "+ Record Sale")),
+    sales === null ? RG_h("div", { style: { color: "var(--c-text4)", fontSize: 13 } }, "Loading…") : RG_h(React.Fragment, null,
+      RG_h("div", { style: { display: "flex", gap: 12, flexWrap: "wrap", marginBottom: 14 } },
+        KPI("Total Sales", peso(tot)), KPI("Units", totU), KPI("Transactions", visible.length), KPI("Accounts", accounts)),
+      monthly.length > 1 ? RG_h("div", { style: { ...cardSt, marginBottom: 14 } },
+        RG_h("div", { style: { fontSize: 12, fontWeight: 800, color: "var(--c-text4)", textTransform: "uppercase", marginBottom: 8 } }, "📈 Monthly trend"),
+        monthly.map((r, i) => { const max = Math.max(...monthly.map(x => x.amt)); return RG_h("div", { key: r.k, style: { display: "flex", alignItems: "center", gap: 8, marginBottom: 4 } },
+          RG_h("span", { style: { fontSize: 11, color: "var(--c-text4)", width: 58 } }, r.k),
+          RG_h("div", { style: { flex: 1, height: 8, borderRadius: 4, background: "var(--c-bg)", overflow: "hidden" } },
+            RG_h("div", { className: "ib-dash-bar", style: { width: Math.max(2, r.amt / max * 100) + "%", height: "100%", background: "var(--c-key)", borderRadius: 4 } })),
+          RG_h("span", { style: { fontSize: 11.5, color: "var(--c-text3)", width: 110, textAlign: "right" } }, peso(r.amt))); })) : null,
+      RG_h("div", { style: { display: "flex", gap: 12, flexWrap: "wrap", marginBottom: 14 } },
+        Breakdown("🏥 Per Account", "account"),
+        Breakdown("🏷 Per Brand", "brand"),
+        Breakdown("🔬 Per Machine", "model"),
+        Breakdown("📍 Per Territory", "territory")),
+      profile.isAdmin && rep === "all" ? RG_h("div", { style: { ...cardSt, marginBottom: 14 } },
+        RG_h("div", { style: { fontSize: 12, fontWeight: 800, color: "var(--c-text4)", textTransform: "uppercase", marginBottom: 8 } }, "👔 Representative comparison"),
+        groupBy("rep").map((r, i) => { const rows = groupBy("rep"); const max = rows.length ? rows[0].amt : 1; return RG_h("div", { key: r.k, style: { display: "flex", alignItems: "center", gap: 8, marginBottom: 5 } },
+          RG_h("span", { style: { fontSize: 12, color: "var(--c-text2)", width: 170, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" } }, r.k),
+          RG_h("div", { style: { flex: 1, height: 8, borderRadius: 4, background: "var(--c-bg)", overflow: "hidden" } },
+            RG_h("div", { className: "ib-dash-bar", style: { width: Math.max(2, r.amt / max * 100) + "%", height: "100%", background: CHART_PALETTE[i % CHART_PALETTE.length], borderRadius: 4 } })),
+          RG_h("span", { style: { fontSize: 11.5, color: "var(--c-text3)", width: 150, textAlign: "right" } }, peso(r.amt), " · " + r.n)); })) : null,
+      RG_h(ITable, { id: "sales", cols: [
+        { id: "date", label: "Date", w: 95, sv: s2 => s2.date || "", render: s2 => RG_h("span", null, fmtDate(s2.date)) },
+        { id: "rep", label: "Sales Rep", w: 140, sv: s2 => s2.rep || "" },
+        { id: "account", label: "Customer / Account", w: 200, sv: s2 => s2.account || "" },
+        { id: "brand", label: "Brand", w: 100, sv: s2 => s2.brand || "" },
+        { id: "model", label: "Machine", w: 150, sv: s2 => s2.model || "" },
+        { id: "territory", label: "Territory", w: 120, sv: s2 => s2.territory || "" },
+        { id: "units", label: "Units", w: 60, sv: s2 => String(s2.units || 0) },
+        { id: "amount", label: "Amount", w: 110, sv: s2 => String(s2.amount || 0), render: s2 => RG_h("b", { style: { color: "#34d399" } }, peso(s2.amount)) },
+        { id: "notes", label: "Notes", w: 180, sv: s2 => s2.notes || "" },
+        { id: "act", label: "", w: 60, sv: () => "", render: s2 => profile.isAdmin ? RG_h("button", { title: "Delete (administrators only)", style: { ...btnSt("#3a1d1d", "#fca5a5"), padding: "3px 8px", fontSize: 11 }, onClick: async e2 => { e2.stopPropagation(); if (!confirm("Delete this sale (" + s2.account + ", " + peso(s2.amount) + ")?")) return; try { await binIt("sale", s2.account + " · " + peso(s2.amount), { id: s2.id, ...s2 }, profile.email); await db.collection("sales").doc(s2.id).delete(); } catch (e3) { notify("SERVER REFUSED:\n" + e3.message, "error"); } } }, "🗑") : null }
+      ], rows: visible, rowKey: s2 => s2.id, initSort: { col: "date", dir: -1 }, filterPlaceholder: "🔍 Filter sales…", maxH: 420, empty: "No sales recorded in this period." })),
+    adding ? RG_h(SaleModal, { profile: profile, labs: labs, catalog: catalog, onClose: () => setAdding(false), onSave: async rec => {
+      try {
+        await db.collection("sales").add({ ...rec, at: auditNow(), by: scrubOwner(meEmail(profile)) });
+        logAudit(profile, "sales.add", rec.account + " " + rec.amount);
+        notify("💰 Sale recorded — " + rec.account + ", \u20B1" + Number(rec.amount).toLocaleString() + ".", "ok");
+        setAdding(false);
+      } catch (e2) { notify("SERVER REFUSED:\n" + e2.message, "error"); }
+    } }) : null);
+}
+
 function App() {
   const [user, setUser] = useState(undefined);
   const [profile, setProfile] = useState(undefined);
@@ -15543,6 +15832,12 @@ function App() {
   }, (signedProfile.isAdmin || pCanTab(signedProfile, "inventory", "view")) && !tabHidden(tabsCfg, "inventory") && {
     id: "inventory",
     label: tabLabel(tabsCfg, "inventory", "📦 Inventory")
+  }, (signedProfile.isAdmin || pCanTab(signedProfile, "reagents", "view")) && !tabHidden(tabsCfg, "reagents") && {
+    id: "reagents",
+    label: tabLabel(tabsCfg, "reagents", "🧪 Reagents")
+  }, (signedProfile.isAdmin || pCanTab(signedProfile, "sales", "view")) && !tabHidden(tabsCfg, "sales") && {
+    id: "sales",
+    label: tabLabel(tabsCfg, "sales", "📊 Sales")
   }, (signedProfile.isAdmin || pCanTab(signedProfile, "overtime", "view")) && !tabHidden(tabsCfg, "overtime") && {
     id: "overtime",
     label: tabLabel(tabsCfg, "overtime", "🕒 Overtime")
@@ -15832,6 +16127,16 @@ function App() {
     labs: labs,
     catalog: catalog,
     tabsCfg: tabsCfg,
+    notify: notify
+  }), tab === "reagents" && pCanTab(signedProfile, "reagents", "view") && /*#__PURE__*/React.createElement(ReagentsTab, {
+    profile: signedProfile,
+    labs: labs,
+    catalog: catalog,
+    notify: notify
+  }), tab === "sales" && pCanTab(signedProfile, "sales", "view") && /*#__PURE__*/React.createElement(SalesTab, {
+    profile: signedProfile,
+    labs: labs,
+    catalog: catalog,
     notify: notify
   }), tab === "overtime" && pCanTab(signedProfile, "overtime", "view") && /*#__PURE__*/React.createElement(OvertimeTab, {
     profile: signedProfile,
