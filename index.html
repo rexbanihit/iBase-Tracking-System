@@ -323,7 +323,7 @@
 (function () {
   var okLibs = (typeof firebase !== "undefined") && (typeof React !== "undefined") && (typeof ReactDOM !== "undefined") && (typeof XLSX !== "undefined");
   window.__IBASE_LIBS_OK = okLibs;
-  window.__IBASE_BUILD = "v121";
+  window.__IBASE_BUILD = "v122";
   if (!okLibs) {
     document.getElementById("root").innerHTML =
       "<div style='max-width:520px;margin:90px auto;padding:30px;background:#16181d;border:1px solid #f8717155;border-radius:16px;font-family:system-ui,sans-serif;color:#e5e7eb;text-align:center'>" +
@@ -2437,6 +2437,42 @@ const DEFAULT_LOGIN_DEPTS = [
   { id: "acct",   name: "Accounting Department", icon: "🧾" },
   { id: "com",    name: "COM",                   icon: "📡" }
 ];
+function PMKitRulesCard({ profile, notify }) {
+  const [rules, setRules] = useState(null);
+  const [models, setModels] = useState([]);
+  const [nb, setNb] = useState(""); const [nm2, setNm2] = useState(""); const [nmo, setNmo] = useState("12");
+  useEffect(() => {
+    const un = db.doc("config/catalog").onSnapshot(snap => {
+      const c = snap.data() || {};
+      setRules(Array.isArray(c.pmKitRules) ? c.pmKitRules : []);
+      setModels(Array.isArray(c.machines) ? c.machines : []);
+    }, () => {});
+    return un;
+  }, []);
+  const list = rules || [];
+  const brands = Array.from(new Set(models.map(x => x.brand).filter(Boolean))).sort();
+  const save = async next => {
+    try {
+      await db.doc("config/catalog").set({ pmKitRules: next }, { merge: true });
+      logAudit(profile, "settings.pmKitRules", next.length + " rule(s)");
+    } catch (e) { notify("SERVER REFUSED:\n" + e.message, "error"); }
+  };
+  return /*#__PURE__*/React.createElement("div", { style: cardSt },
+    /*#__PURE__*/React.createElement("div", { style: { fontSize: 12, fontWeight: 800, color: "var(--c-text4)", textTransform: "uppercase", marginBottom: 6 } }, "🧰 PM Kit Intervals"),
+    /*#__PURE__*/React.createElement("div", { style: { fontSize: 11.5, color: "var(--c-text5)", marginBottom: 10 } },
+      "How often each brand / model needs its PM Kit replaced. A model rule wins over a brand rule (leave Model blank for brand-wide); machines with no rule default to ", /*#__PURE__*/React.createElement("b", null, "every 12 months"), ". The system flags the next PM as \u201CPM Kit Required\u201D when the interval is reached."),
+    list.map((r, i) => /*#__PURE__*/React.createElement("div", { key: i, style: { display: "flex", alignItems: "center", gap: 8, padding: "5px 0", borderTop: "1px solid var(--c-border)", fontSize: 12.5 } },
+      /*#__PURE__*/React.createElement("span", { style: { width: 130, fontWeight: 700 } }, r.brand || "—"),
+      /*#__PURE__*/React.createElement("span", { style: { flex: 1, color: "var(--c-text3)" } }, String(r.model || "").trim() || /*#__PURE__*/React.createElement("i", null, "whole brand")),
+      /*#__PURE__*/React.createElement("span", { style: { width: 140 } }, "every ", /*#__PURE__*/React.createElement("b", null, r.months), " month(s)"),
+      /*#__PURE__*/React.createElement("button", { title: "Change the interval", style: { ...btnSt("var(--c-border)", "var(--c-text2)"), padding: "2px 7px", fontSize: 11 }, onClick: () => { const v = prompt("PM Kit interval in months for " + (r.model || r.brand) + ":", r.months); if (v === null) return; const n = Number(v); if (!(n > 0)) { notify("Enter a positive number of months.", "error"); return; } const a = list.slice(); a[i] = { ...r, months: n }; save(a); } }, "✏️"),
+      /*#__PURE__*/React.createElement("button", { title: "Remove this rule (machines fall back to brand rule or the 12-month default)", style: { ...btnSt("#3a1d1d", "#fca5a5"), padding: "2px 7px", fontSize: 11 }, onClick: () => { if (!confirm("Remove the PM Kit rule for \u201C" + (r.model || r.brand) + "\u201D?")) return; save(list.filter((_, j) => j !== i)); } }, "🗑"))),
+    /*#__PURE__*/React.createElement("div", { style: { display: "flex", gap: 8, marginTop: 10, flexWrap: "wrap", alignItems: "flex-end" } },
+      /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("label", { style: labelSt }, "Brand"), /*#__PURE__*/React.createElement("input", { style: { ...inputSt(), width: 140 }, value: nb, onChange: e => setNb(e.target.value), list: "pmk-brands" }), /*#__PURE__*/React.createElement("datalist", { id: "pmk-brands" }, brands.map(b => /*#__PURE__*/React.createElement("option", { key: b, value: b })))),
+      /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("label", { style: labelSt }, "Model (blank = whole brand)"), /*#__PURE__*/React.createElement("input", { style: { ...inputSt(), width: 190 }, value: nm2, onChange: e => setNm2(e.target.value), list: "pmk-models" }), /*#__PURE__*/React.createElement("datalist", { id: "pmk-models" }, models.filter(x => !nb || x.brand === nb).map((x, i) => /*#__PURE__*/React.createElement("option", { key: x.model + i, value: x.model })))),
+      /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("label", { style: labelSt }, "Every X months"), /*#__PURE__*/React.createElement("input", { type: "number", min: "1", style: { ...inputSt(), width: 100 }, value: nmo, onChange: e => setNmo(e.target.value) })),
+      /*#__PURE__*/React.createElement("button", { style: btnSt("var(--c-key)", "var(--c-bg)"), disabled: !nb.trim() || !(Number(nmo) > 0), onClick: () => { save([...list, { brand: nb.trim(), model: nm2.trim(), months: Number(nmo) }]); setNb(""); setNm2(""); setNmo("12"); } }, "+ Add rule")));
+}
 function LoginDeptsCard({ profile, notify }) {
   const [depts, setDepts] = useState(null);
   const [nm, setNm] = useState("");
@@ -2597,7 +2633,7 @@ function Login({
       letterSpacing: 2.5,
       textTransform: "uppercase"
     }
-  }, "Installed Base Management \u00b7 build v121"), !dept ? /*#__PURE__*/React.createElement("div", null,
+  }, "Installed Base Management \u00b7 build v122"), !dept ? /*#__PURE__*/React.createElement("div", null,
     /*#__PURE__*/React.createElement("div", { style: { fontSize: 12.5, color: "var(--c-text3)", textAlign: "center", marginBottom: 14 } }, "Select your department or module to continue"),
     /*#__PURE__*/React.createElement("div", { style: { display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 } },
       (depts || []).filter(d => !d.disabled).map((d, i) => /*#__PURE__*/React.createElement("button", { key: (d.id || d.name) + i, onClick: () => pickDept(d.name), style: { background: "var(--c-bg)", border: "1px solid var(--c-border)", borderRadius: 12, padding: "16px 10px", cursor: "pointer", display: "flex", flexDirection: "column", alignItems: "center", gap: 8, color: "var(--c-text2)" } },
@@ -3613,6 +3649,12 @@ function LabsTab({
     sv: m => m._next || "",
     render: m => /*#__PURE__*/React.createElement("span", null, m._next ? fmtDate(m._next) : "—")
   }, {
+    id: "kit",
+    label: "PM Kit Due",
+    w: 130,
+    sv: m => kitDueDate(m) || "",
+    render: m => { const due = kitDueDate(m); if (!due) return /*#__PURE__*/React.createElement("span", { style: { color: "var(--c-text5)" } }, "—"); const now = kitDueNow(m); const req = kitRequiredForNextPM(m); return /*#__PURE__*/React.createElement("span", { style: { fontSize: 11.5, fontWeight: 700, color: now ? "#ef4444" : req ? "#f59e0b" : "var(--c-text4)" } }, "🧰 ", fmtDate(due)); }
+  }, {
     id: "flag",
     label: "PM Flag",
     w: 150,
@@ -4336,7 +4378,7 @@ function LabDetail({
       width: "100%",
       borderCollapse: "collapse"
     }
-  }, /*#__PURE__*/React.createElement("thead", null, /*#__PURE__*/React.createElement("tr", null, ["Instrument", "Serial No", "Installed", "Installed by", "Last PM", "Next PM", "PM Flag", "Status", "Visits", ""].map(h => /*#__PURE__*/React.createElement("th", {
+  }, /*#__PURE__*/React.createElement("thead", null, /*#__PURE__*/React.createElement("tr", null, ["Instrument", "Serial No", "Installed", "Installed by", "Last PM", "Next PM", "PM Flag", "PM Kit", "Status", "Visits", ""].map(h => /*#__PURE__*/React.createElement("th", {
     key: h,
     style: thSt
   }, h)))), /*#__PURE__*/React.createElement("tbody", null, (lab.machines || []).map(m => {
@@ -4388,6 +4430,17 @@ function LabDetail({
         background: FLAG_COLORS[f] + "18"
       }
     }, f)), /*#__PURE__*/React.createElement("td", {
+      style: tdSt
+    }, (() => {
+      const due = kitDueDate(m);
+      if (!due) return /*#__PURE__*/React.createElement("span", { style: { color: "var(--c-text5)" } }, "—");
+      const now = kitDueNow(m);
+      const req = kitRequiredForNextPM(m);
+      return /*#__PURE__*/React.createElement("span", {
+        title: now ? "PM Kit is DUE (interval reached) — next PM must be With PM Kit" : req ? "The NEXT PM will require a PM Kit" : "PM Kit not required yet — due " + fmtDate(due),
+        style: { fontSize: 11, fontWeight: 700, color: now ? "#ef4444" : req ? "#f59e0b" : "var(--c-text4)" }
+      }, "🧰 ", now ? "Kit DUE · " + fmtDate(due) : req ? "Next PM · " + fmtDate(due) : fmtDate(due));
+    })()), /*#__PURE__*/React.createElement("td", {
       style: tdSt
     }, m.status || "Active"), /*#__PURE__*/React.createElement("td", {
       style: tdSt
@@ -4713,6 +4766,11 @@ function LabDetail({
         nm.status = statusFromVisits(nm, m.status);
         // PM VISIT RENEWS THE SCHEDULE (v126 behavior): advance lastPM, recompute next PM.
         // Counts as PM evidence: type = PM, OR "Instrument after the visit" = PM Completed.
+        // PM KIT REPLACED (any visit purpose) or PM With Kit → the kit cycle
+        // RESETS from this visit's date; the next kit due recalculates.
+        if ((String(v.pmType || "") === "with-kit" || String(v.pmKitReplaced || "") === "yes") && v.date && (!nm.lastPMKit || v.date > nm.lastPMKit)) {
+          nm.lastPMKit = String(v.date).slice(0, 10);
+        }
         if ((String(v.type).toUpperCase() === "PM" || /^pm completed$/i.test(String(v.machineStatus || ""))) && v.date && (!nm.lastPM || v.date > nm.lastPM)) {
           nm.lastPM = v.date;
           const nx = nextPMDate(pmAnchor(nm), nm.pmInterval);
@@ -4804,6 +4862,13 @@ function LastPMModal({
   }, "Yearly (every 12 months)"), iv !== "" && ["3", "6", "12"].indexOf(String(iv)) === -1 ? /*#__PURE__*/React.createElement("option", {
     value: String(iv)
   }, "Current: " + iv) : null), /*#__PURE__*/React.createElement("div", {
+    style: { border: "1px dashed var(--c-border)", borderRadius: 8, padding: "8px 12px", marginBottom: 10, fontSize: 11.5, color: "var(--c-text3)" }
+  }, /*#__PURE__*/React.createElement("div", { style: { fontWeight: 800, marginBottom: 4, color: "var(--c-text4)" } }, "🧰 PM Kit"),
+     "Last kit: ", /*#__PURE__*/React.createElement("b", null, kitAnchor(machine) ? fmtDate(kitAnchor(machine)) : "—"),
+     "  ·  every ", /*#__PURE__*/React.createElement("b", null, kitRuleFor(machine).months, " month(s)"),
+     " (", kitRuleFor(machine).source, ")  ·  due ",
+     /*#__PURE__*/React.createElement("b", { style: { color: kitDueNow(machine) ? "#ef4444" : "var(--c-text2)" } }, kitDueDate(machine) ? fmtDate(kitDueDate(machine)) : "—"),
+     /*#__PURE__*/React.createElement("div", { style: { marginTop: 3 } }, "Next PM: ", kitRequiredForNextPM(machine) ? /*#__PURE__*/React.createElement("b", { style: { color: "#f59e0b" } }, "PM Kit Required") : /*#__PURE__*/React.createElement("b", { style: { color: "var(--c-text4)" } }, "PM Kit Not Required"))), /*#__PURE__*/React.createElement("div", {
     style: {
       fontSize: 11.5,
       color: "var(--c-text4)",
@@ -5416,6 +5481,8 @@ function VisitModal({
     extra: {
       ...(initial.extra || {})
     },
+    pmType: initial.pmType || "",
+    pmKitReplaced: initial.pmKitReplaced === true || initial.pmKitReplaced === "yes" ? "yes" : "no",
     supportType: initial.supportType || "",
     dtReported: initial.dtReported || "",
     dtArrivalAccount: initial.dtArrivalAccount || "",
@@ -5445,6 +5512,8 @@ function VisitModal({
     signedByName: "",
     attachments: [],
     extra: {},
+    pmType: "",
+    pmKitReplaced: "no",
     supportType: "",
     dtReported: "",
     dtArrivalAccount: "",
@@ -5524,7 +5593,23 @@ function VisitModal({
     }
   }, sortAlpha(VISIT_TYPES).map(t => /*#__PURE__*/React.createElement("option", {
     key: t
-  }, t)))), /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("label", {
+  }, t)))), f.type === "PM" ? /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("label", {
+    style: labelSt
+  }, "PM Type ", /*#__PURE__*/React.createElement("span", { style: { color: "#f87171" } }, "*")), /*#__PURE__*/React.createElement("select", {
+    style: inputSt(),
+    value: f.pmType,
+    onChange: e => setF(x => ({ ...x, pmType: e.target.value }))
+  }, /*#__PURE__*/React.createElement("option", { value: "" }, "— select —"),
+     /*#__PURE__*/React.createElement("option", { value: "with-kit" }, "Preventive Maintenance (With PM Kit)"),
+     /*#__PURE__*/React.createElement("option", { value: "without-kit" }, "Preventive Maintenance (Without PM Kit)"))) : null, /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("label", {
+    style: labelSt
+  }, "PM Kit replaced during this visit"), /*#__PURE__*/React.createElement("select", {
+    style: inputSt(),
+    value: f.pmKitReplaced,
+    onChange: e => setF(x => ({ ...x, pmKitReplaced: e.target.value })),
+    title: "Yes resets the PM Kit cycle from this visit's date — regardless of the visit purpose"
+  }, /*#__PURE__*/React.createElement("option", { value: "no" }, "No"),
+     /*#__PURE__*/React.createElement("option", { value: "yes" }, "Yes"))), /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("label", {
     style: labelSt
   }, "Support Type ", /*#__PURE__*/React.createElement("span", {
     style: {
@@ -5917,7 +6002,7 @@ function VisitModal({
       marginTop: 16
     },
     onClick: () => {
-      const need = [[f.type && f.type !== "Not Applicable", "Type of Visit"], [f.supportType, "Support Type"], [String(f.isrNo || "").trim(), "ISR number"], [f.dtWorkStarted, "Date & time work started"], [f.dtWorkEnded, "Date & time work ended"], [f.systemCondition, "System Condition"], [String(f.remarks || "").trim(), "Description of Work"], [f.machineStatus, "Instrument after the visit"]];
+      const need = [[f.type && f.type !== "Not Applicable", "Type of Visit"], [f.supportType, "Support Type"], [String(f.isrNo || "").trim(), "ISR number"], [f.dtWorkStarted, "Date & time work started"], [f.dtWorkEnded, "Date & time work ended"], [f.systemCondition, "System Condition"], [String(f.remarks || "").trim(), "Description of Work"], [f.machineStatus, "Instrument after the visit"], [f.type !== "PM" || f.pmType, "PM Type (With / Without PM Kit)"]];
       const missing = need.filter(x => !x[0]).map(x => x[1]);
       if (missing.length) {
         notify("Please complete the required field(s):\n• " + missing.join("\n• "), "error");
@@ -5928,6 +6013,8 @@ function VisitModal({
         id: initial ? initial.id : uid(),
         ...f,
         date: dISO || f.date || today(),
+        pmType: f.type === "PM" ? f.pmType : "",
+        pmKitReplaced: f.pmKitReplaced === "yes" ? "yes" : "no",
         engineer: engs[0] || "",
         engineer2: engs[1] || "",
         engineer3: engs[2] || "",
@@ -8423,9 +8510,9 @@ const VGRID_COLS = [{
 }, {
   id: "type",
   label: "Activity/Job type",
-  w: 130,
+  w: 170,
   sv: v => String(v.type || ""),
-  get: v => v.type
+  get: v => visitKindLabel(v)
 }, {
   id: "support",
   label: "Support type",
@@ -9568,7 +9655,7 @@ function buildBackupSheets({
   const S = {};
   S["Laboratories"] = [["Laboratory", "Location", "Machines"]].concat(labs.map(l => [l.name || "", l.location || "", (l.machines || []).length]));
   S["Equipment Register"] = [["Laboratory", "Instrument", "Serial No", "Installed", "Last PM", "PM Interval", "Next PM", "Status", "Visits"]].concat(labs.flatMap(l => (l.machines || []).map(m => [l.name || "", m.instrument || "", m.serialNo || "", m.installDate || "", m.lastPM || "", m.pmInterval || "", m.nextPM || "", m.status || "", (m.visits || []).length])));
-  S["Service Visits"] = [["Date", "Timestamp", "Name", "Activity/Job type", "Support type", "Account", "Instrument", "Date and Time reported", "Serial number", "Date and Time of Departure", "Date and Time of Arrival to Account", "Date and Time work started", "Problem Description", "System Condition", "Instrument Status", "Recommendation", "Endorsed to", "Date and Time work ended", "Priority", "Description of Work", "ISR no.", "Date and Time of Arrival to Home", "Software Version", "Engineer 2", "Engineer 3", "Logged By", "Logged At", "Signed", "Signed by (name)", "Attachments", "Edit Log"]].concat(labs.flatMap(l => (l.machines || []).flatMap(m => (m.visits || []).map(v => [v.date || "", v.srcTimestamp || v.loggedAt || "", v.engineer || "", v.type || "", v.supportType || "", l.name || "", m.instrument || "", v.dtReported || "", m.serialNo || "", v.dtDeparture || "", v.dtArrivalAccount || "", v.dtWorkStarted || "", v.problemDesc || "", v.systemCondition || "", v.machineStatus || "", v.recommendation || "", v.endorsedTo || "", v.dtWorkEnded || "", v.priority || "", (v.remarks || "") + (extraFold(v) ? (v.remarks ? "\n" : "") + extraFold(v) : ""), v.isrNo || "", v.dtArrivalHome || "", v.softwareVersion || "", v.engineer2 || "", v.engineer3 || "", scrubOwner(v.loggedBy), v.loggedAt || "", v.signature ? "Yes" : "", v.signedByName || "", (v.attachments || []).map(a => a.name).join(", "), (v.editLog || []).filter(e => scrubOwner(e.by)).map(e => scrubOwner(e.by) + " @ " + e.at + ": " + e.changes.join("; ")).join(" | ")]))));
+  S["Service Visits"] = [["Date", "Timestamp", "Name", "Activity/Job type", "Support type", "Account", "Instrument", "Date and Time reported", "Serial number", "Date and Time of Departure", "Date and Time of Arrival to Account", "Date and Time work started", "Problem Description", "System Condition", "Instrument Status", "Recommendation", "Endorsed to", "Date and Time work ended", "Priority", "Description of Work", "ISR no.", "Date and Time of Arrival to Home", "Software Version", "Engineer 2", "Engineer 3", "Logged By", "Logged At", "Signed", "Signed by (name)", "Attachments", "Edit Log"]].concat(labs.flatMap(l => (l.machines || []).flatMap(m => (m.visits || []).map(v => [v.date || "", v.srcTimestamp || v.loggedAt || "", v.engineer || "", visitKindLabel(v) || "", v.supportType || "", l.name || "", m.instrument || "", v.dtReported || "", m.serialNo || "", v.dtDeparture || "", v.dtArrivalAccount || "", v.dtWorkStarted || "", v.problemDesc || "", v.systemCondition || "", v.machineStatus || "", v.recommendation || "", v.endorsedTo || "", v.dtWorkEnded || "", v.priority || "", (v.remarks || "") + (extraFold(v) ? (v.remarks ? "\n" : "") + extraFold(v) : ""), v.isrNo || "", v.dtArrivalHome || "", v.softwareVersion || "", v.engineer2 || "", v.engineer3 || "", scrubOwner(v.loggedBy), v.loggedAt || "", v.signature ? "Yes" : "", v.signedByName || "", (v.attachments || []).map(a => a.name).join(", "), (v.editLog || []).filter(e => scrubOwner(e.by)).map(e => scrubOwner(e.by) + " @ " + e.at + ": " + e.changes.join("; ")).join(" | ")]))));
   S["Visit Attachments"] = [["Laboratory", "Machine", "Serial", "Visit Date", "Visit Type", "File", "Kind", "Size KB", "Uploaded (visit logged by)"]].concat(labs.flatMap(l => (l.machines || []).flatMap(m => (m.visits || []).flatMap(v => (v.attachments || []).map(a => [l.name || "", m.instrument || "", m.serialNo || "", v.date || "", v.type || "", a.name || "", a.kind || "", Math.round((a.size || 0) / 1024), v.loggedBy || ""])))));
   S["Machine Inventory"] = [["Brand", "Model", "Serial No", "Item Code", "Condition", "Status", "Import Date", "Ownership", "Location", "Dealer", "Sales Person", "PO Date", "Remarks"]].concat(inventory.map(it => [it.brand || "", it.machineModel || "", it.serialNo || "", it.itemCode || "", it.condition || "", it.status || "", it.importDate || "", it.ownership || "", it.location || "", it.dealer || "", it.salesPerson || "", it.poDate || "", it.remarks || ""]));
   S["Spare Parts"] = [["Brand", "Part No", "Description", "On Hand"]].concat(spareParts.map(p => [p.brand || "", p.partNumber || "", p.description || "", (p.receipts || []).reduce((s, r) => s + (Number(r.qty) || 0), 0) - (p.issues || []).reduce((s, r) => s + (Number(r.qty) || 0), 0)]));
@@ -11491,6 +11578,56 @@ function bestPMAnchor(m, vs) {
     }
   });
   return a;
+}
+// ── PM Kit lifecycle ─────────────────────────────────────────────────────────
+// Which kit rule applies: an exact-model rule wins, then a brand-wide rule
+// (model left blank), then the default of every 12 months.
+function kitRuleFor(m) {
+  const cat = window.__ibaseCatalog || {};
+  const rules = Array.isArray(cat.pmKitRules) ? cat.pmKitRules : [];
+  const brand = String(brandFromModel(m && m.instrument, "") || "").trim().toLowerCase();
+  const model = String(m && m.instrument || "").trim().toLowerCase();
+  let hit = model ? rules.find(r => String(r.model || "").trim().toLowerCase() === model) : null;
+  if (!hit && brand) hit = rules.find(r => !String(r.model || "").trim() && String(r.brand || "").trim().toLowerCase() === brand);
+  const months = hit ? Number(hit.months) : 12;
+  return { months: months > 0 ? months : 12, source: hit ? (String(hit.model || "").trim() ? "model rule" : "brand rule") : "default" };
+}
+// Newest kit evidence: stored lastPMKit vs any visit that carried a kit
+// (PM With Kit, or "PM Kit replaced" = Yes on ANY visit type). A brand-new
+// machine starts with a fresh kit — the installation date anchors the cycle.
+function kitAnchor(m) {
+  let a = String(m && m.lastPMKit || "").slice(0, 10);
+  ((m && m.visits) || []).forEach(v => {
+    const withKit = String(v.pmType || "") === "with-kit" || String(v.pmKitReplaced || "") === "yes" || v.pmKitReplaced === true;
+    if (withKit && v.date) { const d = String(v.date).slice(0, 10); if (d > a) a = d; }
+  });
+  if (!a) a = String(m && m.installDate || "").slice(0, 10);
+  return a;
+}
+function kitDueDate(m) {
+  if (!m || typeof isPull === "function" && isPull(m) || typeof retiredStatus === "function" && retiredStatus(m.status)) return "";
+  const a = kitAnchor(m);
+  if (!a) return "";
+  return nextPMDate(a, kitRuleFor(m).months) || "";
+}
+function kitRequiredForNextPM(m) {
+  const due = kitDueDate(m);
+  if (!due) return false;
+  const nx = pmComputedNext(m);
+  if (!nx) return today() >= due;
+  return String(nx) >= String(due);
+}
+function kitDueNow(m) { const d = kitDueDate(m); return !!d && today() >= d; }
+// The service-history label: the maintenance performed, spelled out.
+function visitKindLabel(v) {
+  const t = String(v && v.type || "").trim();
+  if (t.toUpperCase() === "PM") {
+    if (String(v.pmType || "") === "with-kit") return t + " (With PM Kit)";
+    if (String(v.pmType || "") === "without-kit") return t + " (Without PM Kit)";
+    return t;
+  }
+  if (String(v.pmKitReplaced || "") === "yes" || v.pmKitReplaced === true) return t + " (PM Kit Replaced)";
+  return t;
 }
 function sebiaPMPass(machines) {
   (machines || []).forEach(m => {
@@ -14465,6 +14602,9 @@ function SettingsTab({
     tabsCfg: tabsCfg,
     notify: notify
   }), /*#__PURE__*/React.createElement(LoginDeptsCard, {
+    profile: profile,
+    notify: notify
+  }), /*#__PURE__*/React.createElement(PMKitRulesCard, {
     profile: profile,
     notify: notify
   }), /*#__PURE__*/React.createElement("div", {
