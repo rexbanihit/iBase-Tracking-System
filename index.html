@@ -5754,6 +5754,8 @@ function InventoryTab({
   const [sub, setSub] = useState("machines");
   const canViewM = pCanSub(profile, "machines", "view") || profile.isAdmin;
   const canViewS = pCanSub(profile, "spares", "view") || profile.isAdmin;
+  const canViewR = pCanSub(profile, "reagents", "view") || pCanTab(profile, "reagents", "view") || profile.isAdmin;
+  useEffect(() => { if (sub === "machines" && !canViewM) setSub(canViewS ? "spares" : "reagents"); }, [canViewM, canViewS]);
   return /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("div", {
     style: {
       display: "flex",
@@ -5766,7 +5768,15 @@ function InventoryTab({
   }, subLabel(tabsCfg, "machines", "🔬 Machine Inventory")), canViewS && /*#__PURE__*/React.createElement("button", {
     style: btnSt(sub === "spares" ? "var(--c-key)" : "var(--c-border)", sub === "spares" ? "var(--c-bg)" : "var(--c-text2)"),
     onClick: () => setSub("spares")
-  }, subLabel(tabsCfg, "spares", "🔧 Spare Parts"))), sub === "machines" && canViewM && /*#__PURE__*/React.createElement(MachineInv, {
+  }, subLabel(tabsCfg, "spares", "🔧 Spare Parts")), canViewR && /*#__PURE__*/React.createElement("button", {
+    style: btnSt(sub === "reagents" ? "var(--c-key)" : "var(--c-border)", sub === "reagents" ? "var(--c-bg)" : "var(--c-text2)"),
+    onClick: () => setSub("reagents")
+  }, subLabel(tabsCfg, "reagents", "🧪 Reagents"))), sub === "reagents" && canViewR && /*#__PURE__*/React.createElement(ReagentsTab, {
+    profile: profile,
+    labs: labs,
+    catalog: catalog,
+    notify: notify
+  }), sub === "machines" && canViewM && /*#__PURE__*/React.createElement(MachineInv, {
     profile: profile,
     labs: labs,
     catalog: catalog,
@@ -7203,9 +7213,6 @@ const MANAGED_TABS = [{
   id: "overtime",
   def: "🕒 Overtime"
 }, {
-  id: "reagents",
-  def: "🧪 Reagents"
-}, {
   id: "sales",
   def: "📊 Sales"
 }, {
@@ -7224,6 +7231,9 @@ const MANAGED_SUBS = [{
 }, {
   id: "spares",
   def: "🔧 Spare Parts"
+}, {
+  id: "reagents",
+  def: "🧪 Reagents"
 }];
 function tabLabel(tabsCfg, id, def) {
   const l = tabsCfg && tabsCfg.labels && tabsCfg.labels[id];
@@ -12722,6 +12732,7 @@ function DangerZone({
 }) {
   const [unlocked, setUnlocked] = useState(false);
   const [pw, setPw] = useState("");
+  const [showPw2, setShowPw2] = useState(false);
   const [checking, setChecking] = useState(false);
   async function unlock() {
     if (!pw) return;
@@ -13006,13 +13017,18 @@ function DangerZone({
       gap: 8
     }
   }, /*#__PURE__*/React.createElement("input", {
-    type: "password",
+    type: showPw2 ? "text" : "password",
     style: inputSt(),
     value: pw,
     onChange: e => setPw(e.target.value),
     onKeyDown: e => e.key === "Enter" && unlock(),
     placeholder: "Administrator password"
   }), /*#__PURE__*/React.createElement("button", {
+    type: "button",
+    title: showPw2 ? "Hide password" : "Show password",
+    style: { ...btnSt("var(--c-border)", "var(--c-text2)"), padding: "8px 11px" },
+    onClick: () => setShowPw2(x => !x)
+  }, "\ud83d\udc41"), /*#__PURE__*/React.createElement("button", {
     style: btnSt("#f87171", "#1a1a1a"),
     disabled: !pw || checking,
     onClick: unlock
@@ -14553,10 +14569,16 @@ function CreateUser({
   const [engineerName, setEngineerName] = useState("");
   const [perms, setPerms] = useState(blankPermissions());
   const [makeAdmin, setMakeAdmin] = useState(false);
+  const [showNewPw, setShowNewPw] = useState(false);
   const [busy, setBusy] = useState(false);
   async function create() {
-    if (!email.trim() || pw.length < 6) {
-      notify("Enter an email and a password of at least 6 characters.", "error");
+    if (!email.trim()) {
+      notify("Enter an email address.", "error");
+      return;
+    }
+    const pwIssues = pwPolicyIssues(pw);
+    if (pwIssues.length) {
+      notify("Password does not meet the security policy. It still needs: " + pwIssues.join(", ") + ".", "error");
       return;
     }
     setBusy(true);
@@ -14634,12 +14656,21 @@ function CreateUser({
     onChange: e => setEmail(e.target.value)
   })), /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("label", {
     style: labelSt
-  }, "Temp password"), /*#__PURE__*/React.createElement("input", {
-    style: inputSt(),
+  }, "Password"), /*#__PURE__*/React.createElement("div", {
+    style: { display: "flex", gap: 6, alignItems: "center" }
+  }, /*#__PURE__*/React.createElement("input", {
+    type: showNewPw ? "text" : "password",
+    style: { ...inputSt(), flex: 1, minWidth: 0 },
     value: pw,
     onChange: e => setPw(e.target.value),
-    placeholder: "≥ 6 chars"
-  })), /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("label", {
+    placeholder: "min 8 · A a · 0-9 · symbol",
+    autoComplete: "new-password"
+  }), /*#__PURE__*/React.createElement("button", {
+    type: "button",
+    title: showNewPw ? "Hide password" : "Show password",
+    style: { ...btnSt("var(--c-border)", "var(--c-text2)"), padding: "8px 11px" },
+    onClick: () => setShowNewPw(x => !x)
+  }, "\ud83d\udc41"))), /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("label", {
     style: labelSt
   }, "Full name"), /*#__PURE__*/React.createElement("input", {
     style: inputSt(),
@@ -14822,9 +14853,56 @@ function LinkedName({
 // 🔒 Administrator confirmation: deleting or renaming anything in SETTINGS
 // requires the acting ADMIN's own password (verified by Google's servers).
 // The sole owner is exempt — no password, no trace.
+// Masked password dialog (Promise<string|null>) — replaces the plain-text
+// browser prompt() for EVERY password confirmation. 👁 toggle optional,
+// Enter = confirm, Esc / outside click = cancel.
+function promptPassword(actionLabel) {
+  return new Promise(resolve => {
+    const ov = document.createElement("div");
+    ov.style.cssText = "position:fixed;inset:0;background:rgba(0,0,0,.55);z-index:99999;display:flex;align-items:center;justify-content:center;";
+    const card = document.createElement("div");
+    card.style.cssText = "background:var(--c-card,#111827);border:1px solid var(--c-border,#333);border-radius:14px;padding:22px 24px;width:min(92vw,380px);color:var(--c-text,#eee);font:inherit;";
+    const h = document.createElement("div"); h.textContent = "\ud83d\udd12 " + (actionLabel || "Confirm");
+    h.style.cssText = "font-weight:800;font-size:14px;margin-bottom:6px;";
+    const p = document.createElement("div"); p.textContent = "Enter YOUR password to confirm:";
+    p.style.cssText = "font-size:12px;color:var(--c-text4,#99a);margin-bottom:12px;";
+    const row = document.createElement("div"); row.style.cssText = "display:flex;gap:8px;align-items:center;margin-bottom:14px;";
+    const inp = document.createElement("input"); inp.type = "password"; inp.autocomplete = "current-password";
+    inp.style.cssText = "flex:1;min-width:0;padding:9px 12px;border-radius:8px;border:1px solid var(--c-border,#333);background:var(--c-bg,#0b1020);color:inherit;font-size:13px;";
+    const eye = document.createElement("button"); eye.type = "button"; eye.textContent = "\ud83d\udc41";
+    eye.title = "Show / hide password";
+    eye.style.cssText = "background:none;border:1px solid var(--c-border,#333);border-radius:8px;cursor:pointer;padding:7px 10px;color:inherit;";
+    eye.onclick = () => { inp.type = inp.type === "password" ? "text" : "password"; inp.focus(); };
+    const btns = document.createElement("div"); btns.style.cssText = "display:flex;gap:10px;justify-content:flex-end;";
+    const no = document.createElement("button"); no.textContent = "Cancel";
+    no.style.cssText = "background:none;border:1px solid var(--c-border,#333);border-radius:8px;padding:8px 14px;color:inherit;cursor:pointer;";
+    const ok = document.createElement("button"); ok.textContent = "Confirm";
+    ok.style.cssText = "background:var(--c-key,#38bdf8);color:#08131c;border:none;border-radius:8px;padding:8px 16px;font-weight:800;cursor:pointer;";
+    const done = v => { try { document.body.removeChild(ov); } catch (e) {} resolve(v); };
+    ok.onclick = () => done(inp.value || null);
+    no.onclick = () => done(null);
+    inp.onkeydown = e => { if (e.key === "Enter") done(inp.value || null); if (e.key === "Escape") done(null); };
+    ov.onclick = e => { if (e.target === ov) done(null); };
+    row.appendChild(inp); row.appendChild(eye);
+    btns.appendChild(no); btns.appendChild(ok);
+    card.appendChild(h); card.appendChild(p); card.appendChild(row); card.appendChild(btns);
+    ov.appendChild(card); document.body.appendChild(ov);
+    setTimeout(() => inp.focus(), 30);
+  });
+}
+// Password policy for NEW accounts: mirrors a strict Firebase password policy.
+function pwPolicyIssues(pw) {
+  const issues = [];
+  if (String(pw || "").length < 8) issues.push("at least 8 characters");
+  if (!/[A-Z]/.test(pw)) issues.push("an UPPERCASE letter");
+  if (!/[a-z]/.test(pw)) issues.push("a lowercase letter");
+  if (!/[0-9]/.test(pw)) issues.push("a number");
+  if (!/[^A-Za-z0-9]/.test(pw)) issues.push("a special character (e.g. ! @ # $)");
+  return issues;
+}
 async function adminGuard(profile, notify, actionLabel) {
   if (isOwnerAcct(profile)) return true;
-  const pw = prompt("🔒 " + actionLabel + "\n\nEnter YOUR password to confirm:");
+  const pw = await promptPassword(actionLabel);
   if (!pw) return false;
   try {
     const u = auth.currentUser;
@@ -15263,15 +15341,17 @@ function UserRow({
       setRoleVal(u.role || "");
     }
   }, "✕")) : /*#__PURE__*/React.createElement("span", {
-    title: "Click to edit / link a role",
+    title: "Edit / link this user's role",
     onClick: () => setRoleEdit(true),
     style: {
       fontSize: 12,
-      color: u.role ? "var(--c-text3)" : "var(--c-text5)",
+      color: u.role ? "var(--c-text2)" : "var(--c-text5)",
       cursor: "pointer",
-      borderBottom: "1px dotted var(--c-border)"
+      padding: "3px 9px",
+      border: "1px solid var(--c-border)",
+      borderRadius: 8
     }
-  }, u.role || "— link role —", " ✎"), /*#__PURE__*/React.createElement(LinkedName, {
+  }, u.role || "Set role", " ✏️"), /*#__PURE__*/React.createElement(LinkedName, {
     u: u,
     me: me,
     notify: notify
@@ -15418,7 +15498,7 @@ function ReagentsTab({ profile, labs, catalog, notify }) {
   useEffect(() => { const un = db.collection("reagents").onSnapshot(s2 => setItems(s2.docs.map(d => ({ id: d.id, ...d.data() }))), e => notify("Reagents: " + e.message, "error")); return un; }, []);
   useEffect(() => { const un = db.collection("inventory").onSnapshot(s2 => setInvItems(s2.docs.map(d => ({ id: d.id, ...d.data() }))), () => {}); return un; }, []);
   useEffect(() => { const un = db.collection("spareParts").onSnapshot(s2 => setSpares(s2.docs.map(d => ({ id: d.id, ...d.data() }))), () => {}); return un; }, []);
-  const canEdit = !!profile.isAdmin || pCanTab(profile, "reagents", "edit");
+  const canEdit = !!profile.isAdmin || pCanTab(profile, "inventory", "edit") || pCanSub(profile, "reagents", "edit");
   const employees = useMemo(() => Array.from(new Set(((catalog && catalog.departments) || []).flatMap(d => Array.isArray(d.employees) ? d.employees : []).concat(((catalog && catalog.employees) || []).map(e2 => e2 && (e2.name || e2))).map(x => String(x || "").trim()).filter(Boolean))).sort(), [catalog]);
   const onHand = it => (it.movements || []).reduce((s2, m) => s2 + (m.type === "in" ? 1 : -1) * (Number(m.qty) || 0), 0);
   const nearestExpiry = it => { const ds = (it.movements || []).filter(m => m.type === "in" && m.expiry).map(m => m.expiry).sort(); return ds[0] || ""; };
@@ -15832,9 +15912,6 @@ function App() {
   }, (signedProfile.isAdmin || pCanTab(signedProfile, "inventory", "view")) && !tabHidden(tabsCfg, "inventory") && {
     id: "inventory",
     label: tabLabel(tabsCfg, "inventory", "📦 Inventory")
-  }, (signedProfile.isAdmin || pCanTab(signedProfile, "reagents", "view")) && !tabHidden(tabsCfg, "reagents") && {
-    id: "reagents",
-    label: tabLabel(tabsCfg, "reagents", "🧪 Reagents")
   }, (signedProfile.isAdmin || pCanTab(signedProfile, "sales", "view")) && !tabHidden(tabsCfg, "sales") && {
     id: "sales",
     label: tabLabel(tabsCfg, "sales", "📊 Sales")
@@ -16127,11 +16204,6 @@ function App() {
     labs: labs,
     catalog: catalog,
     tabsCfg: tabsCfg,
-    notify: notify
-  }), tab === "reagents" && pCanTab(signedProfile, "reagents", "view") && /*#__PURE__*/React.createElement(ReagentsTab, {
-    profile: signedProfile,
-    labs: labs,
-    catalog: catalog,
     notify: notify
   }), tab === "sales" && pCanTab(signedProfile, "sales", "view") && /*#__PURE__*/React.createElement(SalesTab, {
     profile: signedProfile,
