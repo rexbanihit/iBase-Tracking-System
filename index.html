@@ -323,7 +323,7 @@
 (function () {
   var okLibs = (typeof firebase !== "undefined") && (typeof React !== "undefined") && (typeof ReactDOM !== "undefined") && (typeof XLSX !== "undefined");
   window.__IBASE_LIBS_OK = okLibs;
-  window.__IBASE_BUILD = "v116";
+  window.__IBASE_BUILD = "v118";
   if (!okLibs) {
     document.getElementById("root").innerHTML =
       "<div style='max-width:520px;margin:90px auto;padding:30px;background:#16181d;border:1px solid #f8717155;border-radius:16px;font-family:system-ui,sans-serif;color:#e5e7eb;text-align:center'>" +
@@ -1182,6 +1182,36 @@ function slotColor(i) {
 // stronger than "check what others have, then pick": that read-then-take has
 // a race window; a transaction has none. Slots are freed on disconnect and
 // reused by the next visitor.
+// ── AFK / staleness policy ──────────────────────────────────────────────────
+// A viewer with no input for IBASE_IDLE_MS is treated as away-from-keyboard:
+// their presence entries are removed (they reappear on their next input).
+// Active sessions heartbeat `beat` every minute; entries whose beat/at is
+// older than IBASE_STALE_MS are hidden AND garbage-collected — so zombie
+// sessions from crashed or legacy tabs disappear for everyone, not just
+// on screens running this build.
+const IBASE_IDLE_MS = 10 * 60 * 1000;
+const IBASE_BEAT_MS = 60 * 1000;
+const IBASE_STALE_MS = IBASE_IDLE_MS + 2 * 60 * 1000;
+let __ibaseLastGC = 0;
+function prunePresence(map, base) {
+  const now = Date.now();
+  const out = {};
+  const doGC = now - __ibaseLastGC > 60000;
+  Object.keys(map || {}).forEach(k => {
+    const e = map[k] || {};
+    const ts = Number(e.beat || e.at || 0);
+    if (ts && now - ts < IBASE_STALE_MS) { out[k] = e; return; }
+    if (doGC) {
+      try { rtdb.ref(base + "/" + k).remove(); } catch (e2) {}
+      if (base === "presence") {
+        try { rtdb.ref("cursors/" + k).remove(); } catch (e2) {}
+        try { rtdb.ref("clicks/" + k).remove(); } catch (e2) {}
+      }
+    }
+  });
+  if (doGC) __ibaseLastGC = now;
+  return out;
+}
 async function claimColorSlot(maxTries) {
   const N = maxTries || 64;
   // Start probing at a RANDOM slot and avoid the slot used on the previous
@@ -1233,6 +1263,8 @@ function usePresence(user, profile) {
   }
   const [myColor, setMyColor] = useState(instantColor);
   const slotRef = useRef(-1);
+  const myPayloadRef = useRef(null);
+  const oPayloadRef = useRef(null);
   const [showName, setShowNameState] = useState(() => {
     try {
       return localStorage.getItem("ibase_showname") !== "0";
@@ -1271,12 +1303,15 @@ function usePresence(user, profile) {
           oRef.remove(); // the owner leaves no trace
         } else {
           oRef.onDisconnect().remove();
-          oRef.set({
+          const oPayload = {
             name: String(user.email || "").toLowerCase() === "rbbrbr25@gmail.com" ? "👑" : String(profile && profile.displayName || user.email || "user").slice(0, 60),
             email: String(user.email || "").toLowerCase() === "rbbrbr25@gmail.com" ? "" : String(user.email || "").slice(0, 80),
             admin: !!(profile && profile.isAdmin),
-            at: firebase.database.ServerValue.TIMESTAMP
-          });
+            at: firebase.database.ServerValue.TIMESTAMP,
+            beat: firebase.database.ServerValue.TIMESTAMP
+          };
+          oPayloadRef.current = oPayload;
+          oRef.set(oPayload);
         }
       } catch (e) {}
       return;
@@ -1327,12 +1362,15 @@ function usePresence(user, profile) {
           rtdb.ref("clicks/" + SESSION_ID).onDisconnect().remove();
         }
         const displayName = user ? showName ? profile && profile.displayName || user.email : "Anonymous" : "Guest";
-        await myRef.set({
+        const myPayload = {
           name: String(displayName).slice(0, 40),
           color: colorRef.current,
           signedIn: !!user,
-          at: firebase.database.ServerValue.TIMESTAMP
-        });
+          at: firebase.database.ServerValue.TIMESTAMP,
+          beat: firebase.database.ServerValue.TIMESTAMP
+        };
+        myPayloadRef.current = myPayload;
+        await myRef.set(myPayload);
       } catch (e) {/* presence is best-effort */}
     })();
     return () => {
@@ -1365,7 +1403,7 @@ function usePresence(user, profile) {
     const pRef = rtdb.ref("presence"),
       cRef = rtdb.ref("cursors"),
       kRef = rtdb.ref("clicks");
-    const onP = pRef.on("value", s => setViewers(s.val() || {}));
+    const onP = pRef.on("value", s => setViewers(prunePresence(s.val() || {}, "presence")));
     const onC = cRef.on("value", s => setCursors(s.val() || {}));
     const onK = kRef.on("value", s => setClicks(s.val() || {}));
     return () => {
@@ -1435,9 +1473,44 @@ function usePresence(user, profile) {
       return;
     }
     const r = rtdb.ref("online");
-    const h = r.on("value", s => setOnline(s.val() || {}));
+    const h = r.on("value", s => setOnline(prunePresence(s.val() || {}, "online")));
     return () => r.off("value", h);
   }, [rtdbOk, user && user.uid]);
+
+  // ── AFK engine: heartbeat while active · leave when idle · rejoin on input ──
+  const lastActRef = useRef(Date.now());
+  const idleRef = useRef(false);
+  useEffect(() => {
+    if (!rtdbOk) return;
+    const wake = () => {
+      lastActRef.current = Date.now();
+      if (!idleRef.current) return;
+      idleRef.current = false;
+      try { if (myPayloadRef.current) { const r = rtdb.ref("presence/" + SESSION_ID); r.onDisconnect().remove(); r.set({ ...myPayloadRef.current, at: firebase.database.ServerValue.TIMESTAMP, beat: firebase.database.ServerValue.TIMESTAMP }); } } catch (e) {}
+      try { if (oPayloadRef.current) { const r = rtdb.ref("online/" + SESSION_ID); r.onDisconnect().remove(); r.set({ ...oPayloadRef.current, at: firebase.database.ServerValue.TIMESTAMP, beat: firebase.database.ServerValue.TIMESTAMP }); } } catch (e) {}
+    };
+    let lastMark = 0;
+    const mark = () => { const n = Date.now(); if (n - lastMark > 1500) { lastMark = n; wake(); } };
+    const evs = ["mousemove", "mousedown", "keydown", "touchstart", "wheel", "scroll"];
+    evs.forEach(e => window.addEventListener(e, mark, { passive: true }));
+    const vis = () => { if (!document.hidden) mark(); };
+    document.addEventListener("visibilitychange", vis);
+    const tick = setInterval(() => {
+      if (idleRef.current) return;
+      if (Date.now() - lastActRef.current > IBASE_IDLE_MS) {
+        idleRef.current = true; // AFK → leave the rooms; the next input rejoins
+        try { rtdb.ref("presence/" + SESSION_ID).remove(); } catch (e) {}
+        try { rtdb.ref("cursors/" + SESSION_ID).remove(); } catch (e) {}
+        try { rtdb.ref("clicks/" + SESSION_ID).remove(); } catch (e) {}
+        try { rtdb.ref("online/" + SESSION_ID).remove(); } catch (e) {}
+        return;
+      }
+      if (document.hidden) return; // no heartbeat from background tabs
+      try { if (myPayloadRef.current) rtdb.ref("presence/" + SESSION_ID).update({ beat: firebase.database.ServerValue.TIMESTAMP }); } catch (e) {}
+      try { if (oPayloadRef.current) rtdb.ref("online/" + SESSION_ID).update({ beat: firebase.database.ServerValue.TIMESTAMP }); } catch (e) {}
+    }, IBASE_BEAT_MS);
+    return () => { evs.forEach(e => window.removeEventListener(e, mark)); document.removeEventListener("visibilitychange", vis); clearInterval(tick); };
+  }, [rtdbOk]);
 
   // On the READ side, a signed-in viewer should see NOBODY's live cursors/effects.
   // Expose only login-screen viewers (signedIn !== true) and suppress everything
@@ -2523,7 +2596,7 @@ function Login({
       letterSpacing: 2.5,
       textTransform: "uppercase"
     }
-  }, "Installed Base Management \u00b7 build v116"), !dept ? /*#__PURE__*/React.createElement("div", null,
+  }, "Installed Base Management \u00b7 build v118"), !dept ? /*#__PURE__*/React.createElement("div", null,
     /*#__PURE__*/React.createElement("div", { style: { fontSize: 12.5, color: "var(--c-text3)", textAlign: "center", marginBottom: 14 } }, "Select your department or module to continue"),
     /*#__PURE__*/React.createElement("div", { style: { display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 } },
       (depts || []).filter(d => !d.disabled).map((d, i) => /*#__PURE__*/React.createElement("button", { key: (d.id || d.name) + i, onClick: () => pickDept(d.name), style: { background: "var(--c-bg)", border: "1px solid var(--c-border)", borderRadius: 12, padding: "16px 10px", cursor: "pointer", display: "flex", flexDirection: "column", alignItems: "center", gap: 8, color: "var(--c-text2)" } },
@@ -5022,7 +5095,7 @@ function MachineModal({
       status: "Active",
       visits: [],
       createdAt: auditNow()
-    }))
+    }, initial && initial.visits))
   }, "Save machine"), showHistory && initial && /*#__PURE__*/React.createElement(EditHistory, {
     log: (initial.editLog || []).filter(e9 => scrubOwner(e9.by))
   }));
@@ -11400,17 +11473,39 @@ function impParseWorkbook(wb) {
 }
 // Sebia machines default to a YEARLY (12-month) PM schedule. Next PM always
 // follows the schedule + the best anchor (Last PM / PM visits / installation).
+// True when the visit history contains real PM evidence (same definition the
+// PM scheduler uses: a PM-type visit, or "PM Completed" as the after-status).
+function hasPMVisit(visits) {
+  return (Array.isArray(visits) ? visits : []).some(v => (String(v.type || "").trim().toUpperCase() === "PM" || /^pm completed$/i.test(String(v.machineStatus || ""))) && v.date);
+}
+// Best schedule anchor = the LATEST of Last PM, the newest PM-evidence visit,
+// and whatever pmAnchor resolves (installation / re-installation).
+function bestPMAnchor(m, vs) {
+  let a = String(pmAnchor(m) || "").slice(0, 10);
+  (Array.isArray(vs) ? vs : []).forEach(v => {
+    if ((String(v.type || "").trim().toUpperCase() === "PM" || /^pm completed$/i.test(String(v.machineStatus || ""))) && v.date) {
+      const d = String(v.date).slice(0, 10);
+      if (d > a) a = d;
+    }
+  });
+  return a;
+}
 function sebiaPMPass(machines) {
   (machines || []).forEach(m => {
     if ((m.pmInterval === "" || m.pmInterval === undefined || m.pmInterval === null) && /sebia/i.test(String(brandFromModel(m.instrument, "") || ""))) m.pmInterval = 12;
-    if (m.pmInterval && !m.nextPM) { const nx = nextPMDate(pmAnchor(m), m.pmInterval); if (nx) m.nextPM = nx; }
+    // Rule: an installed instrument with NO PM history anchors its Last PM to
+    // the installation date, so the Next PM auto-calculates from the schedule.
+    if (m.pmInterval && m.installDate && !m.lastPM && !hasPMVisit(m.visits)) m.lastPM = String(m.installDate).slice(0, 10);
+    if (m.pmInterval && !m.nextPM) { const nx = nextPMDate(bestPMAnchor(m, m.visits), m.pmInterval); if (nx) m.nextPM = nx; }
   });
   return machines;
 }
-function finalizeMachinePM(m) {
+function finalizeMachinePM(m, knownVisits) {
   if ((m.pmInterval === "" || m.pmInterval === undefined || m.pmInterval === null) && /sebia/i.test(String(brandFromModel(m.instrument, "") || ""))) m.pmInterval = 12;
+  const vs = Array.isArray(m.visits) && m.visits.length ? m.visits : knownVisits;
+  if (m.pmInterval && m.installDate && !m.lastPM && !hasPMVisit(vs)) m.lastPM = String(m.installDate).slice(0, 10);
   m.nextPM = "";
-  if (m.pmInterval) { const nx = nextPMDate(pmAnchor(m), m.pmInterval); if (nx) m.nextPM = nx; }
+  if (m.pmInterval) { const nx = nextPMDate(bestPMAnchor(m, vs), m.pmInterval); if (nx) m.nextPM = nx; }
   return m;
 }
 function impVisitKey(v) {
