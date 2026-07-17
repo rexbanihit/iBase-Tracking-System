@@ -323,7 +323,7 @@
 (function () {
   var okLibs = (typeof firebase !== "undefined") && (typeof React !== "undefined") && (typeof ReactDOM !== "undefined") && (typeof XLSX !== "undefined");
   window.__IBASE_LIBS_OK = okLibs;
-  window.__IBASE_BUILD = "v132";
+  window.__IBASE_BUILD = "v133";
   if (!okLibs) {
     document.getElementById("root").innerHTML =
       "<div style='max-width:520px;margin:90px auto;padding:30px;background:#16181d;border:1px solid #f8717155;border-radius:16px;font-family:system-ui,sans-serif;color:#e5e7eb;text-align:center'>" +
@@ -1180,7 +1180,15 @@ function pickPresenceColor(existing) {
 // hues — every slot index maps to a visibly different color.
 function slotColor(i) {
   if (i < PRESENCE_COLORS.length) return PRESENCE_COLORS[i];
-  return "hsl(" + Math.round(i * 137.508 % 360) + ",85%,62%)";
+  // Golden-angle hues spread maximally; four saturation/lightness BANDS make
+  // near-neighbour hues clearly tellable-apart even with 100+ viewers.
+  // 7 bands: coprime with the golden-angle near-return periods (34, 55, 89,
+  // 144, 233), so two nearly-equal hues can never share a band — and the
+  // lightness ladder keeps every band-pair clearly apart.
+  const j = i - PRESENCE_COLORS.length;
+  const BANDS = [[88, 40], [62, 46], [95, 52], [70, 58], [80, 64], [58, 70], [90, 76]];
+  const sl = BANDS[j % 7];
+  return "hsl(" + Math.round(i * 137.508 % 360) + "," + sl[0] + "%," + sl[1] + "%)";
 }
 // ATOMIC color claim: each visitor takes the lowest free slot via an RTDB
 // transaction. Transactions are serialized by the server, so two people
@@ -1219,21 +1227,30 @@ function prunePresence(map, base) {
   return out;
 }
 async function claimColorSlot(maxTries) {
-  const N = maxTries || 64;
-  // Start probing at a RANDOM slot and avoid the slot used on the previous
-  // visit from this browser — so even a lone viewer gets a different color on
-  // every refresh. The transaction still guarantees no two live viewers can
-  // ever hold the same slot.
+  const N = maxTries || 320; // ~100 concurrent users fit with headroom to spare
+  // Probe order: (1) the 22 curated colors in a RANDOM order — small rooms
+  // get pretty, varied colors and a different one on every refresh; (2) the
+  // remaining slots sequentially from a random start — guaranteed capacity.
+  // The slot used on the PREVIOUS visit from this browser goes last, so a
+  // refresh practically always lands on a different color. The transaction
+  // guarantees no two live viewers can EVER hold the same slot.
   let lastSlot = -1;
   try {
     lastSlot = parseInt(localStorage.getItem("ibase_last_slot") || "-1", 10);
   } catch (e) {}
-  const start = Math.floor(Math.random() * PRESENCE_COLORS.length);
-  const candidates = [];
-  for (let k = 0; k < N; k++) {
-    const idx = (start + k) % N;
-    if (idx !== lastSlot) candidates.push(idx);
+  const curated = [];
+  for (let k = 0; k < PRESENCE_COLORS.length && k < N; k++) curated.push(k);
+  for (let k = curated.length - 1; k > 0; k--) {
+    const r = Math.floor(Math.random() * (k + 1));
+    const tmp = curated[k]; curated[k] = curated[r]; curated[r] = tmp;
   }
+  const start = PRESENCE_COLORS.length + Math.floor(Math.random() * Math.max(1, N - PRESENCE_COLORS.length));
+  const overflow = [];
+  for (let k = PRESENCE_COLORS.length; k < N; k++) {
+    const idx = PRESENCE_COLORS.length + (start - PRESENCE_COLORS.length + (k - PRESENCE_COLORS.length)) % Math.max(1, N - PRESENCE_COLORS.length);
+    overflow.push(idx);
+  }
+  const candidates = [...curated, ...overflow].filter(i2 => i2 !== lastSlot);
   if (lastSlot >= 0 && lastSlot < N) candidates.push(lastSlot); // last resort only
   for (const i of candidates) {
     try {
@@ -1330,7 +1347,7 @@ function usePresence(user, profile) {
           // ATOMIC claim: a server-side transaction hands me the lowest free
           // slot — no two live visitors can ever hold the same one, so no two
           // can ever share a color. (Read-then-pick has a race; this doesn't.)
-          const claimed = await Promise.race([claimColorSlot(64), new Promise(res => setTimeout(() => res(-2), 2500)) // never block the screen
+          const claimed = await Promise.race([claimColorSlot(320), new Promise(res => setTimeout(() => res(-2), 2500)) // never block the screen
           ]);
           if (cancelled) {
             if (claimed >= 0) {
@@ -1346,7 +1363,7 @@ function usePresence(user, profile) {
             setMyColor(colorRef.current);
           } else if (claimed === -2) {
             // slow network: keep the instant color now, upgrade when the claim lands
-            claimColorSlot(64).then(i => {
+            claimColorSlot(320).then(i => {
               if (!cancelled && i >= 0) {
                 slotRef.current = i;
                 colorRef.current = slotColor(i);
@@ -3071,7 +3088,7 @@ function Login({
       letterSpacing: 2.5,
       textTransform: "uppercase"
     }
-  }, "Installed Base Management \u00b7 build v132"), !dept ? /*#__PURE__*/React.createElement("div", null,
+  }, "Installed Base Management \u00b7 build v133"), !dept ? /*#__PURE__*/React.createElement("div", null,
     /*#__PURE__*/React.createElement("div", { style: { fontSize: 12.5, color: "var(--c-text3)", textAlign: "center", marginBottom: 14 } }, "Select your department or module to continue"),
     /*#__PURE__*/React.createElement("div", { style: { display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 } },
       (depts || []).filter(d => !d.disabled).map((d, i) => /*#__PURE__*/React.createElement("button", { key: (d.id || d.name) + i, onClick: () => pickDept(d.name), style: { background: "var(--c-bg)", border: "1px solid var(--c-border)", borderRadius: 12, padding: "16px 10px", cursor: "pointer", display: "flex", flexDirection: "column", alignItems: "center", gap: 8, color: "var(--c-text2)" } },
