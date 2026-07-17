@@ -323,7 +323,7 @@
 (function () {
   var okLibs = (typeof firebase !== "undefined") && (typeof React !== "undefined") && (typeof ReactDOM !== "undefined") && (typeof XLSX !== "undefined");
   window.__IBASE_LIBS_OK = okLibs;
-  window.__IBASE_BUILD = "v134";
+  window.__IBASE_BUILD = "v137";
   if (!okLibs) {
     document.getElementById("root").innerHTML =
       "<div style='max-width:520px;margin:90px auto;padding:30px;background:#16181d;border:1px solid #f8717155;border-radius:16px;font-family:system-ui,sans-serif;color:#e5e7eb;text-align:center'>" +
@@ -2003,6 +2003,16 @@ function isOwnerAcct(x) {
 }
 
 // Alphabetical, case-insensitive sort for every selection list in the app.
+// "Not applicable" always leads a dropdown when the list contains it.
+function naFirst(list) {
+  const arr = (list || []).slice();
+  const i = arr.findIndex(x => /^not applicable$/i.test(String(x).trim()));
+  if (i > 0) {
+    const na = arr.splice(i, 1)[0];
+    arr.unshift(na);
+  }
+  return arr;
+}
 function sortAlpha(arr, key) {
   return [...(arr || [])].sort((a, b) => String(key ? key(a) : a).localeCompare(String(key ? key(b) : b), undefined, {
     sensitivity: "base"
@@ -3088,7 +3098,7 @@ function Login({
       letterSpacing: 2.5,
       textTransform: "uppercase"
     }
-  }, "Installed Base Management \u00b7 build v134"), !dept ? /*#__PURE__*/React.createElement("div", null,
+  }, "Installed Base Management \u00b7 build v137"), !dept ? /*#__PURE__*/React.createElement("div", null,
     /*#__PURE__*/React.createElement("div", { style: { fontSize: 12.5, color: "var(--c-text3)", textAlign: "center", marginBottom: 14 } }, "Select your department or module to continue"),
     /*#__PURE__*/React.createElement("div", { style: { display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 } },
       (depts || []).filter(d => !d.disabled).map((d, i) => /*#__PURE__*/React.createElement("button", { key: (d.id || d.name) + i, onClick: () => pickDept(d.name), style: { background: "var(--c-bg)", border: "1px solid var(--c-border)", borderRadius: 12, padding: "16px 10px", cursor: "pointer", display: "flex", flexDirection: "column", alignItems: "center", gap: 8, color: "var(--c-text2)" } },
@@ -6054,7 +6064,7 @@ function VisitModal({
         supportType: v === "Phone support" ? "Phone support" : x.supportType
       }));
     }
-  }, sortAlpha(VISIT_TYPES).map(t => /*#__PURE__*/React.createElement("option", {
+  }, naFirst(sortAlpha(VISIT_TYPES)).map(t => /*#__PURE__*/React.createElement("option", {
     key: t
   }, t)))), f.type === "PM" ? /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("label", {
     style: labelSt
@@ -6488,7 +6498,12 @@ function VisitModal({
       marginTop: 16
     },
     onClick: () => {
-      const need = [[f.type && f.type !== "Not Applicable", "Type of Visit"], [f.supportType, "Support Type"], [String(f.isrNo || "").trim(), "ISR number"], [f.dtWorkStarted, "Date & time work started"], [f.dtWorkEnded, "Date & time work ended"], [f.systemCondition, "System Condition"], [String(f.remarks || "").trim(), "Description of Work"], [f.machineStatus, "Instrument after the visit"], [f.type !== "PM" || f.pmType, "PM Type (With / Without PM Kit)"], [f.type !== "Installation" || (f.providedWith || []).length, "Provided with (tick the documents — or None)"]];
+      // Non-service visits (leave/admin types) only need the working window —
+      // everything else is optional for them. "Not Applicable" is now a valid
+      // visit type (it was previously blocked outright).
+      const LIGHT_TYPES = ["documentation", "emergency leave", "not applicable", "offset", "sick leave", "site survey", "training", "travel", "vacation leave"];
+      const isLight = LIGHT_TYPES.indexOf(String(f.type || "").trim().toLowerCase()) !== -1;
+      const need = [[f.type, "Type of Visit"], [isLight || f.supportType, "Support Type"], [isLight || String(f.isrNo || "").trim(), "ISR number"], [f.dtWorkStarted, "Date & time work started"], [f.dtWorkEnded, "Date & time work ended"], [isLight || f.systemCondition, "System Condition"], [isLight || String(f.remarks || "").trim(), "Description of Work"], [isLight || f.machineStatus, "Instrument after the visit"], [f.type !== "PM" || f.pmType, "PM Type (With / Without PM Kit)"], [f.type !== "Installation" || (f.providedWith || []).length, "Provided with (tick the documents — or None)"], [f.type !== "PM" || !(f.providedWith || []).length || (f.attachments || []).length, "Attachment — upload proof of the ticked PM document(s)"]];
       const missing = need.filter(x => !x[0]).map(x => x[1]);
       if (missing.length) {
         notify("Please complete the required field(s):\n• " + missing.join("\n• "), "error");
@@ -6500,6 +6515,7 @@ function VisitModal({
         ...f,
         date: dISO || f.date || today(),
         ...pmKitFields(f.type, f.pmType, f.pmKitReplaced),
+        machineStatus: f.machineStatus || "Not Applicable",
         providedWith: f.type === "Installation" ? (f.providedWith || []).filter(i => PROVIDED_INSTALL.indexOf(i) !== -1) : f.type === "PM" ? (f.providedWith || []).filter(i => PROVIDED_PM.indexOf(i) !== -1) : [],
         engineer: engs[0] || "",
         engineer2: engs[1] || "",
@@ -7025,7 +7041,7 @@ function InvModal({
     style: inputSt(),
     value: f.status,
     onChange: e => set("status", e.target.value)
-  }, sortAlpha(INVENTORY_STATUS_OPTIONS).map(s => /*#__PURE__*/React.createElement("option", {
+  }, naFirst(sortAlpha(INVENTORY_STATUS_OPTIONS)).map(s => /*#__PURE__*/React.createElement("option", {
     key: s
   }, s))), /*#__PURE__*/React.createElement("div", {
     style: {
@@ -9400,6 +9416,23 @@ function VisitsTab({
   }
   async function delVisit(v) {
     if (!confirm("Move this " + (v.type || "visit") + " (" + fmtDate(v.date) + " · " + v._machine + " @ " + v._lab + ") to the Bin?")) return;
+    return delVisitCore(v);
+  }
+  async function delSelectedVisits() {
+    const targets = [];
+    shown.forEach((v, i) => {
+      const key = v.id || v._mId + "-" + i;
+      if (selected[key]) targets.push(v);
+    });
+    if (!targets.length) {
+      notify("Single-click a row to select it first — then press 🗑 Delete service visit.", "error");
+      return;
+    }
+    if (!confirm("🗑 Delete " + (targets.length === 1 ? "this service visit" : targets.length + " selected service visits") + "?\n\n" + targets.slice(0, 5).map(v => "• " + (v.type || "visit") + " · " + fmtDate(v.date) + " · " + v._machine + " @ " + v._lab).join("\n") + (targets.length > 5 ? "\n…and " + (targets.length - 5) + " more" : "") + "\n\nThey move to the 🗑 Bin (restorable).")) return;
+    for (const v of targets) await delVisitCore(v);
+    setSelected({});
+  }
+  async function delVisitCore(v) {
     const lab = labs.find(l => l.id === v._labId);
     if (!lab) {
       notify("Laboratory not found.", "error");
@@ -9576,7 +9609,7 @@ function VisitsTab({
     onChange: e => setTypeF(e.target.value)
   }, /*#__PURE__*/React.createElement("option", {
     value: ""
-  }, "All"), sortAlpha(VISIT_TYPES).map(t => /*#__PURE__*/React.createElement("option", {
+  }, "All"), naFirst(sortAlpha(VISIT_TYPES)).map(t => /*#__PURE__*/React.createElement("option", {
     key: t
   }, t)))), /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("label", {
     style: _lblS
@@ -9684,7 +9717,20 @@ function VisitsTab({
       setRowHeights({});
       setColMenu(false);
     }
-  }, "↺ Reset"), colMenu && /*#__PURE__*/React.createElement("div", {
+  }, "↺ Reset"), " ", canDeleteLogs ? (() => {
+    const nSel = Object.values(selected).filter(Boolean).length;
+    return /*#__PURE__*/React.createElement("button", {
+      title: nSel ? "Move the selected visit(s) to the 🗑 Bin — asks to confirm first" : "First single-click a row to select it (highlight), then delete — administrators only",
+      disabled: !nSel,
+      style: {
+        ...btnSt(nSel ? "#3a1d1d" : "var(--c-border)", nSel ? "#fca5a5" : "var(--c-text5)"),
+        padding: "6px 10px",
+        fontSize: 11.5,
+        cursor: nSel ? "pointer" : "not-allowed"
+      },
+      onClick: delSelectedVisits
+    }, "🗑 Delete service visit", nSel > 1 ? "s (" + nSel + ")" : "");
+  })() : null, colMenu && /*#__PURE__*/React.createElement("div", {
     style: {
       flexBasis: "100%",
       minWidth: "100%",
@@ -9790,13 +9836,14 @@ function VisitsTab({
       ...cardSt,
       overflow: "auto",
       maxHeight: "calc(100vh - 270px)",
-      padding: 14
+      padding: "0 14px 14px"
     }
   }, /*#__PURE__*/React.createElement("div", {
     style: {
       display: "flex",
       alignItems: "center",
       gap: 10,
+      paddingTop: 14,
       marginBottom: 8,
       flexWrap: "wrap"
     }
@@ -9927,7 +9974,7 @@ function VisitsTab({
         position: "sticky",
         top: 0,
         background: "var(--c-bg2)",
-        boxShadow: "inset 0 -1px 0 var(--c-border), 0 1px 0 var(--c-bg2)",
+        boxShadow: "inset 0 -1px 0 var(--c-border), 0 1px 0 var(--c-bg2), 0 -14px 0 0 var(--c-card)",
         zIndex: 8
       },
       onDragStart: () => {
@@ -10091,18 +10138,7 @@ function VisitsTab({
         color: "var(--c-text5)",
         marginRight: 5
       }
-    }, "🔒"), canDeleteLogs && /*#__PURE__*/React.createElement("button", {
-      title: "Move to Bin — administrators only",
-      style: {
-        ...btnSt("#3a1d1d", "#fca5a5"),
-        padding: "3px 8px",
-        fontSize: 11
-      },
-      onClick: e => {
-        e.stopPropagation();
-        delVisit(v);
-      }
-    }, "🗑")));
+    }, "🔒")));
   }), shown.length === 0 && /*#__PURE__*/React.createElement("tr", null, /*#__PURE__*/React.createElement("td", {
     colSpan: visibleOrder.length + 1,
     style: {
