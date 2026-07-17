@@ -323,7 +323,7 @@
 (function () {
   var okLibs = (typeof firebase !== "undefined") && (typeof React !== "undefined") && (typeof ReactDOM !== "undefined") && (typeof XLSX !== "undefined");
   window.__IBASE_LIBS_OK = okLibs;
-  window.__IBASE_BUILD = "v131";
+  window.__IBASE_BUILD = "v132";
   if (!okLibs) {
     document.getElementById("root").innerHTML =
       "<div style='max-width:520px;margin:90px auto;padding:30px;background:#16181d;border:1px solid #f8717155;border-radius:16px;font-family:system-ui,sans-serif;color:#e5e7eb;text-align:center'>" +
@@ -974,7 +974,9 @@ function CosmicLoginBG({
       for (var ai = attractors.length - 1; ai >= 0; ai--) if (now - attractors[ai].born > 9000) attractors.splice(ai, 1);
 
       // ── constellation lines: each viewer's clicks joined 1st→2nd→3rd… ──
-      ctx.globalCompositeOperation = "lighter";
+      // "lighter" ADDS light — on a bright background that is invisible by
+      // definition (white + anything = white). Light themes draw normally.
+      ctx.globalCompositeOperation = dark ? "lighter" : "source-over";
       ctx.lineCap = "round";
       for (var ck in chains) {
         var ch = chains[ck];
@@ -988,12 +990,13 @@ function CosmicLoginBG({
           var A = ch.pts[si2 - 1],
             B = ch.pts[si2];
           var segAge = (now - B.born) / CHAIN_TTL;
-          ctx.globalAlpha = Math.max(0, 0.55 * (1 - segAge));
-          // v131: the constellation lines follow the COSMIC effect color, so
-          // they stay visible and coherent on every theme (per-user slot
-          // colors could wash out to white under the additive blend).
-          ctx.strokeStyle = palette[0];
-          ctx.lineWidth = 1.6;
+          ctx.globalAlpha = Math.max(0, (dark ? 0.55 : 0.8) * (1 - segAge));
+          // v132: A→B→C wears the SAME color as the click effect — the
+          // viewer's per-session presence color (yellow session → yellow
+          // lines). Visibility on light themes is fixed by the blend mode
+          // below, not by changing the color.
+          ctx.strokeStyle = ch.color || "#38bdf8";
+          ctx.lineWidth = dark ? 1.6 : 2;
           ctx.beginPath();
           ctx.moveTo(A.x * W, A.y * H);
           ctx.lineTo(B.x * W, B.y * H);
@@ -1002,8 +1005,8 @@ function CosmicLoginBG({
         // small node dots at each click point
         for (var di = 0; di < ch.pts.length; di++) {
           var Pn = ch.pts[di];
-          ctx.globalAlpha = Math.max(0, 0.8 * (1 - (now - Pn.born) / CHAIN_TTL));
-          ctx.fillStyle = palette[0];
+          ctx.globalAlpha = Math.max(0, (dark ? 0.8 : 0.95) * (1 - (now - Pn.born) / CHAIN_TTL));
+          ctx.fillStyle = ch.color || "#38bdf8";
           ctx.beginPath();
           ctx.arc(Pn.x * W, Pn.y * H, 2.2, 0, 6.2832);
           ctx.fill();
@@ -3068,7 +3071,7 @@ function Login({
       letterSpacing: 2.5,
       textTransform: "uppercase"
     }
-  }, "Installed Base Management \u00b7 build v131"), !dept ? /*#__PURE__*/React.createElement("div", null,
+  }, "Installed Base Management \u00b7 build v132"), !dept ? /*#__PURE__*/React.createElement("div", null,
     /*#__PURE__*/React.createElement("div", { style: { fontSize: 12.5, color: "var(--c-text3)", textAlign: "center", marginBottom: 14 } }, "Select your department or module to continue"),
     /*#__PURE__*/React.createElement("div", { style: { display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 } },
       (depts || []).filter(d => !d.disabled).map((d, i) => /*#__PURE__*/React.createElement("button", { key: (d.id || d.name) + i, onClick: () => pickDept(d.name), style: { background: "var(--c-bg)", border: "1px solid var(--c-border)", borderRadius: 12, padding: "16px 10px", cursor: "pointer", display: "flex", flexDirection: "column", alignItems: "center", gap: 8, color: "var(--c-text2)" } },
