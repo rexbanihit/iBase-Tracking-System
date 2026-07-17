@@ -323,7 +323,7 @@
 (function () {
   var okLibs = (typeof firebase !== "undefined") && (typeof React !== "undefined") && (typeof ReactDOM !== "undefined") && (typeof XLSX !== "undefined");
   window.__IBASE_LIBS_OK = okLibs;
-  window.__IBASE_BUILD = "v138";
+  window.__IBASE_BUILD = "v139";
   if (!okLibs) {
     document.getElementById("root").innerHTML =
       "<div style='max-width:520px;margin:90px auto;padding:30px;background:#16181d;border:1px solid #f8717155;border-radius:16px;font-family:system-ui,sans-serif;color:#e5e7eb;text-align:center'>" +
@@ -3098,7 +3098,7 @@ function Login({
       letterSpacing: 2.5,
       textTransform: "uppercase"
     }
-  }, "Installed Base Management \u00b7 build v138"), !dept ? /*#__PURE__*/React.createElement("div", null,
+  }, "Installed Base Management \u00b7 build v139"), !dept ? /*#__PURE__*/React.createElement("div", null,
     /*#__PURE__*/React.createElement("div", { style: { fontSize: 12.5, color: "var(--c-text3)", textAlign: "center", marginBottom: 14 } }, "Select your department or module to continue"),
     /*#__PURE__*/React.createElement("div", { style: { display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 } },
       (depts || []).filter(d => !d.disabled).map((d, i) => /*#__PURE__*/React.createElement("button", { key: (d.id || d.name) + i, onClick: () => pickDept(d.name), style: { background: "var(--c-bg)", border: "1px solid var(--c-border)", borderRadius: 12, padding: "16px 10px", cursor: "pointer", display: "flex", flexDirection: "column", alignItems: "center", gap: 8, color: "var(--c-text2)" } },
@@ -4020,6 +4020,7 @@ function LabsTab({
   const [flagF, setFlagF] = useState("");
   const [pmFrom, setPmFrom] = useState("");
   const [pmTo, setPmTo] = useState("");
+  const [qSel, setQSel] = useState(""); // the Quarter picker's shown value
   const [qYear, setQYear] = useState(String(new Date().getFullYear()));
   const setQuarter = qn => {
     const y = String(Number(qYear) || new Date().getFullYear());
@@ -4063,7 +4064,7 @@ function LabsTab({
     const s = q.toLowerCase();
     if (!s) return true;
     return String(l.name || "").toLowerCase().includes(s) || String(l.location || "").toLowerCase().includes(s) || String(l.subRegion || "").toLowerCase().includes(s) || (l.machines || []).some(m => String(m.serialNo || "").toLowerCase().includes(s) || String(m.instrument || "").toLowerCase().includes(s));
-  }).sort((a, b) => String(a.name).localeCompare(String(b.name)));
+  }).sort((a, b) => String(a.name || "").localeCompare(String(b.name || ""), undefined, { sensitivity: "base" })).sort((a, b) => String(a.name).localeCompare(String(b.name)));
   const TCOLS = [{
     id: "lab",
     label: "Laboratory",
@@ -4201,7 +4202,7 @@ function LabsTab({
     value: q,
     onChange: e => setQ(e.target.value),
     placeholder: "🔍 Search lab, location, sub-location, serial, instrument…"
-  }), /*#__PURE__*/React.createElement("select", {
+  }), /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("label", { style: { fontSize: 10, color: "var(--c-text5)", display: "block" } }, "Brand"), /*#__PURE__*/React.createElement("select", {
     style: {
       ...inputSt(),
       maxWidth: 150,
@@ -4217,7 +4218,7 @@ function LabsTab({
     value: ""
   }, "All brands"), brandOpts.map(x => /*#__PURE__*/React.createElement("option", {
     key: x
-  }, x))), /*#__PURE__*/React.createElement("select", {
+  }, x)))), /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("label", { style: { fontSize: 10, color: "var(--c-text5)", display: "block" } }, "Instrument"), /*#__PURE__*/React.createElement("select", {
     style: {
       ...inputSt(),
       maxWidth: 230,
@@ -4230,7 +4231,7 @@ function LabsTab({
     value: ""
   }, "All instruments (all institutions)"), (brandF ? instrumentOpts.filter(x => brandFromModel(x, "") === brandF) : instrumentOpts).map(x => /*#__PURE__*/React.createElement("option", {
     key: x
-  }, x))), /*#__PURE__*/React.createElement("select", {
+  }, x)))), /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("label", { style: { fontSize: 10, color: "var(--c-text5)", display: "block" } }, "PM Flag"), /*#__PURE__*/React.createElement("select", {
     style: {
       ...inputSt(),
       maxWidth: 160,
@@ -4242,7 +4243,7 @@ function LabsTab({
     value: ""
   }, "All PM flags"), ["Overdue", "Due This Week", "Due This Month", "Due Next Month", "OK", "Pulled-out"].map(f => /*#__PURE__*/React.createElement("option", {
     key: f
-  }, f))), /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("label", {
+  }, f)))), /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("label", {
     style: {
       fontSize: 10,
       color: "var(--c-text5)",
@@ -4256,7 +4257,7 @@ function LabsTab({
       fontSize: 12
     },
     value: pmFrom,
-    onChange: e => setPmFrom(e.target.value)
+    onChange: e => { setPmFrom(e.target.value); setQSel(""); }
   })), /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("label", {
     style: {
       fontSize: 10,
@@ -4271,7 +4272,7 @@ function LabsTab({
       fontSize: 12
     },
     value: pmTo,
-    onChange: e => setPmTo(e.target.value)
+    onChange: e => { setPmTo(e.target.value); setQSel(""); }
   })), /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("label", {
     style: {
       fontSize: 10,
@@ -4285,10 +4286,10 @@ function LabsTab({
       fontSize: 12,
       cursor: "pointer"
     },
-    value: "",
+    value: qSel,
     onChange: e => {
+      setQSel(e.target.value);
       setQuarter(e.target.value);
-      e.target.value = "";
     }
   }, /*#__PURE__*/React.createElement("option", {
     value: ""
@@ -4326,6 +4327,7 @@ function LabsTab({
     onClick: () => {
       setPmFrom("");
       setPmTo("");
+      setQSel("");
     }
   }, "✕ Clear range"), (q || instF || brandF || flagF || pmFrom || pmTo) && /*#__PURE__*/React.createElement("button", {
     style: btnSt("var(--c-border)", "var(--c-text2)"),
@@ -4334,6 +4336,9 @@ function LabsTab({
       setInstF("");
       setBrandF("");
       setFlagF("");
+      setPmFrom("");
+      setPmTo("");
+      setQSel("");
     }
   }, "↺"), /*#__PURE__*/React.createElement("div", {
     style: {
