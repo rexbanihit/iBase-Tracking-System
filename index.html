@@ -323,7 +323,7 @@
 (function () {
   var okLibs = (typeof firebase !== "undefined") && (typeof React !== "undefined") && (typeof ReactDOM !== "undefined") && (typeof XLSX !== "undefined");
   window.__IBASE_LIBS_OK = okLibs;
-  window.__IBASE_BUILD = "v129";
+  window.__IBASE_BUILD = "v130";
   if (!okLibs) {
     document.getElementById("root").innerHTML =
       "<div style='max-width:520px;margin:90px auto;padding:30px;background:#16181d;border:1px solid #f8717155;border-radius:16px;font-family:system-ui,sans-serif;color:#e5e7eb;text-align:center'>" +
@@ -3065,7 +3065,7 @@ function Login({
       letterSpacing: 2.5,
       textTransform: "uppercase"
     }
-  }, "Installed Base Management \u00b7 build v129"), !dept ? /*#__PURE__*/React.createElement("div", null,
+  }, "Installed Base Management \u00b7 build v130"), !dept ? /*#__PURE__*/React.createElement("div", null,
     /*#__PURE__*/React.createElement("div", { style: { fontSize: 12.5, color: "var(--c-text3)", textAlign: "center", marginBottom: 14 } }, "Select your department or module to continue"),
     /*#__PURE__*/React.createElement("div", { style: { display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 } },
       (depts || []).filter(d => !d.disabled).map((d, i) => /*#__PURE__*/React.createElement("button", { key: (d.id || d.name) + i, onClick: () => pickDept(d.name), style: { background: "var(--c-bg)", border: "1px solid var(--c-border)", borderRadius: 12, padding: "16px 10px", cursor: "pointer", display: "flex", flexDirection: "column", alignItems: "center", gap: 8, color: "var(--c-text2)" } },
@@ -5698,12 +5698,18 @@ function EditHistory({
   }, c))))));
 }
 // What changed between two versions of a visit (for the edit log).
-const VISIT_DIFF_FIELDS = [["date", "Date"], ["type", "Activity/Job type"], ["supportType", "Support type"], ["priority", "Priority"], ["isrNo", "ISR no."], ["engineer", "Name"], ["engineer2", "Engineer 2"], ["engineer3", "Engineer 3"], ["machineStatus", "Instrument Status"], ["dtReported", "Reported"], ["dtDeparture", "Departure"], ["dtArrivalAccount", "Arrival to Account"], ["dtWorkStarted", "Work started"], ["dtWorkEnded", "Work ended"], ["dtArrivalHome", "Arrival to Home"], ["problemDesc", "Problem Description"], ["systemCondition", "System Condition"], ["recommendation", "Recommendation"], ["endorsedTo", "Endorsed to"], ["softwareVersion", "Software Version"], ["remarks", "Description of Work"], ["signedByName", "Signed by (name)"]];
+const VISIT_DIFF_FIELDS = [["date", "Date"], ["type", "Activity/Job type"], ["supportType", "Support type"], ["priority", "Priority"], ["isrNo", "ISR no."], ["engineer", "Name"], ["engineer2", "Engineer 2"], ["engineer3", "Engineer 3"], ["machineStatus", "Instrument Status"], ["dtReported", "Reported"], ["dtDeparture", "Departure"], ["dtArrivalAccount", "Arrival to Account"], ["dtWorkStarted", "Work started"], ["dtWorkEnded", "Work ended"], ["dtArrivalHome", "Arrival to Home"], ["problemDesc", "Problem Description"], ["systemCondition", "System Condition"], ["recommendation", "Recommendation"], ["endorsedTo", "Endorsed to"], ["softwareVersion", "Software Version"], ["remarks", "Description of Work"], ["signedByName", "Signed by (name)"], ["instrumentStatus", "Instrument State"], ["firmwareVersion", "Firmware Version"], ["pmType", "PM Type"], ["pmKitReplaced", "PM Kit Replaced"], ["providedWith", "Provided with"]];
 function visitDiff(oldV, newV) {
   const changes = [];
   VISIT_DIFF_FIELDS.forEach(([k, label]) => {
-    const a = String(oldV[k] || ""),
-      b = String(newV[k] || "");
+    const pretty = x => {
+      if (Array.isArray(x)) return x.join(", ");
+      if (k === "pmType") return x === "with-kit" ? "With PM Kit" : x === "without-kit" ? "Without PM Kit" : String(x || "");
+      if (k === "pmKitReplaced") return x === "yes" || x === true ? "Yes" : x === "no" || x === false ? "No" : String(x || "");
+      return String(x || "");
+    };
+    const a = pretty(oldV[k]),
+      b = pretty(newV[k]);
     if (a !== b) changes.push(label + ": \u201C" + (a || "—") + "\u201D \u2192 \u201C" + (b || "—") + "\u201D");
   });
   if (String(oldV.signature || "") !== String(newV.signature || "")) changes.push("Signature: " + (newV.signature ? "updated" : "removed"));
