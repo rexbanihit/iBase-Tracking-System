@@ -323,7 +323,7 @@
 (function () {
   var okLibs = (typeof firebase !== "undefined") && (typeof React !== "undefined") && (typeof ReactDOM !== "undefined") && (typeof XLSX !== "undefined");
   window.__IBASE_LIBS_OK = okLibs;
-  window.__IBASE_BUILD = "v139";
+  window.__IBASE_BUILD = "v142";
   if (!okLibs) {
     document.getElementById("root").innerHTML =
       "<div style='max-width:520px;margin:90px auto;padding:30px;background:#16181d;border:1px solid #f8717155;border-radius:16px;font-family:system-ui,sans-serif;color:#e5e7eb;text-align:center'>" +
@@ -3098,7 +3098,7 @@ function Login({
       letterSpacing: 2.5,
       textTransform: "uppercase"
     }
-  }, "Installed Base Management \u00b7 build v139"), !dept ? /*#__PURE__*/React.createElement("div", null,
+  }, "Installed Base Management \u00b7 build v142"), !dept ? /*#__PURE__*/React.createElement("div", null,
     /*#__PURE__*/React.createElement("div", { style: { fontSize: 12.5, color: "var(--c-text3)", textAlign: "center", marginBottom: 14 } }, "Select your department or module to continue"),
     /*#__PURE__*/React.createElement("div", { style: { display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 } },
       (depts || []).filter(d => !d.disabled).map((d, i) => /*#__PURE__*/React.createElement("button", { key: (d.id || d.name) + i, onClick: () => pickDept(d.name), style: { background: "var(--c-bg)", border: "1px solid var(--c-border)", borderRadius: 12, padding: "16px 10px", cursor: "pointer", display: "flex", flexDirection: "column", alignItems: "center", gap: 8, color: "var(--c-text2)" } },
@@ -7185,6 +7185,15 @@ function HistoryModal({
     }
   }, e.date ? fmtDate(e.date) : "date unknown", e.isr ? " · " + e.isr : "", " · ", e.source)))));
 }
+// Low-stock policy: OUT when nothing on hand; LOW when a minimum is set and
+// the on-hand count is at or below it. Colors are literals — theme-proof.
+function stockLevel(qty, minQty) {
+  const q2 = Number(qty) || 0;
+  if (q2 <= 0) return "out";
+  const mq = minQty === "" || minQty === undefined || minQty === null ? null : Number(minQty);
+  if (mq !== null && !isNaN(mq) && mq > 0 && q2 <= mq) return "low";
+  return "";
+}
 function SpareParts({
   profile,
   catalog,
@@ -7196,6 +7205,7 @@ function SpareParts({
   const brandOk = b => pBrandOk(profile, "spares", b);
   const [editing, setEditing] = useState(null);
   const [stockFor, setStockFor] = useState(null); // {part, dir:"in"|"out"}
+  const [lowOnly, setLowOnly] = useState(false);
   const [q, setQ] = useState("");
   const shown = parts.filter(p => {
     const s = q.toLowerCase();
@@ -7203,6 +7213,8 @@ function SpareParts({
     return [p.brand, p.partNumber, p.description].some(x => String(x || "").toLowerCase().includes(s));
   }).sort((a, b) => String(a.brand + a.partNumber).localeCompare(String(b.brand + b.partNumber)));
   const onHand = p => (p.receipts || []).reduce((s, r) => s + (Number(r.qty) || 0), 0) - (p.issues || []).reduce((s, r) => s + (Number(r.qty) || 0), 0);
+  const lowParts = parts.filter(p => stockLevel(onHand(p), p.minQty));
+  const shownFinal = lowOnly ? shown.filter(p => stockLevel(onHand(p), p.minQty)) : shown;
   const norm = v => String(v || "").trim().toLowerCase();
   async function save(rec) {
     // No duplicates: the same brand + part number may exist only once.
@@ -7327,12 +7339,17 @@ function SpareParts({
     label: "On Hand",
     w: 90,
     sv: p => String(onHand(p)),
-    render: p => /*#__PURE__*/React.createElement("span", {
-      style: {
-        fontWeight: 800,
-        color: onHand(p) > 0 ? "#34d399" : "#f87171"
-      }
-    }, onHand(p))
+    render: p => {
+      const h2 = onHand(p);
+      const lv = stockLevel(h2, p.minQty);
+      return /*#__PURE__*/React.createElement("span", {
+        title: lv === "out" ? "OUT OF STOCK — place an order" : lv === "low" ? "At or below the minimum (" + p.minQty + ") — place an order" : p.minQty ? "Minimum: " + p.minQty : "",
+        style: {
+          fontWeight: 800,
+          color: lv === "out" ? "#f87171" : lv === "low" ? "#f97316" : "#34d399"
+        }
+      }, h2, lv === "out" ? " ⛔" : lv === "low" ? " ⚠" : "");
+    }
   }, {
     id: "act",
     label: "",
@@ -7406,10 +7423,13 @@ function SpareParts({
   }), canEdit && /*#__PURE__*/React.createElement("button", {
     style: btnSt("var(--c-key)", "var(--c-bg)"),
     onClick: () => setEditing("new")
-  }, "+ New Spare Part")), /*#__PURE__*/React.createElement(ITable, {
+  }, "+ New Spare Part")), /*#__PURE__*/(lowParts.length ? /*#__PURE__*/React.createElement("div", {
+    style: { display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap", border: "1px solid #f9731655", background: "#f9731614", borderRadius: 10, padding: "8px 12px", marginBottom: 10, fontSize: 12.5 }
+  }, /*#__PURE__*/React.createElement("span", { style: { fontWeight: 800, color: "#f97316" } }, "⚠ ", lowParts.length, " spare part(s) at or below minimum stock — place an order."),
+     /*#__PURE__*/React.createElement("button", { style: { ...btnSt(lowOnly ? "#f97316" : "var(--c-border)", lowOnly ? "#1a1a1a" : "var(--c-text2)"), padding: "3px 10px", fontSize: 11.5 }, onClick: () => setLowOnly(v => !v) }, lowOnly ? "Showing low stock — show all" : "Show low stock only")) : null), React.createElement(ITable, {
     id: "spares",
     cols: SCOLS,
-    rows: shown,
+    rows: shownFinal,
     rowKey: p => p.id,
     initSort: {
       col: "brand",
@@ -7447,7 +7467,8 @@ function SparePartForm({
   const [f, setF] = useState(initial || {
     brand: brands.find(b => brandOk(b)) || brands[0] || "",
     partNumber: "",
-    description: ""
+    description: "",
+    minQty: ""
   });
   const set = (k, v) => setF(x => ({
     ...x,
@@ -7486,6 +7507,16 @@ function SparePartForm({
     onChange: e => set("description", e.target.value)
   }), /*#__PURE__*/React.createElement("label", {
     style: labelSt
+  }, "Minimum stock (reorder alert)"), /*#__PURE__*/React.createElement("input", {
+    type: "number",
+    min: "0",
+    style: { ...inputSt(), marginBottom: 10, width: 140 },
+    value: f.minQty === undefined || f.minQty === null ? "" : f.minQty,
+    onChange: e => set("minQty", e.target.value),
+    placeholder: "e.g. 2",
+    title: "When On Hand falls to this number or below, the part is flagged LOW — leave blank to disable"
+  }), /*#__PURE__*/React.createElement("label", {
+    style: labelSt
   }, initial ? "Quantity on hand (adjusting writes a stock entry)" : "Initial quantity on hand"), /*#__PURE__*/React.createElement("input", {
     type: "number",
     min: "0",
@@ -7503,6 +7534,7 @@ function SparePartForm({
       brand: f.brand,
       partNumber: f.partNumber.trim(),
       description: f.description.trim(),
+      minQty: f.minQty === "" || f.minQty === undefined || isNaN(Number(f.minQty)) ? "" : Math.max(0, Number(f.minQty)),
       __qty: qty
     })
   }, "Save"), isAdmin && initial && /*#__PURE__*/React.createElement(EditHistory, {
@@ -9370,10 +9402,20 @@ function VisitsTab({
   const shown = useMemo(() => {
     const c = colDef(sort.col);
     if (!c) return filtered;
-    return [...filtered].sort((a, b) => sort.dir * String(c.sv(a)).localeCompare(String(c.sv(b)), undefined, {
-      numeric: true,
-      sensitivity: "base"
-    }));
+    // Ties break by the ACTUAL visit chronology — Date & Time work started —
+    // never by when the entry was typed in. (Imported/legacy rows without it
+    // fall back to their source timestamp.) Latest work sits on top.
+    const recency = v => String(v.dtWorkStarted || v.srcTimestamp || v.loggedAt || "");
+    return [...filtered].sort((a, b) => {
+      const p = sort.dir * String(c.sv(a)).localeCompare(String(c.sv(b)), undefined, {
+        numeric: true,
+        sensitivity: "base"
+      });
+      if (p !== 0) return p;
+      const r2 = recency(b).localeCompare(recency(a), undefined, { numeric: true });
+      if (r2 !== 0) return r2;
+      return 0;
+    });
   }, [filtered, sort]);
   function clickSort(id) {
     setSort(s => s.col === id ? {
@@ -16473,13 +16515,15 @@ function UserRow({
 // ═══════════════ REAGENTS / CONSUMABLES INVENTORY + INDEPENDENT LOGS ═══════════════
 const RG_h = React.createElement;
 function ReagentItemModal({ initial, onSave, onClose }) {
-  const [f, setF] = useState(initial ? { itemId: initial.itemId || "", name: initial.name || "", unitMode: initial.unitMode || "piece" } : { itemId: "", name: "", unitMode: "piece" });
+  const [f, setF] = useState(initial ? { itemId: initial.itemId || "", name: initial.name || "", unitMode: initial.unitMode || "piece", minQty: initial.minQty === undefined || initial.minQty === null ? "" : initial.minQty } : { itemId: "", name: "", unitMode: "piece", minQty: "" });
   const set = (k, v) => setF(x => ({ ...x, [k]: v }));
   return RG_h(Modal, { title: initial ? "Edit Item" : "New Reagent / Consumable", onClose: onClose },
     RG_h("label", { style: labelSt }, "Item ID Number *"),
     RG_h("input", { style: { ...inputSt(), marginBottom: 10 }, value: f.itemId, onChange: e => set("itemId", e.target.value), placeholder: "e.g. RG-1024" }),
     RG_h("label", { style: labelSt }, "Item name / description *"),
     RG_h("input", { style: { ...inputSt(), marginBottom: 10 }, value: f.name, onChange: e => set("name", e.target.value), placeholder: "e.g. Capillarys B2 Buffer" }),
+    RG_h("label", { style: labelSt }, "Minimum stock (reorder alert)"),
+    RG_h("input", { type: "number", min: "0", style: { ...inputSt(), marginBottom: 10, width: 140 }, value: f.minQty === undefined || f.minQty === null ? "" : f.minQty, onChange: e => set("minQty", e.target.value), placeholder: "e.g. 5", title: "When On Hand falls to this number or below, the reagent is flagged LOW — leave blank to disable" }),
     RG_h("label", { style: labelSt }, "Quantity is counted"),
     RG_h("select", { style: { ...inputSt(), marginBottom: 14, cursor: "pointer" }, value: f.unitMode, onChange: e => set("unitMode", e.target.value) },
       RG_h("option", { value: "piece" }, "Per piece"),
@@ -16487,7 +16531,7 @@ function ReagentItemModal({ initial, onSave, onClose }) {
     RG_h("div", { style: { display: "flex", gap: 10 } },
       RG_h("button", { style: btnSt("var(--c-key)", "var(--c-bg)"), onClick: () => {
         if (!f.itemId.trim() || !f.name.trim()) { notifyG("Item ID and name are required.", "error"); return; }
-        onSave({ itemId: f.itemId.trim(), name: f.name.trim(), unitMode: f.unitMode });
+        onSave({ itemId: f.itemId.trim(), name: f.name.trim(), unitMode: f.unitMode, minQty: f.minQty === "" || f.minQty === undefined || isNaN(Number(f.minQty)) ? "" : Math.max(0, Number(f.minQty)) });
       } }, "Save"),
       RG_h("button", { style: btnSt("var(--c-border)", "var(--c-text2)"), onClick: onClose }, "Cancel")));
 }
@@ -16530,6 +16574,7 @@ function ReagentsTab({ profile, labs, catalog, notify }) {
   const [spares, setSpares] = useState([]);
   const [sub, setSub] = useState("stock");
   const [logKind, setLogKind] = useState("reagents");
+  const [rgLowOnly, setRgLowOnly] = useState(false);
   const [editing, setEditing] = useState(null);
   const [moveFor, setMoveFor] = useState(null);
   const [histFor, setHistFor] = useState(null);
@@ -16539,6 +16584,7 @@ function ReagentsTab({ profile, labs, catalog, notify }) {
   const canEdit = !!profile.isAdmin || pCanTab(profile, "inventory", "edit") || pCanSub(profile, "reagents", "edit");
   const employees = useMemo(() => Array.from(new Set(((catalog && catalog.departments) || []).flatMap(d => Array.isArray(d.employees) ? d.employees : []).concat(((catalog && catalog.employees) || []).map(e2 => e2 && (e2.name || e2))).map(x => String(x || "").trim()).filter(Boolean))).sort(), [catalog]);
   const onHand = it => (it.movements || []).reduce((s2, m) => s2 + (m.type === "in" ? 1 : -1) * (Number(m.qty) || 0), 0);
+  const rgLow = (items || []).filter(it => stockLevel(onHand(it), it.minQty));
   const nearestExpiry = it => { const ds = (it.movements || []).filter(m => m.type === "in" && m.expiry).map(m => m.expiry).sort(); return ds[0] || ""; };
   const expiryColor = d => { if (!d) return "var(--c-text5)"; const days = Math.floor((new Date(d) - new Date()) / 864e5); return days < 0 ? "#f87171" : days < 60 ? "#f59e0b" : "#34d399"; };
   const saveMove = async mv => {
@@ -16555,7 +16601,7 @@ function ReagentsTab({ profile, labs, catalog, notify }) {
     { id: "itemId", label: "Item ID", w: 110, sv: it => it.itemId || "", render: it => RG_h("span", { style: { fontFamily: "monospace", fontSize: 12, color: "var(--c-key)" } }, it.itemId) },
     { id: "name", label: "Item", w: 240, sv: it => it.name || "" },
     { id: "unit", label: "Unit", w: 70, sv: it => it.unitMode || "piece", render: it => RG_h("span", { style: { fontSize: 11.5 } }, it.unitMode === "kit" ? "kit" : "piece") },
-    { id: "hand", label: "On Hand", w: 90, sv: it => String(onHand(it)), render: it => RG_h("span", { style: { fontWeight: 800, color: onHand(it) > 0 ? "#34d399" : "#f87171" } }, onHand(it)) },
+    { id: "hand", label: "On Hand", w: 90, sv: it => String(onHand(it)), render: it => { const h2 = onHand(it); const lv = stockLevel(h2, it.minQty); return RG_h("span", { title: lv === "out" ? "OUT OF STOCK — place an order" : lv === "low" ? "At or below the minimum (" + it.minQty + ") — place an order" : it.minQty ? "Minimum: " + it.minQty : "", style: { fontWeight: 800, color: lv === "out" ? "#f87171" : lv === "low" ? "#f97316" : "#34d399" } }, h2, lv === "out" ? " ⛔" : lv === "low" ? " ⚠" : ""); } },
     { id: "exp", label: "Nearest Expiry", w: 115, sv: it => nearestExpiry(it), render: it => { const d = nearestExpiry(it); return RG_h("span", { style: { color: expiryColor(d), fontSize: 12 } }, d ? fmtDate(d) : "—"); } },
     { id: "moves", label: "Moves", w: 70, sv: it => String((it.movements || []).length) },
     { id: "act", label: "", w: 210, sv: () => "", render: it => RG_h("span", { onClick: e2 => e2.stopPropagation(), style: { whiteSpace: "nowrap" } },
@@ -16587,7 +16633,10 @@ function ReagentsTab({ profile, labs, catalog, notify }) {
       sub === "stock" && canEdit ? RG_h("button", { style: { ...btnSt("var(--c-key)", "var(--c-bg)"), marginLeft: "auto" }, onClick: () => setEditing("new") }, "+ New Item") : null),
     sub === "stock" ? RG_h("div", null,
       items === null ? RG_h("div", { style: { color: "var(--c-text4)", fontSize: 13 } }, "Loading…") :
-      RG_h(ITable, { id: "reagents", cols: RCOLS, rows: items, rowKey: it => it.id, initSort: { col: "itemId", dir: 1 }, filterPlaceholder: "🔍 Filter items…", maxH: "calc(100vh - 300px)", empty: "No reagents / consumables yet — add the first item.", onRowClick: it => setHistFor(it) })) :
+      rgLow.length ? RG_h("div", { style: { display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap", border: "1px solid #f9731655", background: "#f9731614", borderRadius: 10, padding: "8px 12px", marginBottom: 10, fontSize: 12.5 } },
+    RG_h("span", { style: { fontWeight: 800, color: "#f97316" } }, "⚠ ", rgLow.length, " reagent(s) at or below minimum stock — place an order."),
+    RG_h("button", { style: { ...btnSt(rgLowOnly ? "#f97316" : "var(--c-border)", rgLowOnly ? "#1a1a1a" : "var(--c-text2)"), padding: "3px 10px", fontSize: 11.5 }, onClick: () => setRgLowOnly(v => !v) }, rgLowOnly ? "Showing low stock — show all" : "Show low stock only")) : null,
+      RG_h(ITable, { id: "reagents", cols: RCOLS, rows: rgLowOnly ? (items || []).filter(it => stockLevel(onHand(it), it.minQty)) : items, rowKey: it => it.id, initSort: { col: "itemId", dir: 1 }, filterPlaceholder: "🔍 Filter items…", maxH: "calc(100vh - 300px)", empty: "No reagents / consumables yet — add the first item.", onRowClick: it => setHistFor(it) })) :
     RG_h("div", null,
       RG_h("div", { style: { display: "flex", gap: 8, marginBottom: 10, flexWrap: "wrap" } },
         [["machines", "🔬 Machine Logs"], ["spares", "🔧 Spare Parts Logs"], ["reagents", "🧪 Reagents / Consumables Logs"]].map(p =>
