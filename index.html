@@ -323,7 +323,7 @@
 (function () {
   var okLibs = (typeof firebase !== "undefined") && (typeof React !== "undefined") && (typeof ReactDOM !== "undefined") && (typeof XLSX !== "undefined");
   window.__IBASE_LIBS_OK = okLibs;
-  window.__IBASE_BUILD = "v144";
+  window.__IBASE_BUILD = "v145";
   if (!okLibs) {
     document.getElementById("root").innerHTML =
       "<div style='max-width:520px;margin:90px auto;padding:30px;background:#16181d;border:1px solid #f8717155;border-radius:16px;font-family:system-ui,sans-serif;color:#e5e7eb;text-align:center'>" +
@@ -3098,7 +3098,7 @@ function Login({
       letterSpacing: 2.5,
       textTransform: "uppercase"
     }
-  }, "Installed Base Management \u00b7 build v144"), !dept ? /*#__PURE__*/React.createElement("div", null,
+  }, "Installed Base Management \u00b7 build v145"), !dept ? /*#__PURE__*/React.createElement("div", null,
     /*#__PURE__*/React.createElement("div", { style: { fontSize: 12.5, color: "var(--c-text3)", textAlign: "center", marginBottom: 14 } }, "Select your department or module to continue"),
     /*#__PURE__*/React.createElement("div", { style: { display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 } },
       (depts || []).filter(d => !d.disabled).map((d, i) => /*#__PURE__*/React.createElement("button", { key: (d.id || d.name) + i, onClick: () => pickDept(d.name), style: { background: "var(--c-bg)", border: "1px solid var(--c-border)", borderRadius: 12, padding: "16px 10px", cursor: "pointer", display: "flex", flexDirection: "column", alignItems: "center", gap: 8, color: "var(--c-text2)" } },
@@ -4628,6 +4628,26 @@ function Modal({
   onClose,
   wide
 }) {
+  // Every popup is MOVABLE: drag it by its title bar (mouse or touch).
+  const [pos, setPos] = React.useState({ x: 0, y: 0 });
+  const dragRef = React.useRef(null);
+  const startDrag = e => {
+    if (e.target && e.target.closest && e.target.closest("button, input, select, textarea, a")) return;
+    e.preventDefault();
+    dragRef.current = { sx: e.clientX, sy: e.clientY, ox: pos.x, oy: pos.y };
+    const move = ev => {
+      const d2 = dragRef.current;
+      if (!d2) return;
+      setPos({ x: d2.ox + (ev.clientX - d2.sx), y: d2.oy + (ev.clientY - d2.sy) });
+    };
+    const up = () => {
+      dragRef.current = null;
+      window.removeEventListener("pointermove", move);
+      window.removeEventListener("pointerup", up);
+    };
+    window.addEventListener("pointermove", move);
+    window.addEventListener("pointerup", up);
+  };
   // Escape still closes (an intentional key press); clicking the dark backdrop
   // does NOT — that guards against accidental clicks wiping a half-typed form.
   React.useEffect(() => {
@@ -4657,14 +4677,20 @@ function Modal({
       borderRadius: 14,
       padding: 22,
       width: "100%",
-      maxWidth: wide ? 980 : 460
+      maxWidth: wide ? 980 : 460,
+      transform: "translate(" + pos.x + "px," + pos.y + "px)"
     }
   }, /*#__PURE__*/React.createElement("div", {
+    onPointerDown: startDrag,
+    title: "Drag to move this window",
     style: {
       display: "flex",
       justifyContent: "space-between",
       alignItems: "center",
-      marginBottom: 16
+      marginBottom: 16,
+      cursor: "move",
+      touchAction: "none",
+      userSelect: "none"
     }
   }, /*#__PURE__*/React.createElement("div", {
     style: {
@@ -16697,11 +16723,10 @@ function ReagentsTab({ profile, labs, catalog, notify }) {
       RG_h("button", { style: btnSt(sub === "logs" ? "var(--c-key)" : "var(--c-border)", sub === "logs" ? "var(--c-bg)" : "var(--c-text2)"), onClick: () => setSub("logs") }, "🧾 Transaction Logs"),
       sub === "stock" && canEdit ? RG_h("button", { style: { ...btnSt("var(--c-key)", "var(--c-bg)"), marginLeft: "auto" }, onClick: () => setEditing("new") }, "+ New Item") : null),
     sub === "stock" ? RG_h("div", null,
-      items === null ? RG_h("div", { style: { color: "var(--c-text4)", fontSize: 13 } }, "Loading…") :
-      rgLow.length ? RG_h("div", { style: { display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap", border: "1px solid #f9731655", background: "#f9731614", borderRadius: 10, padding: "8px 12px", marginBottom: 10, fontSize: 12.5 } },
+      items === null ? RG_h("div", { style: { color: "var(--c-text4)", fontSize: 13 } }, "Loading…") : RG_h(React.Fragment, null, rgLow.length ? RG_h("div", { style: { display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap", border: "1px solid #f9731655", background: "#f9731614", borderRadius: 10, padding: "8px 12px", marginBottom: 10, fontSize: 12.5 } },
     RG_h("span", { style: { fontWeight: 800, color: "#f97316" } }, "⚠ ", rgLow.length, " reagent(s) at or below minimum stock — place an order."),
     RG_h("button", { style: { ...btnSt(rgLowOnly ? "#f97316" : "var(--c-border)", rgLowOnly ? "#1a1a1a" : "var(--c-text2)"), padding: "3px 10px", fontSize: 11.5 }, onClick: () => setRgLowOnly(v => !v) }, rgLowOnly ? "Showing low stock — show all" : "Show low stock only")) : null,
-      RG_h(ITable, { id: "reagents", cols: RCOLS, rows: rgLowOnly ? (items || []).filter(it => stockLevel(onHand(it), it.minQty)) : items, rowKey: it => it.id, initSort: { col: "itemId", dir: 1 }, filterPlaceholder: "🔍 Filter items…", maxH: "calc(100vh - 300px)", empty: "No reagents / consumables yet — add the first item.", onRowClick: it => setHistFor(it) })) :
+      RG_h(ITable, { id: "reagents", cols: RCOLS, rows: rgLowOnly ? (items || []).filter(it => stockLevel(onHand(it), it.minQty)) : items, rowKey: it => it.id, initSort: { col: "itemId", dir: 1 }, filterPlaceholder: "🔍 Filter items…", maxH: "calc(100vh - 300px)", empty: "No reagents / consumables yet — add the first item.", onRowClick: it => setHistFor(it) }))) :
     RG_h("div", null,
       RG_h("div", { style: { display: "flex", gap: 8, marginBottom: 10, flexWrap: "wrap" } },
         [["machines", "🔬 Machine Logs"], ["spares", "🔧 Spare Parts Logs"], ["reagents", "🧪 Reagents / Consumables Logs"]].map(p =>
