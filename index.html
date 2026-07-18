@@ -323,7 +323,7 @@
 (function () {
   var okLibs = (typeof firebase !== "undefined") && (typeof React !== "undefined") && (typeof ReactDOM !== "undefined") && (typeof XLSX !== "undefined");
   window.__IBASE_LIBS_OK = okLibs;
-  window.__IBASE_BUILD = "v149";
+  window.__IBASE_BUILD = "v150";
   if (!okLibs) {
     document.getElementById("root").innerHTML =
       "<div style='max-width:520px;margin:90px auto;padding:30px;background:#16181d;border:1px solid #f8717155;border-radius:16px;font-family:system-ui,sans-serif;color:#e5e7eb;text-align:center'>" +
@@ -3104,7 +3104,7 @@ function Login({
       letterSpacing: 2.5,
       textTransform: "uppercase"
     }
-  }, "Installed Base Management \u00b7 build v149"), !dept ? /*#__PURE__*/React.createElement("div", null,
+  }, "Installed Base Management \u00b7 build v150"), !dept ? /*#__PURE__*/React.createElement("div", null,
     /*#__PURE__*/React.createElement("div", { style: { fontSize: 12.5, color: "var(--c-text3)", textAlign: "center", marginBottom: 14 } }, "Select your department or module to continue"),
     /*#__PURE__*/React.createElement("div", { style: { display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 } },
       (depts || []).filter(d => !d.disabled).map((d, i) => /*#__PURE__*/React.createElement("button", { key: (d.id || d.name) + i, onClick: () => pickDept(d.name), style: { background: "var(--c-bg)", border: "1px solid var(--c-border)", borderRadius: 12, padding: "16px 10px", cursor: "pointer", display: "flex", flexDirection: "column", alignItems: "center", gap: 8, color: "var(--c-text2)" } },
@@ -9454,7 +9454,8 @@ function VisitsTab({
   });
   const [selected, setSelected] = useState({});
   const [rowHeights, setRowHeights] = useState({});
-  const [delMode, setDelMode] = useState(false); // admins arm deletion FIRST, then pick rows // per-row Excel-style overrides
+  const [delMode, setDelMode] = useState(false); // admins arm deletion FIRST, then pick rows
+  const [histFor, setHistFor] = useState(null); // 🕓 tap-to-view edit history (touch has no hover) // per-row Excel-style overrides
   const [bulkBusy, setBulkBusy] = useState(false);
   const [limit, setLimit] = useState(200); // rows shown; expandable to ALL
   const dragCol = useRef(null);
@@ -9594,6 +9595,22 @@ function VisitsTab({
     setSelected({});
     setDelMode(false);
   }
+  function histBody(v) {
+    const entries = (v && v.editLog || []).filter(e2 => scrubOwner(e2.by)).slice().reverse();
+    return /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("div", {
+      style: { fontSize: 12, color: "var(--c-text4)", marginBottom: 10 }
+    }, (v.type || "Visit") + " · " + fmtDate(v.date) + " · " + (v._machine || "") + " @ " + (v._lab || "") + (scrubOwner(v.loggedBy) ? " — logged by " + scrubOwner(v.loggedBy) : "")), entries.length ? entries.map((e2, i2) => /*#__PURE__*/React.createElement("div", {
+      key: i2,
+      style: { borderTop: i2 ? "1px solid var(--c-border)" : "none", padding: "8px 0" }
+    }, /*#__PURE__*/React.createElement("div", {
+      style: { fontWeight: 800, fontSize: 12.5 }
+    }, "✎ ", scrubOwner(e2.by) || "—", " · ", String(e2.at || "").replace("T", " ").slice(0, 16)), (e2.changes || []).map((c2, i3) => /*#__PURE__*/React.createElement("div", {
+      key: i3,
+      style: { fontSize: 12, color: "var(--c-text3)", padding: "2px 0 0 14px" }
+    }, "• ", c2)))) : /*#__PURE__*/React.createElement("div", {
+      style: { color: "var(--c-text4)", fontSize: 12.5 }
+    }, "No visible edits."));
+  }
   async function delVisitCore(v) {
     const lab = labs.find(l => l.id === v._labId);
     if (!lab) {
@@ -9661,7 +9678,10 @@ function VisitsTab({
       fontSize: 11.5,
       color: "var(--c-text3)"
     }
-  }, "🔒 Visit editing is ", /*#__PURE__*/React.createElement("b", null, "off"), ". An administrator can turn it on in ", /*#__PURE__*/React.createElement("b", null, "Settings → Tabs & Visibility → Visit / LOGS Corrections"), "; then click any row to correct it (every change is kept in its history)."), editV && /*#__PURE__*/React.createElement(VisitModal, {
+  }, "🔒 Visit editing is ", /*#__PURE__*/React.createElement("b", null, "off"), ". An administrator can turn it on in ", /*#__PURE__*/React.createElement("b", null, "Settings → Tabs & Visibility → Visit / LOGS Corrections"), "; then click any row to correct it (every change is kept in its history)."), histFor ? /*#__PURE__*/React.createElement(Modal, {
+    title: "🕓 Edit history",
+    onClose: () => setHistFor(null)
+  }, histBody(histFor)) : null, editV && /*#__PURE__*/React.createElement(VisitModal, {
     canDlAtt: canDL(profile, "attachments", dl),
     labName: editV._lab,
     statusOptions: statusOptionsV,
@@ -10004,16 +10024,13 @@ function VisitsTab({
   }, "px")))), /*#__PURE__*/React.createElement("div", {
     style: {
       ...cardSt,
-      overflow: "auto",
-      maxHeight: "calc(100vh - 270px)",
-      padding: "0 14px 14px"
+      padding: 14
     }
   }, /*#__PURE__*/React.createElement("div", {
     style: {
       display: "flex",
       alignItems: "center",
       gap: 10,
-      paddingTop: 14,
       marginBottom: 8,
       flexWrap: "wrap"
     }
@@ -10121,7 +10138,12 @@ function VisitsTab({
       setSelected({});
       setBulkBusy(false);
     }
-  }, bulkBusy ? "Moving…" : "🗑 Delete selected (" + selCount + ") → Bin")), /*#__PURE__*/React.createElement("table", {
+  }, bulkBusy ? "Moving…" : "🗑 Delete selected (" + selCount + ") → Bin")), /*#__PURE__*/React.createElement("div", {
+    style: {
+      overflow: "auto",
+      maxHeight: "calc(100vh - 330px)"
+    }
+  }, /*#__PURE__*/React.createElement("table", {
     className: "ibzv",
     style: {
       borderCollapse: "separate",
@@ -10144,7 +10166,7 @@ function VisitsTab({
         position: "sticky",
         top: 0,
         background: "var(--c-bg2)",
-        boxShadow: "inset 0 -1px 0 var(--c-border), 0 1px 0 var(--c-bg2), 0 -14px 0 0 var(--c-card)",
+        boxShadow: "inset 0 -1px 0 var(--c-border)",
         zIndex: 8
       },
       onDragStart: () => {
@@ -10284,7 +10306,19 @@ function VisitsTab({
         width: 86
       },
       onClick: e => e.stopPropagation()
-    }, editEnabled ? canEditVisitBy(profile, v) ? /*#__PURE__*/React.createElement("button", {
+    }, ((v.editLog || []).filter(e2 => scrubOwner(e2.by)).length ? /*#__PURE__*/React.createElement("button", {
+      title: "View what was changed and by whom",
+      style: {
+        ...btnSt("var(--c-border)", "var(--c-text3)"),
+        padding: "3px 8px",
+        fontSize: 11,
+        marginRight: 4
+      },
+      onClick: e => {
+        e.stopPropagation();
+        setHistFor(v);
+      }
+    }, "🕓") : null), editEnabled ? canEditVisitBy(profile, v) ? /*#__PURE__*/React.createElement("button", {
       title: "Correct this visit — every change is kept in its history",
       style: {
         ...btnSt("var(--c-border)", "var(--c-text2)"),
@@ -10317,7 +10351,7 @@ function VisitsTab({
       ...tdSt,
       color: "var(--c-text4)"
     }
-  }, "No visits match the current filters.")))), shown.length > limit && /*#__PURE__*/React.createElement("div", {
+  }, "No visits match the current filters."))))), shown.length > limit && /*#__PURE__*/React.createElement("div", {
     style: {
       display: "flex",
       gap: 10,
