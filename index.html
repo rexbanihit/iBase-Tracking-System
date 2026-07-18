@@ -323,7 +323,7 @@
 (function () {
   var okLibs = (typeof firebase !== "undefined") && (typeof React !== "undefined") && (typeof ReactDOM !== "undefined") && (typeof XLSX !== "undefined");
   window.__IBASE_LIBS_OK = okLibs;
-  window.__IBASE_BUILD = "v142";
+  window.__IBASE_BUILD = "v143";
   if (!okLibs) {
     document.getElementById("root").innerHTML =
       "<div style='max-width:520px;margin:90px auto;padding:30px;background:#16181d;border:1px solid #f8717155;border-radius:16px;font-family:system-ui,sans-serif;color:#e5e7eb;text-align:center'>" +
@@ -3098,7 +3098,7 @@ function Login({
       letterSpacing: 2.5,
       textTransform: "uppercase"
     }
-  }, "Installed Base Management \u00b7 build v142"), !dept ? /*#__PURE__*/React.createElement("div", null,
+  }, "Installed Base Management \u00b7 build v143"), !dept ? /*#__PURE__*/React.createElement("div", null,
     /*#__PURE__*/React.createElement("div", { style: { fontSize: 12.5, color: "var(--c-text3)", textAlign: "center", marginBottom: 14 } }, "Select your department or module to continue"),
     /*#__PURE__*/React.createElement("div", { style: { display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 } },
       (depts || []).filter(d => !d.disabled).map((d, i) => /*#__PURE__*/React.createElement("button", { key: (d.id || d.name) + i, onClick: () => pickDept(d.name), style: { background: "var(--c-bg)", border: "1px solid var(--c-border)", borderRadius: 12, padding: "16px 10px", cursor: "pointer", display: "flex", flexDirection: "column", alignItems: "center", gap: 8, color: "var(--c-text2)" } },
@@ -5704,7 +5704,7 @@ function recDiff(FIELDS, a, b) {
 }
 const MACHINE_DIFF_FIELDS = [["instrument", "Instrument"], ["itemCode", "Item code"], ["serialNo", "Serial No"], ["installDate", "Install date"], ["installedBy", "Installed by"], ["lastPM", "Last PM"], ["pmInterval", "PM interval"], ["status", "Status"], ["software", "Software"], ["firmware", "Firmware"]];
 const INV_DIFF_FIELDS = [["brand", "Brand"], ["machineModel", "Model"], ["serialNo", "Serial No"], ["itemCode", "Item code"], ["condition", "Condition"], ["status", "Status"], ["location", "Location"], ["dealer", "Dealer"], ["remarks", "Remarks"], ["importDate", "Import date"], ["ownership", "Ownership"], ["salesPerson", "Sales person"], ["poDate", "PO date"]];
-const SPARE_DIFF_FIELDS = [["brand", "Brand"], ["partNumber", "Part number"], ["description", "Description"]];
+const SPARE_DIFF_FIELDS = [["brand", "Brand"], ["partNumber", "Part number"], ["description", "Description"], ["minQty", "Minimum stock"], ["compat", "Compatible machines"]];
 // Admin-only edit history block (machines, inventory, spare parts).
 function EditHistory({
   log
@@ -7210,7 +7210,7 @@ function SpareParts({
   const shown = parts.filter(p => {
     const s = q.toLowerCase();
     if (!s) return true;
-    return [p.brand, p.partNumber, p.description].some(x => String(x || "").toLowerCase().includes(s));
+    return [p.brand, p.partNumber, p.description, Array.isArray(p.compat) ? p.compat.join(" ") : p.compat].some(x => String(x || "").toLowerCase().includes(s));
   }).sort((a, b) => String(a.brand + a.partNumber).localeCompare(String(b.brand + b.partNumber)));
   const onHand = p => (p.receipts || []).reduce((s, r) => s + (Number(r.qty) || 0), 0) - (p.issues || []).reduce((s, r) => s + (Number(r.qty) || 0), 0);
   const lowParts = parts.filter(p => stockLevel(onHand(p), p.minQty));
@@ -7351,6 +7351,26 @@ function SpareParts({
       }, h2, lv === "out" ? " ⛔" : lv === "low" ? " ⚠" : "");
     }
   }, {
+    id: "min",
+    label: "Min Stock",
+    w: 84,
+    sv: p => p.minQty === "" || p.minQty === undefined || p.minQty === null ? "" : String(p.minQty),
+    render: p => p.minQty === "" || p.minQty === undefined || p.minQty === null ? /*#__PURE__*/React.createElement("span", {
+      style: { color: "var(--c-text5)" }
+    }, "—") : /*#__PURE__*/React.createElement("span", {
+      title: "Reorder alert at " + p.minQty + " or fewer",
+      style: { fontWeight: 700, color: "var(--c-text3)" }
+    }, p.minQty)
+  }, {
+    id: "compat",
+    label: "Compatible machines",
+    w: 220,
+    sv: p => Array.isArray(p.compat) ? p.compat.join(", ") : String(p.compat || ""),
+    render: p => {
+      const t2 = Array.isArray(p.compat) ? p.compat.join(", ") : String(p.compat || "");
+      return t2 ? /*#__PURE__*/React.createElement("span", { style: { fontSize: 11.5 } }, t2) : /*#__PURE__*/React.createElement("span", { style: { color: "var(--c-text5)" } }, "—");
+    }
+  }, {
     id: "act",
     label: "",
     w: 180,
@@ -7464,11 +7484,15 @@ function SparePartForm({
   onSave
 }) {
   const [qty, setQty] = useState(initial ? String(onHand != null ? onHand : "") : "");
-  const [f, setF] = useState(initial || {
+  const [f, setF] = useState(initial ? {
+    ...initial,
+    compatText: Array.isArray(initial.compat) ? initial.compat.join(", ") : String(initial.compat || "")
+  } : {
     brand: brands.find(b => brandOk(b)) || brands[0] || "",
     partNumber: "",
     description: "",
-    minQty: ""
+    minQty: "",
+    compatText: ""
   });
   const set = (k, v) => setF(x => ({
     ...x,
@@ -7517,6 +7541,19 @@ function SparePartForm({
     title: "When On Hand falls to this number or below, the part is flagged LOW — leave blank to disable"
   }), /*#__PURE__*/React.createElement("label", {
     style: labelSt
+  }, "Compatible machines (comma-separated)"), /*#__PURE__*/React.createElement("input", {
+    style: { ...inputSt(), marginBottom: 10 },
+    value: f.compatText || "",
+    onChange: e => set("compatText", e.target.value),
+    list: "sp-compat-models",
+    placeholder: "e.g. Capillarys 3 Tera, Minicap Flex"
+  }), /*#__PURE__*/React.createElement("datalist", {
+    id: "sp-compat-models"
+  }, ((window.__ibaseCatalog && window.__ibaseCatalog.machines) || []).map((x, i) => /*#__PURE__*/React.createElement("option", {
+    key: (x.model || "") + i,
+    value: x.model
+  }))), /*#__PURE__*/React.createElement("label", {
+    style: labelSt
   }, initial ? "Quantity on hand (adjusting writes a stock entry)" : "Initial quantity on hand"), /*#__PURE__*/React.createElement("input", {
     type: "number",
     min: "0",
@@ -7535,6 +7572,7 @@ function SparePartForm({
       partNumber: f.partNumber.trim(),
       description: f.description.trim(),
       minQty: f.minQty === "" || f.minQty === undefined || isNaN(Number(f.minQty)) ? "" : Math.max(0, Number(f.minQty)),
+      compat: String(f.compatText || "").split(",").map(t2 => t2.trim()).filter(Boolean),
       __qty: qty
     })
   }, "Save"), isAdmin && initial && /*#__PURE__*/React.createElement(EditHistory, {
@@ -16602,6 +16640,7 @@ function ReagentsTab({ profile, labs, catalog, notify }) {
     { id: "name", label: "Item", w: 240, sv: it => it.name || "" },
     { id: "unit", label: "Unit", w: 70, sv: it => it.unitMode || "piece", render: it => RG_h("span", { style: { fontSize: 11.5 } }, it.unitMode === "kit" ? "kit" : "piece") },
     { id: "hand", label: "On Hand", w: 90, sv: it => String(onHand(it)), render: it => { const h2 = onHand(it); const lv = stockLevel(h2, it.minQty); return RG_h("span", { title: lv === "out" ? "OUT OF STOCK — place an order" : lv === "low" ? "At or below the minimum (" + it.minQty + ") — place an order" : it.minQty ? "Minimum: " + it.minQty : "", style: { fontWeight: 800, color: lv === "out" ? "#f87171" : lv === "low" ? "#f97316" : "#34d399" } }, h2, lv === "out" ? " ⛔" : lv === "low" ? " ⚠" : ""); } },
+    { id: "min", label: "Min Stock", w: 84, sv: it => it.minQty === "" || it.minQty === undefined || it.minQty === null ? "" : String(it.minQty), render: it => it.minQty === "" || it.minQty === undefined || it.minQty === null ? RG_h("span", { style: { color: "var(--c-text5)" } }, "—") : RG_h("span", { title: "Reorder alert at " + it.minQty + " or fewer", style: { fontWeight: 700, color: "var(--c-text3)" } }, it.minQty) },
     { id: "exp", label: "Nearest Expiry", w: 115, sv: it => nearestExpiry(it), render: it => { const d = nearestExpiry(it); return RG_h("span", { style: { color: expiryColor(d), fontSize: 12 } }, d ? fmtDate(d) : "—"); } },
     { id: "moves", label: "Moves", w: 70, sv: it => String((it.movements || []).length) },
     { id: "act", label: "", w: 210, sv: () => "", render: it => RG_h("span", { onClick: e2 => e2.stopPropagation(), style: { whiteSpace: "nowrap" } },
