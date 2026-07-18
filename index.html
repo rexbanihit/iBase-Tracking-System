@@ -323,7 +323,7 @@
 (function () {
   var okLibs = (typeof firebase !== "undefined") && (typeof React !== "undefined") && (typeof ReactDOM !== "undefined") && (typeof XLSX !== "undefined");
   window.__IBASE_LIBS_OK = okLibs;
-  window.__IBASE_BUILD = "v145";
+  window.__IBASE_BUILD = "v149";
   if (!okLibs) {
     document.getElementById("root").innerHTML =
       "<div style='max-width:520px;margin:90px auto;padding:30px;background:#16181d;border:1px solid #f8717155;border-radius:16px;font-family:system-ui,sans-serif;color:#e5e7eb;text-align:center'>" +
@@ -1981,10 +1981,16 @@ function scrubOwner(e) {
 // are administrator/owner-only — a regular user can never claim them.
 function canEditVisitBy(profile, v) {
   if (!profile) return false;
-  if (profile.isAdmin || isOwnerAcct(profile)) return true;
+  if (isOwnerAcct(profile)) return true; // the sole owner can edit anything
   const lb = String(v && v.loggedBy || "").trim().toLowerCase();
   const me = String(meEmail(profile) || "").trim().toLowerCase();
-  return !!lb && lb !== "excel" && !!me && lb === me;
+  if (!!lb && lb !== "excel" && !!me && lb === me) return true; // the logger — matched by ACCOUNT, never by name
+  if (!profile.isAdmin) return false; // regular users: own entries only
+  if (v && v.loggedByAdmin === true) return false;
+  const dir = window.__ibaseUsers || {};
+  const lu = lb && dir[lb];
+  if (lu && (lu.isAdmin === true || lu.admin === true || String(lu.role || "").trim().toLowerCase() === "admin")) return false;
+  return true;
 }
 
 // THE one owner check, used everywhere (badge, cards, filters, gates).
@@ -3098,7 +3104,7 @@ function Login({
       letterSpacing: 2.5,
       textTransform: "uppercase"
     }
-  }, "Installed Base Management \u00b7 build v145"), !dept ? /*#__PURE__*/React.createElement("div", null,
+  }, "Installed Base Management \u00b7 build v149"), !dept ? /*#__PURE__*/React.createElement("div", null,
     /*#__PURE__*/React.createElement("div", { style: { fontSize: 12.5, color: "var(--c-text3)", textAlign: "center", marginBottom: 14 } }, "Select your department or module to continue"),
     /*#__PURE__*/React.createElement("div", { style: { display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 } },
       (depts || []).filter(d => !d.disabled).map((d, i) => /*#__PURE__*/React.createElement("button", { key: (d.id || d.name) + i, onClick: () => pickDept(d.name), style: { background: "var(--c-bg)", border: "1px solid var(--c-border)", borderRadius: 12, padding: "16px 10px", cursor: "pointer", display: "flex", flexDirection: "column", alignItems: "center", gap: 8, color: "var(--c-text2)" } },
@@ -5104,7 +5110,7 @@ function LabDetail({
     onSave: async (v, newStatus, pending) => {
       const orig = editVisit.visit;
       if (!canEditVisitBy(profile, orig)) {
-        notify("Only the person who logged this visit, an administrator, or the owner can edit it.", "error");
+        notify("Only the account that logged this visit can edit it. Admins may edit non-admin entries; an admin-logged entry can be edited only by that admin or the owner.", "error");
         return;
       }
       let attMetas = [];
@@ -5255,6 +5261,7 @@ function LabDetail({
         ...v,
         attachments: [...(v.attachments || []), ...attMetas],
         loggedBy: isOwnerAcct(profile) ? "" : meEmail(profile),
+        loggedByAdmin: !!(profile && profile.isAdmin) && !isOwnerAcct(profile),
         loggedAt: auditNow()
       };
       const machines = (lab.machines || []).map(m => {
@@ -9344,7 +9351,7 @@ function VisitsTab({
     const row = editV;
     if (!row) return;
     if (!canEditVisitBy(profile, row)) {
-      notify("Only the person who logged this visit, an administrator, or the owner can edit it.", "error");
+      notify("Only the account that logged this visit can edit it. Admins may edit non-admin entries; an admin-logged entry can be edited only by that admin or the owner.", "error");
       return;
     }
     const lab = labs.find(l => l.id === row._labId);
@@ -9446,7 +9453,8 @@ function VisitsTab({
     dir: -1
   });
   const [selected, setSelected] = useState({});
-  const [rowHeights, setRowHeights] = useState({}); // per-row Excel-style overrides
+  const [rowHeights, setRowHeights] = useState({});
+  const [delMode, setDelMode] = useState(false); // admins arm deletion FIRST, then pick rows // per-row Excel-style overrides
   const [bulkBusy, setBulkBusy] = useState(false);
   const [limit, setLimit] = useState(200); // rows shown; expandable to ALL
   const dragCol = useRef(null);
@@ -9492,19 +9500,29 @@ function VisitsTab({
   const shown = useMemo(() => {
     const c = colDef(sort.col);
     if (!c) return filtered;
-    // Ties break by the ACTUAL visit chronology — Date & Time work started —
-    // never by when the entry was typed in. (Imported/legacy rows without it
-    // fall back to their source timestamp.) Latest work sits on top.
-    const recency = v => String(v.dtWorkStarted || v.srcTimestamp || v.loggedAt || "");
+    // The Date column orders by the ACTUAL work chronology, parsed to real
+    // time — Date & Time work started first, then the source timestamp, then
+    // the plain date. Parsing (not text comparison) makes imported rows in
+    // other date formats order correctly beside form-entered ISO values, so
+    // the latest visit by work-started is ALWAYS the top-most row.
+    const workTs = v => {
+      const cands = [v.dtWorkStarted, v.srcTimestamp, v.date];
+      for (const c2 of cands) {
+        if (!c2) continue;
+        const t2 = Date.parse(String(c2));
+        if (!isNaN(t2)) return t2;
+      }
+      return 0;
+    };
+    if (sort.col === "date") return [...filtered].sort((a, b) => sort.dir * (workTs(a) - workTs(b)));
+    const recency = v => workTs(v);
     return [...filtered].sort((a, b) => {
       const p = sort.dir * String(c.sv(a)).localeCompare(String(c.sv(b)), undefined, {
         numeric: true,
         sensitivity: "base"
       });
       if (p !== 0) return p;
-      const r2 = recency(b).localeCompare(recency(a), undefined, { numeric: true });
-      if (r2 !== 0) return r2;
-      return 0;
+      return recency(b) - recency(a);
     });
   }, [filtered, sort]);
   function clickSort(id) {
@@ -9574,6 +9592,7 @@ function VisitsTab({
     if (!confirm("🗑 Delete " + (targets.length === 1 ? "this service visit" : targets.length + " selected service visits") + "?\n\n" + targets.slice(0, 5).map(v => "• " + (v.type || "visit") + " · " + fmtDate(v.date) + " · " + v._machine + " @ " + v._lab).join("\n") + (targets.length > 5 ? "\n…and " + (targets.length - 5) + " more" : "") + "\n\nThey move to the 🗑 Bin (restorable).")) return;
     for (const v of targets) await delVisitCore(v);
     setSelected({});
+    setDelMode(false);
   }
   async function delVisitCore(v) {
     const lab = labs.find(l => l.id === v._labId);
@@ -9662,6 +9681,8 @@ function VisitsTab({
         .ibzv tbody tr { cursor: pointer; }
         .ibzv tbody tr:hover td { background: var(--c-card2) !important; }
         .ibzv tbody tr.ibzv-sel td { background: rgba(56,189,248,.15) !important; }
+        .ibzv tbody tr.ibzv-del td { background: rgba(239,68,68,.16) !important; }
+        .ibzv tbody tr.ibzv-del td:first-child { box-shadow: inset 3px 0 0 #ef4444 !important; }
         .ibzv tbody tr.ibzv-sel td:first-child { box-shadow: inset 3px 0 0 var(--c-key); }
         .ibzv th { user-select: none; position: relative; }
         .ibzv .ibzv-grip { position:absolute; top:0; right:-3px; width:7px; height:100%; cursor:col-resize; }
@@ -9862,17 +9883,23 @@ function VisitsTab({
     }
   }, "↺ Reset"), " ", canDeleteLogs ? (() => {
     const nSel = Object.values(selected).filter(Boolean).length;
-    return /*#__PURE__*/React.createElement("button", {
-      title: nSel ? "Move the selected visit(s) to the 🗑 Bin — asks to confirm first" : "First single-click a row to select it (highlight), then delete — administrators only",
-      disabled: !nSel,
-      style: {
-        ...btnSt(nSel ? "#3a1d1d" : "var(--c-border)", nSel ? "#fca5a5" : "var(--c-text5)"),
-        padding: "6px 10px",
-        fontSize: 11.5,
-        cursor: nSel ? "pointer" : "not-allowed"
-      },
-      onClick: delSelectedVisits
-    }, "🗑 Delete service visit", nSel > 1 ? "s (" + nSel + ")" : "");
+    if (!delMode) return /*#__PURE__*/React.createElement("button", {
+      title: "Start deleting: press this FIRST, then select the visit row(s) to delete — administrators only",
+      style: { ...btnSt("var(--c-border)", "#fca5a5"), padding: "6px 10px", fontSize: 11.5 },
+      onClick: () => { setSelected({}); setDelMode(true); }
+    }, "🗑 Delete service visit");
+    return /*#__PURE__*/React.createElement(React.Fragment, null,
+      /*#__PURE__*/React.createElement("span", { style: { fontSize: 11.5, fontWeight: 800, color: "#f87171" } }, "Delete mode — click the row(s) to remove", nSel ? " (" + nSel + " selected)" : ""),
+      /*#__PURE__*/React.createElement("button", {
+        title: nSel ? "Move the selected visit(s) to the 🗑 Bin — asks to confirm first" : "Select at least one row",
+        disabled: !nSel,
+        style: { ...btnSt(nSel ? "#3a1d1d" : "var(--c-border)", nSel ? "#fca5a5" : "var(--c-text5)"), padding: "6px 10px", fontSize: 11.5, cursor: nSel ? "pointer" : "not-allowed" },
+        onClick: delSelectedVisits
+      }, "✓ Delete selected", nSel ? " (" + nSel + ")" : ""),
+      /*#__PURE__*/React.createElement("button", {
+        style: { ...btnSt("var(--c-border)", "var(--c-text2)"), padding: "6px 10px", fontSize: 11.5 },
+        onClick: () => { setDelMode(false); setSelected({}); }
+      }, "✕ Cancel"));
   })() : null, colMenu && /*#__PURE__*/React.createElement("div", {
     style: {
       flexBasis: "100%",
@@ -10147,14 +10174,16 @@ function VisitsTab({
     const h = rowHeights[key] || rowH; // per-row override (drag the row's bottom edge)
     return /*#__PURE__*/React.createElement("tr", {
       key: key,
-      className: selected[key] ? "ibzv-sel" : "",
+      className: selected[key] ? (delMode ? "ibzv-sel ibzv-del" : "ibzv-sel") : "",
       style: {
         height: h
       },
-      onClick: () => setSelected(s => ({
+      onClick: () => setSelected(s => delMode ? {
         ...s,
         [key]: !s[key]
-      }))
+      } : s[key] ? {} : {
+        [key]: true
+      })
     }, visibleOrder.map((id, ci) => {
       const c = colDef(id);
       if (!c) return null;
@@ -10268,7 +10297,7 @@ function VisitsTab({
         setEditV(v);
       }
     }, "✏️") : /*#__PURE__*/React.createElement("span", {
-      title: "Only the person who logged this visit, an administrator, or the owner can edit it",
+      title: "Only the account that logged this visit can edit it. Admins may edit non-admin entries; an admin-logged entry can be edited only by that admin or the owner.",
       style: {
         fontSize: 11,
         color: "var(--c-text5)",
@@ -17031,6 +17060,14 @@ function App() {
   // machines added in a laboratory auto-fill from inventory by serial number
   const invForLabs = useCol("inventory", !!signedProfile && pCanTab(signedProfile, "labs", "view"), notify);
   const users = useCol("users", !!signedProfile && signedProfile.isAdmin, notify);
+  React.useEffect(() => {
+    const m = {};
+    (users || []).forEach(u => {
+      const e2 = String(u.email || u.id || "").trim().toLowerCase();
+      if (e2) m[e2] = u;
+    });
+    window.__ibaseUsers = m;
+  }, [users]);
   const binItems = useCol("bin", !!signedProfile && signedProfile.isAdmin, notify);
   const catalog = useDoc("config/catalog", !!signedProfile);
   // ── automatic-backup scheduler: admin sessions check the schedule each minute ──
