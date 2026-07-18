@@ -337,7 +337,7 @@
 (function () {
   var okLibs = (typeof firebase !== "undefined") && (typeof React !== "undefined") && (typeof ReactDOM !== "undefined") && (typeof XLSX !== "undefined");
   window.__IBASE_LIBS_OK = okLibs;
-  window.__IBASE_BUILD = "v152";
+  window.__IBASE_BUILD = "v153";
   if (!okLibs) {
     document.getElementById("root").innerHTML =
       "<div style='max-width:520px;margin:90px auto;padding:30px;background:#16181d;border:1px solid #f8717155;border-radius:16px;font-family:system-ui,sans-serif;color:#e5e7eb;text-align:center'>" +
@@ -3118,7 +3118,7 @@ function Login({
       letterSpacing: 2.5,
       textTransform: "uppercase"
     }
-  }, "Installed Base Management \u00b7 build v152"), !dept ? /*#__PURE__*/React.createElement("div", null,
+  }, "Installed Base Management \u00b7 build v153"), !dept ? /*#__PURE__*/React.createElement("div", null,
     /*#__PURE__*/React.createElement("div", { style: { fontSize: 12.5, color: "var(--c-text3)", textAlign: "center", marginBottom: 14 } }, "Select your department or module to continue"),
     /*#__PURE__*/React.createElement("div", { style: { display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 } },
       (depts || []).filter(d => !d.disabled).map((d, i) => /*#__PURE__*/React.createElement("button", { key: (d.id || d.name) + i, onClick: () => pickDept(d.name), style: { background: "var(--c-bg)", border: "1px solid var(--c-border)", borderRadius: 12, padding: "16px 10px", cursor: "pointer", display: "flex", flexDirection: "column", alignItems: "center", gap: 8, color: "var(--c-text2)" } },
@@ -10812,6 +10812,29 @@ function OvertimeTab({
   const isMgr = pIsOtManager(profile);
   const editable = pCanTab(profile, "overtime", "edit");
   const [isrView, setIsrView] = useState(null); // ISR → full visit details (movable popup)
+  const [otForm, setOtForm] = useState(null); // the OVERTIME FORM being filled before filing
+  function printOtForm(fm) {
+    const esc = t => String(t == null ? "" : t).replace(/&/g, "&amp;").replace(/</g, "&lt;");
+    const lines = String(fm.tasks || "").split(/\n/).slice(0, 5);
+    while (lines.length < 5) lines.push("");
+    const html = "<!doctype html><html><head><title>Overtime Form</title><style>@page{size:105mm 148mm;margin:5mm}body{font-family:Arial,Helvetica,sans-serif;color:#000;margin:0}.frame{border:1.6px solid #000;padding:8px 9px;min-height:135mm;box-sizing:border-box}h1{font-size:12.5px;text-align:center;margin:0 0 8px;font-weight:800}.row{display:flex;align-items:flex-end;gap:6px;margin:5px 0;font-size:9.5px;font-weight:700}.row span{font-weight:400;border-bottom:1px solid #000;flex:1;min-height:12px;padding:0 3px}.cols{display:flex;justify-content:space-between;margin:9px 0 2px;font-size:9.5px;font-weight:700}.tl{display:flex;align-items:flex-end;gap:4px;margin:4px 0;font-size:9.5px}.tl i{font-style:italic;font-weight:700}.tl span{border-bottom:1px solid #000;min-height:12px;padding:0 3px}.lft span{width:118px}.rgt span{width:64px}.tot{display:flex;align-items:center;justify-content:space-between;margin:10px 0 8px}.tot i{font-style:italic;font-weight:800;font-size:10px}.box{border:1.6px solid #000;width:30mm;height:11mm;display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:800}.tsk{font-size:9.5px;font-weight:700;margin-top:6px}.ln{border-bottom:1.2px solid #000;height:14px;font-size:9px;padding:0 2px;overflow:hidden;white-space:nowrap}.sig{margin-top:10px}.sig .row span{max-width:56mm}</style></head><body><div class=\"frame\"><h1>OVERTIME FORM</h1>" +
+      '<div class="row">Name:<span>' + esc(fm.name) + '</span></div>' +
+      '<div class="row">Department:<span>' + esc(fm.department) + '</span></div>' +
+      '<div class="row">Date Filed:<span>' + esc(fm.dateFiled) + '</span></div>' +
+      '<div class="row">Date of OT:<span>' + esc(fm.dateOfOt) + '</span></div>' +
+      '<div class="cols"><span>Requested Time</span><span>OFFICE Time</span></div>' +
+      '<div style="display:flex;justify-content:space-between"><div class="lft"><div class="tl"><i>From:</i><span>' + esc(fm.reqFrom) + '</span></div><div class="tl"><i>To:</i><span>' + esc(fm.reqTo) + '</span></div></div><div class="rgt"><div class="tl"><i>From:</i><span>' + esc(fm.officeFrom) + '</span></div><div class="tl"><i>To:</i><span>' + esc(fm.officeTo) + '</span></div></div></div>' +
+      '<div class="tot"><i>TOTAL OT Hours Rendered</i><div class="box">' + esc(fm.totalOt) + '</div></div>' +
+      '<div class="tsk">Tasks to be DONE:</div>' + lines.map(l => '<div class="ln">' + esc(l) + '</div>').join('') +
+      '<div class="sig"><div class="row">Requested By:<span>' + esc(fm.requestedBy) + '</span></div><div class="row">Noted By:<span>' + esc(fm.notedBy) + '</span></div><div class="row">Approved By:<span>' + esc(fm.approvedBy) + '</span></div></div>' +
+      "</div></body></html>";
+    const w = window.open("", "_blank", "width=460,height=680");
+    if (!w) { notify("Allow pop-ups to print the Overtime Form.", "error"); return; }
+    w.document.write(html);
+    w.document.close();
+    w.focus();
+    setTimeout(() => { try { w.print(); } catch (e) {} }, 300);
+  }
   function visitsForIsr(isr) {
     const key = String(isr || "").trim().toLowerCase();
     const out = [];
@@ -10939,13 +10962,14 @@ function OvertimeTab({
       return false;
     }
   }
-  function applyFor(engName, dateKey, cashH, offsetH) {
+  function applyFor(engName, dateKey, cashH, offsetH, form) {
     const prev = appMap[engName + "|" + dateKey];
     return upsert(prev, {
       engineerName: engName,
       date: dateKey,
       cashHours: cashH,
       offsetHours: offsetH,
+      form: form || (prev && prev.form) || null,
       status: "pending",
       apCash: 0,
       apOffset: 0,
@@ -11112,7 +11136,36 @@ function OvertimeTab({
         setErr("Cash + offset can't exceed this day's " + d.otHours.toFixed(2) + " OT hours.");
         return;
       }
-      applyFor(engName, d.date, nc, no);
+      // The OVERTIME FORM must be filled out to file — prefilled from the day.
+      let rf = "", rt = "";
+      if (d.dayEnd) {
+        const end2 = new Date(d.dayEnd);
+        const st2 = new Date(end2.getTime() - d.otHours * 3600000);
+        const h122 = t => { let h = t.getHours(), m = String(t.getMinutes()).padStart(2, "0"); const ap = h >= 12 ? "PM" : "AM"; h = h % 12 || 12; return h + ":" + m + " " + ap; };
+        rf = h122(st2);
+        rt = h122(end2);
+      }
+      setOtForm({
+        engName: engName,
+        date: d.date,
+        cash: nc,
+        offset: no,
+        f: {
+          name: engName,
+          department: profile && profile.department || "",
+          dateFiled: today(),
+          dateOfOt: d.date,
+          reqFrom: rf,
+          reqTo: rt,
+          officeFrom: "",
+          officeTo: "",
+          totalOt: d.otHours.toFixed(2),
+          tasks: (d.sources || []).join("\n"),
+          requestedBy: engName,
+          notedBy: "",
+          approvedBy: ""
+        }
+      });
       setMode("");
     }
     function submitDecision(approve) {
@@ -11138,7 +11191,66 @@ function OvertimeTab({
         flexDirection: "column",
         gap: 4
       }
-    }, isrView ? /*#__PURE__*/React.createElement(Modal, {
+    }, otForm ? /*#__PURE__*/React.createElement(Modal, {
+    title: "📄 Overtime Form — fill out to file",
+    onClose: () => setOtForm(null)
+  }, (() => {
+    const fm = otForm.f;
+    const uf = (k2, v2) => setOtForm(x => ({ ...x, f: { ...x.f, [k2]: v2 } }));
+    const pRow = (label, k2, ro) => /*#__PURE__*/React.createElement("div", {
+      style: { display: "flex", alignItems: "flex-end", gap: 6, margin: "6px 0", fontSize: 12, fontWeight: 700 }
+    }, label, /*#__PURE__*/React.createElement("input", {
+      style: { flex: 1, border: "none", borderBottom: "1px solid #000", outline: "none", background: "transparent", color: "#000", fontSize: 12, fontWeight: 400, padding: "0 3px" },
+      value: fm[k2],
+      readOnly: !!ro,
+      onChange: e => uf(k2, e.target.value)
+    }));
+    const tIn = (k2, w2) => /*#__PURE__*/React.createElement("input", {
+      style: { width: w2, border: "none", borderBottom: "1px solid #000", outline: "none", background: "transparent", color: "#000", fontSize: 12, padding: "0 3px" },
+      value: fm[k2],
+      onChange: e => uf(k2, e.target.value)
+    });
+    return /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("div", {
+      style: { background: "#fff", color: "#000", border: "2px solid #000", padding: "12px 14px", fontFamily: "Arial, Helvetica, sans-serif" }
+    }, /*#__PURE__*/React.createElement("div", {
+      style: { textAlign: "center", fontWeight: 800, fontSize: 15, marginBottom: 10 }
+    }, "OVERTIME FORM"), pRow("Name:", "name"), pRow("Department:", "department"), pRow("Date Filed:", "dateFiled"), pRow("Date of OT:", "dateOfOt"), /*#__PURE__*/React.createElement("div", {
+      style: { display: "flex", justifyContent: "space-between", margin: "12px 0 2px", fontSize: 12, fontWeight: 700 }
+    }, "Requested Time", "OFFICE Time"), /*#__PURE__*/React.createElement("div", {
+      style: { display: "flex", justifyContent: "space-between", fontSize: 12 }
+    }, /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("div", { style: { margin: "4px 0", fontStyle: "italic", fontWeight: 700 } }, "From: ", tIn("reqFrom", 150)), /*#__PURE__*/React.createElement("div", { style: { margin: "4px 0", fontStyle: "italic", fontWeight: 700 } }, "To: ", tIn("reqTo", 150))), /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("div", { style: { margin: "4px 0", fontStyle: "italic", fontWeight: 700 } }, "From: ", tIn("officeFrom", 90)), /*#__PURE__*/React.createElement("div", { style: { margin: "4px 0", fontStyle: "italic", fontWeight: 700 } }, "To: ", tIn("officeTo", 90)))), /*#__PURE__*/React.createElement("div", {
+      style: { display: "flex", alignItems: "center", justifyContent: "space-between", margin: "14px 0 10px" }
+    }, /*#__PURE__*/React.createElement("span", {
+      style: { fontStyle: "italic", fontWeight: 800, fontSize: 12.5 }
+    }, "TOTAL OT Hours Rendered"), /*#__PURE__*/React.createElement("input", {
+      style: { border: "2px solid #000", width: 110, height: 40, textAlign: "center", fontSize: 15, fontWeight: 800, background: "transparent", color: "#000", outline: "none" },
+      value: fm.totalOt,
+      onChange: e => uf("totalOt", e.target.value)
+    })), /*#__PURE__*/React.createElement("div", {
+      style: { fontSize: 12, fontWeight: 700, marginBottom: 4 }
+    }, "Tasks to be DONE:"), /*#__PURE__*/React.createElement("textarea", {
+      rows: 5,
+      style: { width: "100%", boxSizing: "border-box", border: "none", outline: "none", resize: "vertical", background: "repeating-linear-gradient(transparent, transparent 20px, #000 20px, #000 21px)", lineHeight: "21px", fontSize: 12, color: "#000", fontFamily: "inherit", padding: "0 2px" },
+      value: fm.tasks,
+      onChange: e => uf("tasks", e.target.value)
+    }), /*#__PURE__*/React.createElement("div", { style: { marginTop: 12 } }, pRow("Requested By:", "requestedBy"), pRow("Noted By:", "notedBy"), pRow("Approved By:", "approvedBy"))), /*#__PURE__*/React.createElement("div", {
+      style: { display: "flex", gap: 8, marginTop: 12, flexWrap: "wrap" }
+    }, /*#__PURE__*/React.createElement("button", {
+      style: btnSt("var(--c-key)", "var(--c-bg)"),
+      onClick: () => {
+        applyFor(otForm.engName, otForm.date, otForm.cash, otForm.offset, otForm.f);
+        setOtForm(null);
+        notify("Overtime filed with the form (" + otForm.cash + "h cash / " + otForm.offset + "h offset).", "ok");
+      }
+    }, "📄 File OT application"), /*#__PURE__*/React.createElement("button", {
+      style: btnSt("var(--c-border)", "var(--c-text2)"),
+      onClick: () => printOtForm(otForm.f),
+      title: "Prints at quarter-A4 (105 × 148 mm)"
+    }, "🖨 Print (¼ A4)"), /*#__PURE__*/React.createElement("button", {
+      style: btnSt("var(--c-border)", "var(--c-text2)"),
+      onClick: () => setOtForm(null)
+    }, "Cancel")));
+  })()) : null, isrView ? /*#__PURE__*/React.createElement(Modal, {
     title: "🔎 ISR " + isrView,
     wide: true,
     onClose: () => setIsrView(null)
@@ -11281,7 +11393,7 @@ function OvertimeTab({
         gap: 6,
         flexWrap: "wrap"
       }
-    }, isOwner && editable && sb("✏️ Edit", () => {
+    }, isOwner && editable && app.form ? sb("🖨 Form", () => printOtForm(app.form)) : null, sb("✏️ Edit", () => {
       setC(String(rc));
       setO(String(ro));
       setMode("apply");
