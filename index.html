@@ -337,7 +337,7 @@
 (function () {
   var okLibs = (typeof firebase !== "undefined") && (typeof React !== "undefined") && (typeof ReactDOM !== "undefined") && (typeof XLSX !== "undefined");
   window.__IBASE_LIBS_OK = okLibs;
-  window.__IBASE_BUILD = "v193";
+  window.__IBASE_BUILD = "v194";
   if (!okLibs) {
     document.getElementById("root").innerHTML =
       "<div style='max-width:520px;margin:90px auto;padding:30px;background:#16181d;border:1px solid #f8717155;border-radius:16px;font-family:system-ui,sans-serif;color:#e5e7eb;text-align:center'>" +
@@ -1557,11 +1557,14 @@ function usePresence(user, profile) {
     if (v && v.signedIn !== true) loginViewers[id] = v;
   });
   const iAmSignedIn = !!user;
+  // Presence count stays (harmless "who's online" number), but NO ONE ever sees
+  // another person's live cursor/click trail — including on the login screen —
+  // so a moving cursor can never look like someone reaching into your session.
   const count = Object.keys(loginViewers).length;
   return {
-    viewers: iAmSignedIn ? {} : loginViewers,
-    cursors: iAmSignedIn ? {} : cursors,
-    clicks: iAmSignedIn ? {} : clicks,
+    viewers: {},
+    cursors: {},
+    clicks: {},
     myColor,
     showName,
     setShowName,
@@ -3154,7 +3157,7 @@ function Login({
       letterSpacing: 2.5,
       textTransform: "uppercase"
     }
-  }, "Installed Base Management \u00b7 build v193"), !dept ? /*#__PURE__*/React.createElement("div", null,
+  }, "Installed Base Management \u00b7 build v194"), !dept ? /*#__PURE__*/React.createElement("div", null,
     /*#__PURE__*/React.createElement("div", { style: { fontSize: 12.5, color: "var(--c-text3)", textAlign: "center", marginBottom: 14 } }, "Select your department or module to continue"),
     /*#__PURE__*/React.createElement("div", { style: { display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 } },
       (depts || []).filter(d => !d.disabled).map((d, i) => /*#__PURE__*/React.createElement("button", { key: (d.id || d.name) + i, onClick: () => pickDept(d.name), style: { background: "var(--c-bg)", border: "1px solid var(--c-border)", borderRadius: 12, padding: "16px 10px", cursor: "pointer", display: "flex", flexDirection: "column", alignItems: "center", gap: 8, color: "var(--c-text2)" } },
