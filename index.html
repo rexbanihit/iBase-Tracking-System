@@ -337,7 +337,7 @@
 (function () {
   var okLibs = (typeof firebase !== "undefined") && (typeof React !== "undefined") && (typeof ReactDOM !== "undefined") && (typeof XLSX !== "undefined");
   window.__IBASE_LIBS_OK = okLibs;
-  window.__IBASE_BUILD = "v169";
+  window.__IBASE_BUILD = "v171";
   if (!okLibs) {
     document.getElementById("root").innerHTML =
       "<div style='max-width:520px;margin:90px auto;padding:30px;background:#16181d;border:1px solid #f8717155;border-radius:16px;font-family:system-ui,sans-serif;color:#e5e7eb;text-align:center'>" +
@@ -3140,7 +3140,7 @@ function Login({
       letterSpacing: 2.5,
       textTransform: "uppercase"
     }
-  }, "Installed Base Management \u00b7 build v169"), !dept ? /*#__PURE__*/React.createElement("div", null,
+  }, "Installed Base Management \u00b7 build v171"), !dept ? /*#__PURE__*/React.createElement("div", null,
     /*#__PURE__*/React.createElement("div", { style: { fontSize: 12.5, color: "var(--c-text3)", textAlign: "center", marginBottom: 14 } }, "Select your department or module to continue"),
     /*#__PURE__*/React.createElement("div", { style: { display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 } },
       (depts || []).filter(d => !d.disabled).map((d, i) => /*#__PURE__*/React.createElement("button", { key: (d.id || d.name) + i, onClick: () => pickDept(d.name), style: { background: "var(--c-bg)", border: "1px solid var(--c-border)", borderRadius: 12, padding: "16px 10px", cursor: "pointer", display: "flex", flexDirection: "column", alignItems: "center", gap: 8, color: "var(--c-text2)" } },
@@ -5081,7 +5081,18 @@ function LabDetail({
     title: "🔎 " + (machVisits.instrument || "Machine") + (machVisits.serialNo ? " — " + machVisits.serialNo : "") + " · service visits",
     onClose: () => setMachVisits(null)
   }, (() => {
-    const vs = [...(machVisits.visits || [])].sort((a2, b2) => workTs(b2) - workTs(a2));
+    // self-contained newest-first sort — the LOGS tab's own parser is private to
+    // that component and must never be referenced from here (v169 crash).
+    const vTs = v3 => {
+      const cands = [v3 && v3.dtWorkStarted, v3 && v3.srcTimestamp, v3 && v3.date];
+      for (const c3 of cands) {
+        if (!c3) continue;
+        const t3 = Date.parse(String(c3));
+        if (!isNaN(t3)) return t3;
+      }
+      return 0;
+    };
+    const vs = [...(machVisits.visits || [])].sort((a2, b2) => vTs(b2) - vTs(a2));
     if (!vs.length) return /*#__PURE__*/React.createElement("div", { style: { color: "var(--c-text4)", fontSize: 13 } }, "No service visits recorded for this machine yet.");
     return /*#__PURE__*/React.createElement("div", { style: { maxHeight: "62vh", overflow: "auto" } }, /*#__PURE__*/React.createElement("table", { style: { borderCollapse: "collapse", width: "100%", fontSize: 12.5 } }, /*#__PURE__*/React.createElement("thead", null, /*#__PURE__*/React.createElement("tr", null, ["Date", "Type", "Engineer(s)", "ISR", "Instrument state", "Description of work"].map(h2 => /*#__PURE__*/React.createElement("th", { key: h2, style: { textAlign: "left", padding: "6px 8px", borderBottom: "1px solid var(--c-border)", color: "var(--c-text3)", position: "sticky", top: 0, background: "var(--c-card)" } }, h2)))), /*#__PURE__*/React.createElement("tbody", null, vs.map((v2, i2) => /*#__PURE__*/React.createElement("tr", { key: v2.id || i2 }, [v2.date || String(v2.dtWorkStarted || "").slice(0, 10) || "—", v2.type || "—", [v2.engineer, v2.engineer2, v2.engineer3].filter(Boolean).join(", ") || "—", v2.isrNo || "—", v2.instrumentStatus || "—", String(v2.remarks || "").slice(0, 90) || "—"].map((cv, ci) => /*#__PURE__*/React.createElement("td", { key: ci, style: { padding: "6px 8px", borderBottom: "1px solid var(--c-border)", verticalAlign: "top" } }, cv)))))));
   })(), /*#__PURE__*/React.createElement("div", { style: { marginTop: 8, fontSize: 11.5, color: "var(--c-text5)" } }, (machVisits.visits || []).length + " visit(s) total · full details stay in the LOGS tab")), canManage && addingM && /*#__PURE__*/React.createElement(MachineModal, {
@@ -10642,7 +10653,10 @@ function WpoaTab({ profile, notify }) {
   };
   const PERIODS = [
     { id: "2026", label: "Aug – Dec 2026", weeks: mondaysBetween("2026-08-01", "2026-12-31") },
-    { id: "2027", label: "Year 2027", weeks: mondaysBetween("2027-01-01", "2027-12-31") }
+    { id: "2027", label: "Year 2027", weeks: mondaysBetween("2027-01-01", "2027-12-31") },
+    { id: "2028", label: "Year 2028", weeks: mondaysBetween("2028-01-01", "2028-12-31") },
+    { id: "2029", label: "Year 2029", weeks: mondaysBetween("2029-01-01", "2029-12-31") },
+    { id: "2030", label: "Year 2030", weeks: mondaysBetween("2030-01-01", "2030-12-31") }
   ];
   const [periodId, setPeriodId] = useState(PERIODS[0].id);
   const period = PERIODS.find(p => p.id === periodId) || PERIODS[0];
