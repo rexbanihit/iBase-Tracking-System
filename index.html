@@ -337,7 +337,7 @@
 (function () {
   var okLibs = (typeof firebase !== "undefined") && (typeof React !== "undefined") && (typeof ReactDOM !== "undefined") && (typeof XLSX !== "undefined");
   window.__IBASE_LIBS_OK = okLibs;
-  window.__IBASE_BUILD = "v196";
+  window.__IBASE_BUILD = "v197";
   if (!okLibs) {
     document.getElementById("root").innerHTML =
       "<div style='max-width:520px;margin:90px auto;padding:30px;background:#16181d;border:1px solid #f8717155;border-radius:16px;font-family:system-ui,sans-serif;color:#e5e7eb;text-align:center'>" +
@@ -3161,7 +3161,7 @@ function Login({
       letterSpacing: 2.5,
       textTransform: "uppercase"
     }
-  }, "Installed Base Management \u00b7 build v196"), !dept ? /*#__PURE__*/React.createElement("div", null,
+  }, "Installed Base Management \u00b7 build v197"), !dept ? /*#__PURE__*/React.createElement("div", null,
     /*#__PURE__*/React.createElement("div", { style: { fontSize: 12.5, color: "var(--c-text3)", textAlign: "center", marginBottom: 14 } }, "Select your department or module to continue"),
     /*#__PURE__*/React.createElement("div", { style: { display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 } },
       (depts || []).filter(d => !d.disabled).map((d, i) => /*#__PURE__*/React.createElement("button", { key: (d.id || d.name) + i, onClick: () => pickDept(d.name), style: { background: "var(--c-bg)", border: "1px solid var(--c-border)", borderRadius: 12, padding: "16px 10px", cursor: "pointer", display: "flex", flexDirection: "column", alignItems: "center", gap: 8, color: "var(--c-text2)" } },
@@ -16424,16 +16424,16 @@ function SettingsTab({
   }, "Tune every theme: pick its accent color and set the panel opacity (0 = fully transparent, 255 = solid). Changes save automatically and apply live for every signed-in user. Each theme can be restored to its factory look independently."), /*#__PURE__*/React.createElement("div", {
     style: { display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap", padding: "10px 12px", margin: "0 0 14px", border: "1px solid var(--c-border)", borderRadius: 8, background: "var(--c-bg2)" }
   }, /*#__PURE__*/React.createElement("div", { style: { fontWeight: 700, fontSize: 12.5 } }, "\u201cDeveloped by Rex Banihit\u201d credit \u2014 visibility"), /*#__PURE__*/React.createElement("input", {
-    type: "range", min: 0, max: 100, step: 1,
-    value: Math.round((aaLoc != null ? aaLoc : authorAlpha) * 100),
-    onChange: e => writeAuthorAlpha(Number(e.target.value) / 100),
+    type: "range", min: 0, max: 255, step: 1,
+    value: Math.round((aaLoc != null ? aaLoc : authorAlpha) * 255),
+    onChange: e => writeAuthorAlpha(Number(e.target.value) / 255),
     style: { flex: 1, minWidth: 160, cursor: "pointer" }
   }), /*#__PURE__*/React.createElement("input", {
-    type: "number", min: 0, max: 100, step: 1,
-    value: Math.round((aaLoc != null ? aaLoc : authorAlpha) * 100),
-    onChange: e => writeAuthorAlpha(Number(e.target.value) / 100),
+    type: "number", min: 0, max: 255, step: 1,
+    value: Math.round((aaLoc != null ? aaLoc : authorAlpha) * 255),
+    onChange: e => writeAuthorAlpha(Number(e.target.value) / 255),
     style: { width: 64, padding: "4px 6px", background: "var(--c-bg)", color: "var(--c-text)", border: "1px solid var(--c-border)", borderRadius: 6, textAlign: "center" }
-  }), /*#__PURE__*/React.createElement("span", { style: { fontSize: 11, color: "var(--c-text4)", minWidth: 96 } }, "% opacity \u00b7 all users"), /*#__PURE__*/React.createElement("button", {
+  }), /*#__PURE__*/React.createElement("span", { style: { fontSize: 11, color: "var(--c-text4)", minWidth: 118 } }, "/ 255 opacity \u00b7 all users"), /*#__PURE__*/React.createElement("button", {
     onClick: () => writeAuthorAlpha(0.06),
     title: "Back to the near-invisible default",
     style: { ...btnSt("var(--c-border)", "var(--c-text2)"), padding: "4px 10px", fontSize: 11 }
