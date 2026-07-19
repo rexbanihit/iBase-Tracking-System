@@ -337,7 +337,7 @@
 (function () {
   var okLibs = (typeof firebase !== "undefined") && (typeof React !== "undefined") && (typeof ReactDOM !== "undefined") && (typeof XLSX !== "undefined");
   window.__IBASE_LIBS_OK = okLibs;
-  window.__IBASE_BUILD = "v165";
+  window.__IBASE_BUILD = "v169";
   if (!okLibs) {
     document.getElementById("root").innerHTML =
       "<div style='max-width:520px;margin:90px auto;padding:30px;background:#16181d;border:1px solid #f8717155;border-radius:16px;font-family:system-ui,sans-serif;color:#e5e7eb;text-align:center'>" +
@@ -2348,6 +2348,24 @@ function Toast({
 }
 
 // ── theme system (12 themes, from iBase v123) ───────────────────────────────
+function readThemeDefaults(id) {
+  try {
+    const el = document.querySelector("style");
+    const css = el && el.textContent || "";
+    const at = css.indexOf('[data-theme="' + id + '"]');
+    if (at < 0) return {};
+    const open = css.indexOf("{", at);
+    const close = css.indexOf("}", open);
+    const body = css.slice(open + 1, close);
+    const pick = n => {
+      const m = body.match(new RegExp("--c-" + n + ":\\s*([^;]+);"));
+      return m ? m[1].trim() : "";
+    };
+    return { key: pick("key"), card: pick("card"), bg: pick("bg") };
+  } catch (e) {
+    return {};
+  }
+}
 const THEMES = [{
   id: "dark",
   label: "🌙 Midnight"
@@ -3122,7 +3140,7 @@ function Login({
       letterSpacing: 2.5,
       textTransform: "uppercase"
     }
-  }, "Installed Base Management \u00b7 build v165"), !dept ? /*#__PURE__*/React.createElement("div", null,
+  }, "Installed Base Management \u00b7 build v169"), !dept ? /*#__PURE__*/React.createElement("div", null,
     /*#__PURE__*/React.createElement("div", { style: { fontSize: 12.5, color: "var(--c-text3)", textAlign: "center", marginBottom: 14 } }, "Select your department or module to continue"),
     /*#__PURE__*/React.createElement("div", { style: { display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 } },
       (depts || []).filter(d => !d.disabled).map((d, i) => /*#__PURE__*/React.createElement("button", { key: (d.id || d.name) + i, onClick: () => pickDept(d.name), style: { background: "var(--c-bg)", border: "1px solid var(--c-border)", borderRadius: 12, padding: "16px 10px", cursor: "pointer", display: "flex", flexDirection: "column", alignItems: "center", gap: 8, color: "var(--c-text2)" } },
@@ -3241,7 +3259,7 @@ function Login({
       textTransform: "uppercase",
       marginTop: 6
     }
-  }, "Designed & Developed by Rex Banihit"))))));
+  }, "Developed by Rex Banihit"))))));
 }
 
 // ── Dashboard ────────────────────────────────────────────────────────────────
@@ -10616,6 +10634,12 @@ function WpoaTab({ profile, notify }) {
     const same = a.getMonth() === b.getMonth();
     return MO_FULL[a.getMonth()] + " " + a.getDate() + "-" + (same ? "" : MO_FULL[b.getMonth()] + " ") + b.getDate() + ", " + b.getFullYear();
   };
+  const weekTabShort = mon => {
+    const a = new Date(mon + "T00:00:00"), b = new Date(mon + "T00:00:00");
+    b.setDate(b.getDate() + 6);
+    const m3 = m2 => MO_FULL[m2].slice(0, 3);
+    return m3(a.getMonth()) + ". " + a.getDate() + "-" + (a.getMonth() === b.getMonth() ? "" : m3(b.getMonth()) + ". ") + b.getDate() + ", " + b.getFullYear();
+  };
   const PERIODS = [
     { id: "2026", label: "Aug – Dec 2026", weeks: mondaysBetween("2026-08-01", "2026-12-31") },
     { id: "2027", label: "Year 2027", weeks: mondaysBetween("2027-01-01", "2027-12-31") }
@@ -10657,6 +10681,42 @@ function WpoaTab({ profile, notify }) {
   const [localOv, setLocalOv] = useState({});
   const [focusCell, setFocusCell] = useState(null); // {sec, pid, di, li}
   const timersRef = React.useRef({});
+  const migTried = React.useRef({}); // one-shot per week: adopt the old Sunday-keyed doc (pre-v165 timezone bug)
+  const tabRef = React.useRef(null);
+  useEffect(() => {
+    if (tabRef.current && tabRef.current.scrollIntoView) {
+      try { tabRef.current.scrollIntoView({ inline: "center", block: "nearest" }); } catch (e) {}
+    }
+  }, [week, periodId]);
+  const meKey = ((auth.currentUser && auth.currentUser.uid) || meEmail(profile) || "anon").replace(/[^A-Za-z0-9_-]/g, "_");
+  const meName = (profile && profile.name) || meEmail(profile) || "Someone";
+  const PRES_COLORS = ["#f97316", "#a855f7", "#22c55e", "#e11d48", "#0ea5e9", "#eab308", "#14b8a6", "#f43f5e"];
+  const colorFor = k => {
+    let h = 0;
+    for (let i = 0; i < k.length; i++) h = (h * 31 + k.charCodeAt(i)) % 997;
+    return PRES_COLORS[h % PRES_COLORS.length];
+  };
+  const presTimer = React.useRef(null);
+  const hbRef = React.useRef(null);
+  const recentMineRef = React.useRef({});
+  const prevCellsRef = React.useRef(null);
+  const [flash, setFlash] = useState({});
+  const writePresence = c => {
+    clearTimeout(presTimer.current);
+    presTimer.current = setTimeout(() => {
+      db.collection("wpoa").doc("w_" + week).set({ presence: { [meKey]: c === null ? null : { c: c, n: meName, ts: Date.now() } } }, { merge: true }).catch(() => {});
+    }, 350);
+  };
+  useEffect(() => {
+    const key = focusCell ? focusCell.sec + "_" + focusCell.pid + "_" + focusCell.di + "_" + focusCell.li : "";
+    writePresence(focusCell ? key : null);
+    clearInterval(hbRef.current);
+    if (focusCell) hbRef.current = setInterval(() => writePresence(key), 25000);
+    return () => clearInterval(hbRef.current);
+  }, [focusCell, week]);
+  useEffect(() => () => {
+    try { db.collection("wpoa").doc("w_" + week).set({ presence: { [meKey]: null } }, { merge: true }).catch(() => {}); } catch (e) {}
+  }, [week]);
   const push = payload => db.collection("wpoa").doc("w_" + week).set({ ...payload, week: week, savedBy: meEmail(profile) || "", savedAt: new Date().toISOString() }, { merge: true }).catch(e => notify("Live sync failed: " + (e && e.message || e), "error"));
   const flushAll = () => {
     const tm = timersRef.current;
@@ -10669,16 +10729,54 @@ function WpoaTab({ profile, notify }) {
   };
   const stage = (key, val, payload) => {
     setLocalOv(ov => ({ ...ov, [key]: val }));
+    recentMineRef.current[key] = Date.now();
     const tm = timersRef.current;
     if (tm[key]) clearTimeout(tm[key].t);
-    tm[key] = { payload: payload, t: setTimeout(() => { delete tm[key]; push(payload); }, 450) };
+    tm[key] = { payload: payload, t: setTimeout(() => { delete tm[key]; push(payload); }, 150) };
   };
   useEffect(() => {
     setRemote(null);
     setLocalOv({});
+    prevCellsRef.current = null;
     setFocusCell(null);
     const un = db.collection("wpoa").doc("w_" + week).onSnapshot(sn => {
-      setRemote(sn.exists ? sn.data() || {} : {});
+      if (sn && sn.exists === false && !migTried.current[week]) {
+        // This Monday-keyed week has no document yet. Before v165 the same week
+        // was saved one day early (Sunday) because of the UTC date bug — if that
+        // old document exists, adopt its content once so nothing typed is lost.
+        migTried.current[week] = 1;
+        try {
+          const od = new Date(week + "T00:00:00");
+          od.setDate(od.getDate() - 1);
+          const oldId = "w_" + isoLocal(od);
+          const dr = db.collection("wpoa").doc(oldId);
+          if (dr && typeof dr.get === "function") dr.get().then(os => {
+            if (os && os.exists) {
+              const odata = os.data() || {};
+              if (Object.keys(odata).length) db.collection("wpoa").doc("w_" + week).set({ ...odata, week: week, migratedFrom: oldId, savedAt: new Date().toISOString() }, { merge: true }).catch(() => {});
+            }
+          }).catch(() => {});
+        } catch (e) {}
+      }
+      const nd = sn.exists ? sn.data() || {} : {};
+      const pc = prevCellsRef.current, nc = nd.cells || {};
+      if (pc) {
+        const ch = {};
+        Object.keys(nc).forEach(k2 => {
+          if (recentMineRef.current[k2] && Date.now() - recentMineRef.current[k2] < 3000) return;
+          if (JSON.stringify(nc[k2] || null) !== JSON.stringify(pc[k2] || null)) ch[k2] = Date.now();
+        });
+        if (Object.keys(ch).length) {
+          setFlash(f => ({ ...f, ...ch }));
+          setTimeout(() => setFlash(f => {
+            const n = { ...f };
+            Object.keys(ch).forEach(k2 => { if (n[k2] === ch[k2]) delete n[k2]; });
+            return n;
+          }), 1700);
+        }
+      }
+      prevCellsRef.current = nc;
+      setRemote(nd);
       // drop local overlays that are no longer pending — the confirmed (or
       // newer, from a teammate) remote value takes over
       setLocalOv(ov => {
@@ -10763,14 +10861,14 @@ function WpoaTab({ profile, notify }) {
   };
   const applyFmt = patch => { if (!focusCell) return; writeCell(focusCell.sec, focusCell.pid, focusCell.di, focusCell.li, patch); };
   function gridHTML(sec, esc) {
-    const head = '<tr><td class="corner" rowspan="2">' + esc(titleOf(sec)) + '</td>' + DAYS.map((d, di) => '<th class="day' + (isHol(di) ? ' hol' : '') + '">' + d + '</th>').join('') + '</tr>' +
+    const head = '<tr>' + DAYS.map((d, di) => '<th class="day' + (isHol(di) ? ' hol' : '') + '">' + d + '</th>').join('') + '</tr>' +
       '<tr>' + weekDates.map((dt, di) => '<th class="day num' + (isHol(di) ? ' hol' : '') + '">' + esc(effDay(di)) + '</th>').join('') + '</tr>';
     const body = orderOf(sec).map(pid => [0, 1, 2].map(li => '<tr>' + (li === 0 ? '<td class="nm" rowspan="3">' + esc(nameOf(sec, pid) || "[Name]") + '</td>' : '') + weekDates.map((dt, di) => {
       const c = cellOf(sec, pid, di, li);
       return '<td class="c" style="' + (c.bg ? 'background:' + c.bg + ';' : '') + (c.fc ? 'color:' + c.fc + ';' : '') + 'text-align:' + (c.al || 'left') + '">' + esc(c.t) + '&nbsp;</td>';
     }).join('') + '</tr>').join('')).join('');
     return '<table><colgroup><col style="width:9%">' + '<col style="width:13%">'.repeat(7) + '</colgroup>' +
-      '<tr><td class="blank"></td><td class="wk" colspan="7">' + esc(hdrRangeOv() || rangeLabel) + '</td></tr>' + head + body + '</table>';
+      '<tr><td class="corner" rowspan="3">' + esc(titleOf(sec)) + '</td><td class="wk" colspan="7">' + esc(hdrRangeOv() || rangeLabel) + '</td></tr>' + head + body + '</table>';
   }
   function printSecs(secs) {
     const esc = t => String(t == null ? "" : t).replace(/&/g, "&amp;").replace(/</g, "&lt;");
@@ -10788,18 +10886,37 @@ function WpoaTab({ profile, notify }) {
   if (remote === null) return /*#__PURE__*/React.createElement("div", { style: { color: "var(--c-text4)", fontSize: 13 } }, "Loading the week…");
   const cellIn = (sec, pid, di, li) => {
     const c = cellOf(sec, pid, di, li);
+    const pkey = sec + "_" + pid + "_" + di + "_" + li;
+    const pres = rd.presence || {};
+    let oc = null, on = "";
+    Object.keys(pres).forEach(k2 => {
+      const p2 = pres[k2];
+      if (k2 !== meKey && p2 && p2.c === pkey && Date.now() - (p2.ts || 0) < 60000) {
+        if (!oc) oc = colorFor(k2);
+        on = on ? on + ", " + p2.n : p2.n;
+      }
+    });
+    const fts = flash[pkey];
+    const flashing = !oc && fts && Date.now() - fts < 1600;
     return /*#__PURE__*/React.createElement("input", {
       value: c.t,
       onChange: e => writeCell(sec, pid, di, li, { t: e.target.value }),
       onFocus: () => setFocusCell({ sec: sec, pid: pid, di: di, li: li }),
-      style: { width: "100%", boxSizing: "border-box", border: "none", outline: "none", background: c.bg || "transparent", color: c.fc || "#000", textAlign: c.al || "left", fontSize: 11, fontFamily: "Arial, Helvetica, sans-serif", padding: "1px 3px", height: 19 }
+      title: oc ? "\u270e " + on + " is editing this cell right now" : undefined,
+      style: { width: "100%", boxSizing: "border-box", border: "none", outline: "none", background: c.bg || "transparent", color: c.fc || "#000", textAlign: c.al || "left", fontSize: 11, fontFamily: "Arial, Helvetica, sans-serif", padding: "1px 3px", height: 19, boxShadow: oc ? "inset 0 0 0 2px " + oc : flashing ? "inset 0 0 0 2px #22c55e" : "none" }
     });
   };
   const grid = sec => /*#__PURE__*/React.createElement("table", {
     style: { width: "100%", borderCollapse: "collapse", tableLayout: "fixed", minWidth: 1000, marginBottom: 6 }
   }, /*#__PURE__*/React.createElement("colgroup", null, /*#__PURE__*/React.createElement("col", { style: { width: "9%" } }), DAYS.map((_, i) => /*#__PURE__*/React.createElement("col", { key: i, style: { width: "13%" } }))), /*#__PURE__*/React.createElement("tbody", null, /*#__PURE__*/React.createElement("tr", null, /*#__PURE__*/React.createElement("td", {
-    style: { border: CELLBORDER, boxSizing: "border-box", background: "#fff" }
-  }), /*#__PURE__*/React.createElement("td", {
+    rowSpan: 3,
+    style: { border: CELLBORDER, boxSizing: "border-box", background: "#fff", color: "#000", padding: 0, verticalAlign: "middle" }
+  }, /*#__PURE__*/React.createElement("input", {
+    value: titleOf(sec),
+    onChange: e => writeTitle(sec, e.target.value),
+    title: "Click to rename this sheet",
+    style: { width: "100%", boxSizing: "border-box", border: "none", outline: "none", background: "transparent", color: "#000", fontWeight: 900, fontSize: 18, textAlign: "center", fontFamily: "inherit", padding: "2px 0" }
+  })), /*#__PURE__*/React.createElement("td", {
     colSpan: 7,
     style: { border: CELLBORDER, boxSizing: "border-box", background: "#ffff00", color: "#000", padding: 0, height: 22 }
   }, /*#__PURE__*/React.createElement("input", {
@@ -10807,15 +10924,7 @@ function WpoaTab({ profile, notify }) {
     onChange: e => writeHdrRange(e.target.value),
     title: "Auto-filled from the calendar (Monday to Sunday). Type to correct it; clear it to go back to automatic.",
     style: { width: "100%", boxSizing: "border-box", border: "none", outline: "none", background: "transparent", color: "#000", fontWeight: 800, textAlign: "center", fontSize: 12.5, fontFamily: "inherit", height: "100%", padding: 0 }
-  }))), /*#__PURE__*/React.createElement("tr", null, /*#__PURE__*/React.createElement("td", {
-    rowSpan: 2,
-    style: { border: CELLBORDER, boxSizing: "border-box", background: "#fff", color: "#000", padding: 0, verticalAlign: "middle" }
-  }, /*#__PURE__*/React.createElement("input", {
-    value: titleOf(sec),
-    onChange: e => writeTitle(sec, e.target.value),
-    title: "Click to rename this sheet",
-    style: { width: "100%", boxSizing: "border-box", border: "none", outline: "none", background: "transparent", color: "#000", fontWeight: 900, fontSize: 18, textAlign: "center", fontFamily: "inherit", padding: "2px 0" }
-  })), DAYS.map((d, di) => /*#__PURE__*/React.createElement("th", {
+  }))), /*#__PURE__*/React.createElement("tr", null, DAYS.map((d, di) => /*#__PURE__*/React.createElement("th", {
     key: d,
     style: { border: CELLBORDER, boxSizing: "border-box", background: isHol(di) ? "#f2ceef" : "#92d4ec", color: "#000", fontWeight: 800, fontSize: 11.5, height: 20 }
   }, d))), /*#__PURE__*/React.createElement("tr", null, weekDates.map((dt, di) => /*#__PURE__*/React.createElement("th", {
@@ -10855,17 +10964,42 @@ function WpoaTab({ profile, notify }) {
     key: p.id,
     style: btnSt(periodId === p.id ? "var(--c-key)" : "var(--c-border)", periodId === p.id ? "var(--c-bg)" : "var(--c-text2)"),
     onClick: () => setPeriodId(p.id)
-  }, p.label)), /*#__PURE__*/React.createElement("select", {
-    style: { ...inputSt(), maxWidth: 240 },
-    value: week,
-    onChange: e => setWeek(e.target.value)
-  }, period.weeks.map(w2 => /*#__PURE__*/React.createElement("option", { key: w2, value: w2 }, weekLabel(w2)))), /*#__PURE__*/React.createElement("button", {
+  }, p.label)), /*#__PURE__*/React.createElement("div", {
+    style: { display: "flex", alignItems: "flex-end", gap: 3, overflowX: "auto", flex: "1 1 340px", minWidth: 240, padding: "2px 2px 0", borderBottom: "2px solid var(--c-border)", scrollbarWidth: "thin" }
+  }, period.weeks.map(w2 => {
+    const act = w2 === week;
+    return /*#__PURE__*/React.createElement("button", {
+      key: w2,
+      ref: act ? tabRef : null,
+      onClick: () => setWeek(w2),
+      title: weekLabel(w2) + " \u2014 opening a sheet changes only YOUR view; teammates are not moved.",
+      style: { ...btnSt(act ? "var(--c-key)" : "var(--c-border)", act ? "var(--c-bg)" : "var(--c-text2)"), padding: "5px 10px", fontSize: 11.5, fontWeight: act ? 800 : 600, borderRadius: "8px 8px 0 0", flexShrink: 0, whiteSpace: "nowrap" }
+    }, weekTabShort(w2));
+  })), /*#__PURE__*/React.createElement("div", {
+    style: { flexBasis: "100%", fontSize: 10.5, color: "var(--c-text5)", marginTop: -4 }
+  }, "Each week is its own sheet \u2014 like Excel tabs. Opening a sheet changes only your view; everyone can work on different weeks at the same time, and edits meet only when two people open the SAME sheet."), hdrRangeOv() && hdrRangeOv() !== rangeLabel ? /*#__PURE__*/React.createElement("div", {
+    style: { flexBasis: "100%", display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap", fontSize: 11.5, color: "#f59e0b", background: "rgba(245,158,11,.10)", border: "1px solid rgba(245,158,11,.45)", borderRadius: 8, padding: "5px 10px" }
+  }, "\u270e Someone edited the yellow date label to \u201c" + hdrRangeOv() + "\u201d \u2014 that changes only the LABEL. This sheet still holds the week of " + rangeLabel + ".", /*#__PURE__*/React.createElement("button", {
+    style: btnSt("var(--c-border)", "var(--c-text2)"),
+    onClick: () => writeHdrRange("")
+  }, "\u27f2 Restore correct label")) : null, /*#__PURE__*/React.createElement("button", {
     style: btnSt("var(--c-border)", "var(--c-text2)"),
     title: "Everything already saves as you type — this just pushes any pending keystrokes immediately",
     onClick: () => { flushAll(); notify("Synced.", "ok"); }
   }, "💾 Save now"), /*#__PURE__*/React.createElement("button", { style: btnSt("var(--c-border)", "var(--c-text2)"), onClick: () => printSecs(SECTIONS.map(x => x.sec)), title: "Print every sheet — each on its own A4 landscape page" }, "🖨 Print all (A4)"), /*#__PURE__*/React.createElement("span", {
     style: { fontSize: 11, color: "#22c55e", fontWeight: 700 }
-  }, "🟢 Live"), /*#__PURE__*/React.createElement("span", {
+  }, "🟢 Live \u00b7 sheet " + weekTabShort(week)), (() => {
+    const pres = rd.presence || {};
+    const here = Object.keys(pres).filter(k2 => k2 !== meKey && pres[k2] && Date.now() - (pres[k2].ts || 0) < 60000);
+    return here.length ? /*#__PURE__*/React.createElement("span", {
+      style: { fontSize: 11, color: "var(--c-text3)", display: "inline-flex", alignItems: "center", gap: 8, flexWrap: "wrap" }
+    }, "\ud83d\udc65 Also on this sheet:", here.map(k2 => /*#__PURE__*/React.createElement("span", {
+      key: k2,
+      style: { display: "inline-flex", alignItems: "center", gap: 4, fontWeight: 700 }
+    }, /*#__PURE__*/React.createElement("span", {
+      style: { width: 9, height: 9, borderRadius: 999, background: colorFor(k2), display: "inline-block" }
+    }), pres[k2].n))) : null;
+  })(), /*#__PURE__*/React.createElement("span", {
     style: { fontSize: 11, color: "var(--c-text5)" }
   }, "changes save automatically and appear on every teammate's screen instantly", rd.savedAt ? " · last activity " + String(rd.savedAt).slice(0, 16).replace("T", " ") + (scrubOwner(rd.savedBy) ? " by " + scrubOwner(rd.savedBy) : "") : "")), /*#__PURE__*/React.createElement("div", {
     style: { display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap", marginBottom: 10, fontSize: 11.5 }
@@ -15543,6 +15677,40 @@ function SettingsTab({
   onUiAnim
 }) {
   const iAmOwner = isOwnerAcct(profile) || isOwnerAcct(auth.currentUser);
+  const [setView, setSetView] = useState("general");
+  const themeOv = useDoc("config/themes", iAmOwner);
+  const [tLoc, setTLoc] = useState({});
+  const tTimer = React.useRef({});
+  const tPend = React.useRef({});
+  const writeThemeOv = (id, patch) => {
+    const cur = themeOv && themeOv.ov || {};
+    const mine = { ...(cur[id] || {}), ...(tPend.current[id] || {}), ...patch };
+    tPend.current[id] = mine;
+    const next = { ...cur, ...tPend.current, [id]: mine };
+    clearTimeout(tTimer.current[id]);
+    tTimer.current[id] = setTimeout(() => {
+      db.doc("config/themes").set({ ov: next }).catch(e => notify("Theme save refused: " + e.message, "error"));
+    }, 350);
+  };
+  const restoreTheme = id => {
+    const cur = { ...(themeOv && themeOv.ov || {}) };
+    delete cur[id];
+    delete tPend.current[id];
+    setTLoc(x => {
+      const n = { ...x };
+      delete n[id];
+      return n;
+    });
+    db.doc("config/themes").set({ ov: cur }).catch(e => notify("Theme restore refused: " + e.message, "error"));
+  };
+  const effT = id => {
+    const o = (themeOv && themeOv.ov || {})[id] || {};
+    const l = tLoc[id] || {};
+    const d = readThemeDefaults(id);
+    const color = l.color != null ? l.color : o.color != null ? o.color : d.key || "#38bdf8";
+    const alpha = l.alpha != null ? l.alpha : o.alpha != null ? o.alpha : 255;
+    return { color: color, alpha: Number(alpha), defKey: d.key || "#38bdf8", card: d.card || "#111827", bg: d.bg || "#0a0f1e", overridden: o.color != null || o.alpha != null || l.color != null || l.alpha != null };
+  };
   const brands = sortAlpha(catalog && catalog.brands || []);
   const roleOptions = sortAlpha(Array.from(new Set([...ENGINEER_ROLES, ...(catalog && catalog.roles || []), ...users.map(u => String(u.role || "").trim()).filter(Boolean)])));
   const [newBrand, setNewBrand] = useState("");
@@ -15869,7 +16037,76 @@ function SettingsTab({
       fontWeight: 800
     }
   }, s.label);
-  return /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("div", {
+  const setSubBar = iAmOwner ? /*#__PURE__*/React.createElement("div", {
+    style: { display: "flex", gap: 8, marginBottom: 14 }
+  }, ["general", "themes"].map(v2 => /*#__PURE__*/React.createElement("button", {
+    key: v2,
+    onClick: () => setSetView(v2),
+    style: btnSt(setView === v2 ? "var(--c-key)" : "var(--c-border)", setView === v2 ? "var(--c-bg)" : "var(--c-text2)")
+  }, v2 === "general" ? "⚙ General" : "🎨 Theme Studio"))) : null;
+  if (iAmOwner && setView === "themes") return /*#__PURE__*/React.createElement("div", null, setSubBar, /*#__PURE__*/React.createElement("div", {
+    style: cardSt
+  }, /*#__PURE__*/React.createElement("div", {
+    style: { fontWeight: 800, fontSize: 15, marginBottom: 4 }
+  }, "🎨 Theme Studio — sole owner"), /*#__PURE__*/React.createElement("div", {
+    style: { fontSize: 12, color: "var(--c-text4)", marginBottom: 14 }
+  }, "Tune every theme: pick its accent color and set the panel opacity (0 = fully transparent, 255 = solid). Changes save automatically and apply live for every signed-in user. Each theme can be restored to its factory look independently."), THEMES.map(t2 => {
+    const e2 = effT(t2.id);
+    return /*#__PURE__*/React.createElement("div", {
+      key: t2.id,
+      style: { display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap", padding: "10px 12px", borderBottom: "1px solid var(--c-border2)" }
+    }, /*#__PURE__*/React.createElement("div", {
+      style: { width: 54, height: 34, borderRadius: 8, background: e2.bg, border: "1px solid var(--c-border)", position: "relative", overflow: "hidden", flexShrink: 0 }
+    }, /*#__PURE__*/React.createElement("div", {
+      style: { position: "absolute", inset: 4, borderRadius: 5, background: e2.card, opacity: e2.alpha / 255 }
+    }), /*#__PURE__*/React.createElement("div", {
+      style: { position: "absolute", right: 6, bottom: 6, width: 10, height: 10, borderRadius: 999, background: e2.color }
+    })), /*#__PURE__*/React.createElement("div", {
+      style: { minWidth: 170, fontWeight: 700, fontSize: 13 }
+    }, t2.label, e2.overridden ? /*#__PURE__*/React.createElement("span", {
+      style: { marginLeft: 8, fontSize: 10, color: "var(--c-key)", fontWeight: 800 }
+    }, "custom") : null), /*#__PURE__*/React.createElement("label", {
+      style: { display: "inline-flex", alignItems: "center", gap: 6, fontSize: 12, color: "var(--c-text3)" }
+    }, "Color", /*#__PURE__*/React.createElement("input", {
+      type: "color",
+      value: e2.color,
+      onChange: e3 => {
+        const v3 = e3.target.value;
+        setTLoc(x => ({ ...x, [t2.id]: { ...(x[t2.id] || {}), color: v3 } }));
+        writeThemeOv(t2.id, { color: v3 });
+      },
+      style: { width: 42, height: 28, padding: 0, border: "1px solid var(--c-border)", borderRadius: 6, background: "transparent", cursor: "pointer" }
+    })), /*#__PURE__*/React.createElement("label", {
+      style: { display: "inline-flex", alignItems: "center", gap: 8, fontSize: 12, color: "var(--c-text3)", flex: "1 1 240px" }
+    }, "Opacity", /*#__PURE__*/React.createElement("input", {
+      type: "range",
+      min: 0,
+      max: 255,
+      value: e2.alpha,
+      onChange: e3 => {
+        const v3 = Math.max(0, Math.min(255, Number(e3.target.value) || 0));
+        setTLoc(x => ({ ...x, [t2.id]: { ...(x[t2.id] || {}), alpha: v3 } }));
+        writeThemeOv(t2.id, { alpha: v3 });
+      },
+      style: { flex: 1, minWidth: 120, cursor: "pointer" }
+    }), /*#__PURE__*/React.createElement("input", {
+      type: "number",
+      min: 0,
+      max: 255,
+      value: e2.alpha,
+      onChange: e3 => {
+        const v3 = Math.max(0, Math.min(255, Number(e3.target.value) || 0));
+        setTLoc(x => ({ ...x, [t2.id]: { ...(x[t2.id] || {}), alpha: v3 } }));
+        writeThemeOv(t2.id, { alpha: v3 });
+      },
+      style: { ...inputSt(), width: 66, textAlign: "center" }
+    })), /*#__PURE__*/React.createElement("button", {
+      title: "Restore this theme to its factory colors",
+      onClick: () => restoreTheme(t2.id),
+      style: btnSt("var(--c-border)", "var(--c-text2)")
+    }, "\u21ba Restore default"));
+  })));
+  return /*#__PURE__*/React.createElement("div", null, setSubBar, /*#__PURE__*/React.createElement("div", {
     style: {
       display: "flex",
       gap: 8,
@@ -17948,6 +18185,24 @@ function App() {
     msg,
     kind
   });
+  const themeOvDoc = useDoc("config/themes", true);
+  useEffect(() => {
+    const ov = themeOvDoc && themeOvDoc.ov || {};
+    let el = document.getElementById("ibase-theme-ov");
+    if (!el) {
+      el = document.createElement("style");
+      el.id = "ibase-theme-ov";
+      document.head.appendChild(el);
+    }
+    el.textContent = Object.keys(ov).map(id => {
+      const o = ov[id] || {};
+      const d = readThemeDefaults(id);
+      const lines = [];
+      if (o.color) lines.push("--c-key:" + o.color);
+      if (o.alpha != null && Number(o.alpha) < 255) lines.push("--c-card:color-mix(in srgb, " + (d.card || "#111827") + " " + (Number(o.alpha) / 255 * 100).toFixed(1) + "%, transparent)");
+      return lines.length ? '[data-theme="' + id + '"]{' + lines.join(";") + "}" : "";
+    }).filter(Boolean).join("\n");
+  }, [themeOvDoc]);
   useEffect(() => {
     document.documentElement.setAttribute("data-theme", theme);
     try {
@@ -18503,16 +18758,7 @@ function App() {
     dlCfg: dlCfg,
     uiAnim: uiAnim,
     onUiAnim: onUiAnim
-  })))), /*#__PURE__*/React.createElement("div", {
-    style: {
-      textAlign: "center",
-      padding: "10px 0 26px",
-      fontSize: 10,
-      color: "var(--c-author)",
-      letterSpacing: 2,
-      textTransform: "uppercase"
-    }
-  }, "Designed & Developed by Rex Banihit")), toast && /*#__PURE__*/React.createElement(Toast, {
+  }))))), toast && /*#__PURE__*/React.createElement(Toast, {
     ...toast,
     onClose: () => setToast(null)
   }));
