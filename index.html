@@ -337,7 +337,7 @@
 (function () {
   var okLibs = (typeof firebase !== "undefined") && (typeof React !== "undefined") && (typeof ReactDOM !== "undefined") && (typeof XLSX !== "undefined");
   window.__IBASE_LIBS_OK = okLibs;
-  window.__IBASE_BUILD = "v161";
+  window.__IBASE_BUILD = "v162";
   if (!okLibs) {
     document.getElementById("root").innerHTML =
       "<div style='max-width:520px;margin:90px auto;padding:30px;background:#16181d;border:1px solid #f8717155;border-radius:16px;font-family:system-ui,sans-serif;color:#e5e7eb;text-align:center'>" +
@@ -2226,6 +2226,10 @@ function blankPermissions() {
       view: true,
       edit: true
     },
+    wpoa: {
+      view: false,
+      edit: false
+    },
     analytics: {
       view: true,
       edit: false
@@ -3118,7 +3122,7 @@ function Login({
       letterSpacing: 2.5,
       textTransform: "uppercase"
     }
-  }, "Installed Base Management \u00b7 build v161"), !dept ? /*#__PURE__*/React.createElement("div", null,
+  }, "Installed Base Management \u00b7 build v162"), !dept ? /*#__PURE__*/React.createElement("div", null,
     /*#__PURE__*/React.createElement("div", { style: { fontSize: 12.5, color: "var(--c-text3)", textAlign: "center", marginBottom: 14 } }, "Select your department or module to continue"),
     /*#__PURE__*/React.createElement("div", { style: { display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 } },
       (depts || []).filter(d => !d.disabled).map((d, i) => /*#__PURE__*/React.createElement("button", { key: (d.id || d.name) + i, onClick: () => pickDept(d.name), style: { background: "var(--c-bg)", border: "1px solid var(--c-border)", borderRadius: 12, padding: "16px 10px", cursor: "pointer", display: "flex", flexDirection: "column", alignItems: "center", gap: 8, color: "var(--c-text2)" } },
@@ -8171,6 +8175,12 @@ const MANAGED_TABS = [{
   id: "sales",
   def: "📊 Sales"
 }, {
+  id: "wpoa",
+  def: "🗓 WPOA"
+}, {
+  id: "smer",
+  def: "🧾 SMER"
+}, {
   id: "bin",
   def: "🗑 Bin",
   adminOnly: true
@@ -10887,8 +10897,11 @@ function WpoaTab({ profile, notify }) {
 // ─── SMER: Semi-Monthly Expense Report (replica of the company form; A4) ────
 function SmerTab({ profile, notify }) {
   const uid = auth.currentUser && auth.currentUser.uid || "";
+  const brandDoc = useDoc("config/branding", true);
+  const logo = brandDoc && brandDoc.logo || "";
+  const logoW = Math.max(40, Math.min(260, Number(brandDoc && brandDoc.logoW) || 84));
   const emptyRow = () => ({ date: "", travel: "", kmFrom: "", kmTo: "", totalKm: "", instrument: "", isr: "", dcr: "", meals: "", parking: "" });
-  const blank = () => ({ title: "", name: profile && profile.name || "", position: "Field Service Engineer", rows: Array.from({ length: 23 }, emptyRow), parkingS: "", tollS: "", loadS: "" });
+  const blank = () => ({ title: "", gasS: "", name: profile && profile.name || "", position: "Field Service Engineer", rows: Array.from({ length: 23 }, emptyRow), parkingS: "", tollS: "", loadS: "" });
   const [sheets, setSheets] = useState(null);
   const [curId, setCurId] = useState("");
   const [f, setF] = useState(blank);
@@ -10912,14 +10925,20 @@ function SmerTab({ profile, notify }) {
     }
     return { ...x, rows };
   });
+  const delRow = i => {
+    if (f.rows.length <= 1) { notify("At least one row must remain.", "error"); return; }
+    const r2 = f.rows[i];
+    if (Object.values(r2 || {}).some(v => String(v || "").trim()) && !confirm("Delete this row and everything typed in it?")) return;
+    setF(x => ({ ...x, rows: x.rows.filter((_, j) => j !== i) }));
+  };
   const tKm = f.rows.reduce((a, r) => a + num(r.totalKm), 0);
   const tMeals = f.rows.reduce((a, r) => a + num(r.meals), 0);
   const tPark = f.rows.reduce((a, r) => a + num(r.parking), 0);
-  const grand = tKm + tMeals + num(f.parkingS) + num(f.tollS) + num(f.loadS);
+  const grand = num(f.gasS) + tMeals + num(f.parkingS) + num(f.tollS) + num(f.loadS);
   function saveSheet(forceNew) {
     const id = !forceNew && curId ? curId : uid + "_" + Date.now();
     const title = String(f.title || "").trim() || "SMER " + today();
-    db.collection("smer").doc(id).set({ uid: uid, by: meEmail(profile) || "", title: title, name: f.name, position: f.position, rows: f.rows, parkingS: f.parkingS, tollS: f.tollS, loadS: f.loadS, savedAt: new Date().toISOString() }).then(() => {
+    db.collection("smer").doc(id).set({ uid: uid, by: meEmail(profile) || "", title: title, gasS: f.gasS, name: f.name, position: f.position, rows: f.rows, parkingS: f.parkingS, tollS: f.tollS, loadS: f.loadS, savedAt: new Date().toISOString() }).then(() => {
       setCurId(id);
       setF(x => ({ ...x, title: title }));
       notify(forceNew ? "Saved as a NEW copy — the previous sheet stays untouched." : "SMER sheet \u201C" + title + "\u201D saved.", "ok");
@@ -10929,15 +10948,34 @@ function SmerTab({ profile, notify }) {
     const sh = (sheets || []).find(x => x.id === id);
     if (!sh) { setCurId(""); setF(blank()); return; }
     setCurId(id);
-    setF({ title: sh.title || "", name: sh.name || "", position: sh.position || "Field Service Engineer", rows: Array.isArray(sh.rows) && sh.rows.length ? sh.rows.map(r => ({ ...emptyRow(), ...r })) : Array.from({ length: 23 }, emptyRow), parkingS: sh.parkingS || "", tollS: sh.tollS || "", loadS: sh.loadS || "" });
+    setF({ title: sh.title || "", gasS: sh.gasS || "", name: sh.name || "", position: sh.position || "Field Service Engineer", rows: Array.isArray(sh.rows) && sh.rows.length ? sh.rows.map(r => ({ ...emptyRow(), ...r })) : Array.from({ length: 23 }, emptyRow), parkingS: sh.parkingS || "", tollS: sh.tollS || "", loadS: sh.loadS || "" });
   }
   function delSheet() {
     if (!curId) return;
     if (!confirm("Delete this saved SMER sheet? This cannot be undone.")) return;
     db.collection("smer").doc(curId).delete().then(() => { setCurId(""); setF(blank()); notify("Sheet deleted.", "ok"); }).catch(e => notify("Delete failed: " + (e && e.message || e), "error"));
   }
+  function upLogo(file) {
+    if (!file) return;
+    if (file.size > 900 * 1024) { notify("Image too large \u2014 please use a photo under ~900 KB.", "error"); return; }
+    const rd2 = new FileReader();
+    rd2.onload = () => {
+      const durl = String(rd2.result || "");
+      if (durl.length > 1300000) { notify("Encoded image exceeds Firestore's 1 MB limit \u2014 please use a smaller photo.", "error"); return; }
+      db.collection("config").doc("branding").set({ logo: durl, logoW: logoW, by: meEmail(profile) || "", updatedAt: new Date().toISOString() }, { merge: true }).then(() => notify("Logo updated \u2014 every user sees it now.", "ok")).catch(e => notify("Upload failed: " + (e && e.message || e), "error"));
+    };
+    rd2.readAsDataURL(file);
+  }
+  function setLogoW(w2) {
+    const v2 = Math.max(40, Math.min(260, Number(w2) || 84));
+    db.collection("config").doc("branding").set({ logoW: v2 }, { merge: true }).catch(e => notify("Resize failed: " + (e && e.message || e), "error"));
+  }
+  function rmLogo() {
+    if (!confirm("Remove the uploaded logo for ALL users? The default FAS mark will show instead.")) return;
+    db.collection("config").doc("branding").set({ logo: "" }, { merge: true }).then(() => notify("Logo removed \u2014 default mark restored for everyone.", "ok")).catch(e => notify("Remove failed: " + (e && e.message || e), "error"));
+  }
   function xlsxOut() {
-    const aoa = [["SEMI-MONTHLY EXPENSE REPORT (SMER)"], ["Name:", f.name], ["Position:", f.position], ["One hospital/laboratory per box. Pls use separate sheet if necessary."], ["Date", "Travel Details (From/To)", "Daily KM Reading/FARE — From", "Daily KM Reading/FARE — To", "Total KM/FARE", "Instrument", "ISR Number", "DCR (TIME & OUT)", "Meals", "Parking/Toll/Load"]].concat(f.rows.map(r => [r.date, r.travel, r.kmFrom, r.kmTo, r.totalKm, r.instrument, r.isr, r.dcr, r.meals, r.parking]), [["TOTAL:", "", "", "", tKm.toFixed(2), "", "", "", tMeals.toFixed(2), tPark.toFixed(2)], [], ["1. Gas/Fare", tKm.toFixed(2)], ["2. Meals", tMeals.toFixed(2)], ["3. Parking", num(f.parkingS).toFixed(2)], ["4. Toll", num(f.tollS).toFixed(2)], ["5. Load", num(f.loadS).toFixed(2)], ["TOTAL :", grand.toFixed(2)]]);
+    const aoa = [["SEMI-MONTHLY EXPENSE REPORT (SMER)"], ["Name:", f.name], ["Position:", f.position], ["One hospital/laboratory per box. Pls use separate sheet if necessary."], ["Date", "Travel Details (From/To)", "Daily KM Reading/FARE — From", "Daily KM Reading/FARE — To", "Total KM/FARE", "Instrument", "ISR Number", "DCR (TIME & OUT)", "Meals", "Parking/Toll/Load"]].concat(f.rows.map(r => [r.date, r.travel, r.kmFrom, r.kmTo, r.totalKm, r.instrument, r.isr, r.dcr, r.meals, r.parking]), [["TOTAL:", "", "", "", tKm.toFixed(2), "", "", "", tMeals.toFixed(2), tPark.toFixed(2)], [], ["1. Gas/Fare", num(f.gasS).toFixed(2)], ["2. Meals", tMeals.toFixed(2)], ["3. Parking", num(f.parkingS).toFixed(2)], ["4. Toll", num(f.tollS).toFixed(2)], ["5. Load", num(f.loadS).toFixed(2)], ["TOTAL :", grand.toFixed(2)]]);
     const ws = XLSX.utils.aoa_to_sheet(aoa);
     ws["!cols"] = [{ wch: 11 }, { wch: 30 }, { wch: 13 }, { wch: 13 }, { wch: 12 }, { wch: 22 }, { wch: 12 }, { wch: 16 }, { wch: 9 }, { wch: 14 }];
     const wb = XLSX.utils.book_new();
@@ -10948,16 +10986,16 @@ function SmerTab({ profile, notify }) {
     const esc = t => String(t == null ? "" : t).replace(/&/g, "&amp;").replace(/</g, "&lt;");
     const cells = r => [r.date, r.travel, r.kmFrom, r.kmTo, r.totalKm, r.instrument, r.isr, r.dcr, r.meals, r.parking];
     const body = f.rows.map(r => "<tr>" + cells(r).map(c => "<td>" + esc(c) + "&nbsp;</td>").join("") + "</tr>").join("");
-    const html = "<!doctype html><html><head><title>SMER</title><style>@page{size:A4 landscape;margin:8mm}body{font-family:Arial,Helvetica,sans-serif;color:#000;margin:0;padding:4px 6px}.logo{display:flex;align-items:center;gap:10px}.sq{display:grid;grid-template-columns:repeat(3,11px);grid-auto-rows:11px}.sq i{display:block}.sq i.b{background:#1a1a1a}.brand{border-left:2px solid #000;padding-left:10px}.fas{font-weight:900;font-size:24px;letter-spacing:2px;line-height:1}.sub{font-size:9.5px;line-height:1.1}h1{font-size:13px;text-align:center;margin:-18px 0 8px;font-weight:800}.meta{font-size:11.5px;font-weight:700;margin:1px 0}.meta span{font-weight:400;border-bottom:1px solid #000;display:inline-block;min-width:420px;padding:0 4px}.note{font-size:9.5px;font-style:italic;margin:2px 0 4px}table{width:100%;border-collapse:collapse;table-layout:fixed}th,td{border:1px solid #000;font-size:9.8px;padding:1.5px 3px;height:15.5px;overflow:hidden;white-space:nowrap}th{font-weight:700;text-align:center}.y{background:#ffff00 !important;-webkit-print-color-adjust:exact;print-color-adjust:exact}.tot td{font-weight:700}.foot{display:flex;justify-content:space-between;margin-top:10px}.sums{font-size:11px;width:300px}.sums div{display:flex;justify-content:space-between;padding:1px 0}.sums .u{border-bottom:1px solid #000;min-width:90px;text-align:right}.sums .g{font-weight:800;border-top:1px solid #000;margin-top:3px;padding-top:3px}.sig{width:280px;text-align:center;font-size:10.5px}.sig .l{border-top:1px solid #000;margin-top:30px;padding-top:2px}</style></head><body>" +
-      '<div class="logo"><div class="sq"><i class="b"></i><i></i><i class="b"></i><i></i><i class="b"></i><i></i><i class="b"></i><i class="b"></i><i></i></div><div class="brand"><div class="fas">FAS</div><div class="sub">Diagnostic<br>Group<br>Inc.</div></div></div>' +
+    const html = "<!doctype html><html><head><title>SMER</title><style>@page{size:A4 landscape;margin:8mm}body{font-family:Arial,Helvetica,sans-serif;color:#000;margin:0;padding:4px 6px}.logo{display:flex;align-items:center;gap:10px}.sq{display:grid;grid-template-columns:repeat(3,11px);grid-auto-rows:11px}.sq i{display:block}.sq i.b{background:#1a1a1a}.brand{border-left:2px solid #000;padding-left:10px}.fas{font-weight:900;font-size:24px;letter-spacing:2px;line-height:1}.sub{font-size:9.5px;line-height:1.1}h1{font-size:13px;text-align:center;margin:-18px 0 8px;font-weight:800}.meta{font-size:11.5px;font-weight:700;margin:1px 0;display:flex}.meta em{font-style:normal;width:64px;flex-shrink:0}.meta span{font-weight:400;border-bottom:1px solid #000;display:inline-block;min-width:420px;padding:0 4px}.note{font-size:9.5px;font-style:italic;margin:2px 0 4px}table{width:100%;border-collapse:collapse;table-layout:fixed}th,td{border:1px solid #000;font-size:9.8px;padding:1.5px 3px;height:15.5px;overflow:hidden;white-space:nowrap}th{font-weight:700;text-align:center}.y{background:#ffff00 !important;-webkit-print-color-adjust:exact;print-color-adjust:exact}.tot td{font-weight:700}.foot{display:flex;justify-content:space-between;margin-top:10px}.sums{font-size:11px;width:300px}.sums div{display:flex;justify-content:space-between;padding:1px 0}.sums .u{border-bottom:1px solid #000;min-width:90px;text-align:right}.sums .g{font-weight:800;border-top:1px solid #000;margin-top:3px;padding-top:3px}.sig{width:280px;text-align:center;font-size:10.5px}.sig .l{border-top:1px solid #000;margin-top:30px;padding-top:2px}</style></head><body>" +
+      '<div class="logo">' + (logo ? '<img src="' + logo + '" style="width:' + logoW + 'px;height:auto">' : '<div class="sq"><i class="b"></i><i></i><i class="b"></i><i></i><i class="b"></i><i></i><i class="b"></i><i class="b"></i><i></i></div><div class="brand"><div class="fas">FAS</div><div class="sub">Diagnostic<br>Group<br>Inc.</div></div>') + '</div>' +
       "<h1>SEMI-MONTHLY EXPENSE REPORT(SMER)</h1>" +
-      '<div class="meta">Name: <span>' + esc(f.name) + '</span></div><div class="meta">Position: <span>' + esc(f.position) + '</span></div>' +
+      '<div class="meta"><em>Name:</em><span>' + esc(f.name) + '</span></div><div class="meta"><em>Position:</em><span>' + esc(f.position) + '</span></div>' +
       '<div class="note">One hospital/laboratory per box. Pls use separate sheet if necessary.</div>' +
       '<table><colgroup><col style="width:9%"><col style="width:18%"><col style="width:8%"><col style="width:8%"><col style="width:8%"><col style="width:17%"><col style="width:8%"><col style="width:11%"><col style="width:6%"><col style="width:7%"></colgroup>' +
       '<tr><th rowspan="2">Date</th><th rowspan="2">Travel Details (From/To)</th><th colspan="2" class="y">Daily KM Reading/FARE</th><th rowspan="2" class="y">Total KM/FARE</th><th rowspan="2">Instrument</th><th rowspan="2">ISR<br>Number</th><th rowspan="2">DCR (TIME &amp; OUT)</th><th rowspan="2" class="y">Meals</th><th rowspan="2" class="y">Parking/<br>Toll/Load</th></tr>' +
       '<tr><th class="y">From</th><th class="y">To</th></tr>' + body +
       '<tr class="tot"><td style="text-align:center">TOTAL:</td><td></td><td></td><td></td><td style="text-align:right">' + tKm.toFixed(2) + '</td><td></td><td></td><td></td><td style="text-align:right">' + tMeals.toFixed(2) + '</td><td style="text-align:right">' + tPark.toFixed(2) + "</td></tr></table>" +
-      '<div class="foot"><div class="sums"><div><span>1. Gas/Fare</span><span class="u">' + tKm.toFixed(2) + '</span></div><div><span>2. Meals</span><span class="u">' + tMeals.toFixed(2) + '</span></div><div><span>3. Parking</span><span class="u">' + num(f.parkingS).toFixed(2) + '</span></div><div><span>4. Toll</span><span class="u">' + num(f.tollS).toFixed(2) + '</span></div><div><span>5. Load</span><span class="u">' + num(f.loadS).toFixed(2) + '</span></div><div class="g"><span>TOTAL :</span><span class="u">' + grand.toFixed(2) + '</span></div></div>' +
+      '<div class="foot"><div class="sums"><div><span>1. Gas/Fare</span><span class="u">' + num(f.gasS).toFixed(2) + '</span></div><div><span>2. Meals</span><span class="u">' + tMeals.toFixed(2) + '</span></div><div><span>3. Parking</span><span class="u">' + num(f.parkingS).toFixed(2) + '</span></div><div><span>4. Toll</span><span class="u">' + num(f.tollS).toFixed(2) + '</span></div><div><span>5. Load</span><span class="u">' + num(f.loadS).toFixed(2) + '</span></div><div class="g"><span>TOTAL :</span><span class="u">' + grand.toFixed(2) + '</span></div></div>' +
       '<div class="sig"><div class="l">Employee&#39;s Signature</div><div class="l" style="margin-top:44px">Vice President for Operations</div></div></div></body></html>';
     const w = window.open("", "_blank", "width=1150,height=780");
     if (!w) { notify("Allow pop-ups to print the SMER sheet.", "error"); return; }
@@ -10995,11 +11033,7 @@ function SmerTab({ profile, notify }) {
     style: btnSt("var(--c-border)", "var(--c-text2)"),
     title: "Append one more expense row — totals, print and Excel include it automatically",
     onClick: () => setF(x => ({ ...x, rows: [...x.rows, emptyRow()] }))
-  }, "➕ Add row"), f.rows.length > 23 ? /*#__PURE__*/React.createElement("button", {
-    style: btnSt("var(--c-border)", "var(--c-text2)"),
-    title: "Remove the last row (only rows beyond the standard 23 can be removed)",
-    onClick: () => setF(x => x.rows.length > 23 ? { ...x, rows: x.rows.slice(0, -1) } : x)
-  }, "➖ Remove last row") : null, /*#__PURE__*/React.createElement("button", {
+  }, "➕ Add row"), /*#__PURE__*/React.createElement("button", {
     style: btnSt("var(--c-border)", "var(--c-text2)"),
     onClick: printSheet,
     title: "Opens a print view sized for A4 landscape"
@@ -11011,11 +11045,28 @@ function SmerTab({ profile, notify }) {
     onClick: delSheet
   }, "🗑 Delete sheet") : null, /*#__PURE__*/React.createElement("span", {
     style: { fontSize: 11, color: "var(--c-text5)" }
-  }, "Private to YOUR account — nobody else's SMERs are touched, and every save keeps its own named copy. Totals compute automatically, like Excel.")), /*#__PURE__*/React.createElement("div", {
+  }, "Private to YOUR account — nobody else's SMERs are touched, and every save keeps its own named copy. Totals compute automatically, like Excel.")), profile && profile.isAdmin ? /*#__PURE__*/React.createElement("div", {
+    style: { display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap", marginBottom: 8, fontSize: 11.5, color: "var(--c-text3)" }
+  }, /*#__PURE__*/React.createElement("span", { style: { fontWeight: 700 } }, "🖼 Sheet logo (admin):"), /*#__PURE__*/React.createElement("input", {
+    type: "file",
+    accept: "image/*",
+    id: "smerLogoFile",
+    style: { display: "none" },
+    onChange: e => { upLogo(e.target.files && e.target.files[0]); e.target.value = ""; }
+  }), /*#__PURE__*/React.createElement("button", {
+    style: btnSt("var(--c-border)", "var(--c-text2)"),
+    onClick: () => { const el2 = document.getElementById("smerLogoFile"); if (el2) el2.click(); }
+  }, logo ? "🖼 Change photo" : "🖼 Upload photo"), logo ? /*#__PURE__*/React.createElement("button", {
+    style: btnSt("var(--c-border)", "var(--c-text2)"), title: "Smaller", onClick: () => setLogoW(logoW - 12)
+  }, "\u2212") : null, logo ? /*#__PURE__*/React.createElement("span", { style: { minWidth: 40, textAlign: "center" } }, logoW + "px") : null, logo ? /*#__PURE__*/React.createElement("button", {
+    style: btnSt("var(--c-border)", "var(--c-text2)"), title: "Bigger", onClick: () => setLogoW(logoW + 12)
+  }, "+") : null, logo ? /*#__PURE__*/React.createElement("button", {
+    style: btnSt("#3a1d1d", "#fca5a5"), onClick: rmLogo
+  }, "🗑 Remove") : null, /*#__PURE__*/React.createElement("span", { style: { color: "var(--c-text5)" } }, "applies to every user's sheet and printout instantly")) : null, /*#__PURE__*/React.createElement("div", {
     style: { background: "#ffffff", color: "#000", border: "1px solid var(--c-border)", borderRadius: 6, padding: "14px 16px", maxWidth: 1150, overflowX: "auto", boxShadow: "0 6px 24px rgba(0,0,0,.25)" }
   }, /*#__PURE__*/React.createElement("div", {
     style: { display: "flex", alignItems: "center", gap: 10 }
-  }, /*#__PURE__*/React.createElement("div", {
+  }, logo ? /*#__PURE__*/React.createElement("img", { src: logo, alt: "company logo", style: { width: logoW, height: "auto", display: "block" } }) : /*#__PURE__*/React.createElement(React.Fragment, null, /*#__PURE__*/React.createElement("div", {
     style: { display: "grid", gridTemplateColumns: "repeat(3, 11px)", gridAutoRows: "11px" }
   }, [1, 0, 1, 0, 1, 0, 1, 1, 0].map((b, i) => /*#__PURE__*/React.createElement("i", {
     key: i,
@@ -11026,17 +11077,17 @@ function SmerTab({ profile, notify }) {
     style: { fontWeight: 900, fontSize: 24, letterSpacing: 2, lineHeight: 1 }
   }, "FAS"), /*#__PURE__*/React.createElement("div", {
     style: { fontSize: 9.5, lineHeight: 1.1 }
-  }, "Diagnostic", /*#__PURE__*/React.createElement("br", null), "Group", /*#__PURE__*/React.createElement("br", null), "Inc.")), /*#__PURE__*/React.createElement("div", {
+  }, "Diagnostic", /*#__PURE__*/React.createElement("br", null), "Group", /*#__PURE__*/React.createElement("br", null), "Inc."))), /*#__PURE__*/React.createElement("div", {
     style: { flex: 1, textAlign: "center", fontWeight: 800, fontSize: 14, alignSelf: "center" }
   }, "SEMI-MONTHLY EXPENSE REPORT(SMER)")), /*#__PURE__*/React.createElement("div", {
     style: { fontSize: 12, fontWeight: 700, margin: "6px 0 1px", display: "flex", gap: 6 }
-  }, "Name:", /*#__PURE__*/React.createElement("input", {
+  }, /*#__PURE__*/React.createElement("span", { style: { width: 64, flexShrink: 0 } }, "Name:"), /*#__PURE__*/React.createElement("input", {
     style: paperIn({ borderBottom: "1px solid #000", maxWidth: 520, fontWeight: 400 }),
     value: f.name,
     onChange: e => setF(x => ({ ...x, name: e.target.value }))
   })), /*#__PURE__*/React.createElement("div", {
     style: { fontSize: 12, fontWeight: 700, margin: "1px 0", display: "flex", gap: 6 }
-  }, "Position:", /*#__PURE__*/React.createElement("input", {
+  }, /*#__PURE__*/React.createElement("span", { style: { width: 64, flexShrink: 0 } }, "Position:"), /*#__PURE__*/React.createElement("input", {
     style: paperIn({ borderBottom: "1px solid #000", maxWidth: 520, fontWeight: 400 }),
     value: f.position,
     onChange: e => setF(x => ({ ...x, position: e.target.value }))
@@ -11049,11 +11100,11 @@ function SmerTab({ profile, notify }) {
     style: { width: w }
   }))), /*#__PURE__*/React.createElement("thead", null, /*#__PURE__*/React.createElement("tr", null, /*#__PURE__*/React.createElement("th", { rowSpan: 2, style: bTd({ fontSize: 11 }) }, "Date"), /*#__PURE__*/React.createElement("th", { rowSpan: 2, style: bTd({ fontSize: 11 }) }, "Travel Details (From/To)"), /*#__PURE__*/React.createElement("th", { colSpan: 2, style: bTd({ ...yl, fontSize: 11 }) }, "Daily KM Reading/FARE"), /*#__PURE__*/React.createElement("th", { rowSpan: 2, style: bTd({ ...yl, fontSize: 11 }) }, "Total KM/FARE"), /*#__PURE__*/React.createElement("th", { rowSpan: 2, style: bTd({ fontSize: 11 }) }, "Instrument"), /*#__PURE__*/React.createElement("th", { rowSpan: 2, style: bTd({ fontSize: 11 }) }, "ISR", /*#__PURE__*/React.createElement("br", null), "Number"), /*#__PURE__*/React.createElement("th", { rowSpan: 2, style: bTd({ fontSize: 11 }) }, "DCR (TIME & OUT)"), /*#__PURE__*/React.createElement("th", { rowSpan: 2, style: bTd({ ...yl, fontSize: 11 }) }, "Meals"), /*#__PURE__*/React.createElement("th", { rowSpan: 2, style: bTd({ ...yl, fontSize: 11 }) }, "Parking/", /*#__PURE__*/React.createElement("br", null), "Toll/Load")), /*#__PURE__*/React.createElement("tr", null, /*#__PURE__*/React.createElement("th", { style: bTd({ ...yl, fontSize: 11 }) }, "From"), /*#__PURE__*/React.createElement("th", { style: bTd({ ...yl, fontSize: 11 }) }, "To"))), /*#__PURE__*/React.createElement("tbody", null, f.rows.map((r, i) => /*#__PURE__*/React.createElement("tr", {
     key: i
-  }, /*#__PURE__*/React.createElement("td", { style: bTd() }, /*#__PURE__*/React.createElement("input", { style: paperIn(), value: r.date, onChange: e => setRow(i, "date", e.target.value), placeholder: "" })), /*#__PURE__*/React.createElement("td", { style: bTd() }, /*#__PURE__*/React.createElement("input", { style: paperIn(), value: r.travel, onChange: e => setRow(i, "travel", e.target.value) })), /*#__PURE__*/React.createElement("td", { style: bTd() }, /*#__PURE__*/React.createElement("input", { style: paperIn({ textAlign: "right" }), value: r.kmFrom, onChange: e => setRow(i, "kmFrom", e.target.value) })), /*#__PURE__*/React.createElement("td", { style: bTd() }, /*#__PURE__*/React.createElement("input", { style: paperIn({ textAlign: "right" }), value: r.kmTo, onChange: e => setRow(i, "kmTo", e.target.value) })), /*#__PURE__*/React.createElement("td", { style: bTd() }, /*#__PURE__*/React.createElement("input", { title: "Auto-computes To − From when both are numbers; you can also type a fare directly", style: paperIn({ textAlign: "right" }), value: r.totalKm, onChange: e => setRow(i, "totalKm", e.target.value) })), /*#__PURE__*/React.createElement("td", { style: bTd() }, /*#__PURE__*/React.createElement("input", { style: paperIn(), list: "smer-models", value: r.instrument, onChange: e => setRow(i, "instrument", e.target.value) })), /*#__PURE__*/React.createElement("td", { style: bTd() }, /*#__PURE__*/React.createElement("input", { style: paperIn(), value: r.isr, onChange: e => setRow(i, "isr", e.target.value) })), /*#__PURE__*/React.createElement("td", { style: bTd() }, /*#__PURE__*/React.createElement("input", { style: paperIn(), value: r.dcr, onChange: e => setRow(i, "dcr", e.target.value) })), /*#__PURE__*/React.createElement("td", { style: bTd() }, /*#__PURE__*/React.createElement("input", { style: paperIn({ textAlign: "right" }), value: r.meals, onChange: e => setRow(i, "meals", e.target.value) })), /*#__PURE__*/React.createElement("td", { style: bTd() }, /*#__PURE__*/React.createElement("input", { style: paperIn({ textAlign: "right" }), value: r.parking, onChange: e => setRow(i, "parking", e.target.value) })))), /*#__PURE__*/React.createElement("tr", null, /*#__PURE__*/React.createElement("td", { style: bTd({ textAlign: "center", fontWeight: 800, fontSize: 11.5 }) }, "TOTAL:"), /*#__PURE__*/React.createElement("td", { style: bTd() }), /*#__PURE__*/React.createElement("td", { style: bTd() }), /*#__PURE__*/React.createElement("td", { style: bTd() }), /*#__PURE__*/React.createElement("td", { style: bTd({ textAlign: "right", fontWeight: 800, fontSize: 11.5, padding: "0 3px" }) }, tKm.toFixed(2)), /*#__PURE__*/React.createElement("td", { style: bTd() }), /*#__PURE__*/React.createElement("td", { style: bTd() }), /*#__PURE__*/React.createElement("td", { style: bTd() }), /*#__PURE__*/React.createElement("td", { style: bTd({ textAlign: "right", fontWeight: 800, fontSize: 11.5, padding: "0 3px" }) }, tMeals.toFixed(2)), /*#__PURE__*/React.createElement("td", { style: bTd({ textAlign: "right", fontWeight: 800, fontSize: 11.5, padding: "0 3px" }) }, tPark.toFixed(2))))), /*#__PURE__*/React.createElement("datalist", { id: "smer-models" }, models.map((m2, i2) => /*#__PURE__*/React.createElement("option", { key: m2 + i2, value: m2 }))), /*#__PURE__*/React.createElement("div", {
+  }, /*#__PURE__*/React.createElement("td", { style: { ...bTd(), position: "relative" } }, /*#__PURE__*/React.createElement("input", { style: paperIn({ paddingRight: 12 }), value: r.date, onChange: e => setRow(i, "date", e.target.value), placeholder: "" }), /*#__PURE__*/React.createElement("button", { title: "Delete this row", onClick: () => delRow(i), style: { position: "absolute", top: 0, right: 0, background: "none", border: "none", cursor: "pointer", fontSize: 9, color: "#a00", lineHeight: "14px", padding: "0 2px" } }, "✕")), /*#__PURE__*/React.createElement("td", { style: bTd() }, /*#__PURE__*/React.createElement("input", { style: paperIn(), value: r.travel, onChange: e => setRow(i, "travel", e.target.value) })), /*#__PURE__*/React.createElement("td", { style: bTd() }, /*#__PURE__*/React.createElement("input", { style: paperIn({ textAlign: "right" }), value: r.kmFrom, onChange: e => setRow(i, "kmFrom", e.target.value) })), /*#__PURE__*/React.createElement("td", { style: bTd() }, /*#__PURE__*/React.createElement("input", { style: paperIn({ textAlign: "right" }), value: r.kmTo, onChange: e => setRow(i, "kmTo", e.target.value) })), /*#__PURE__*/React.createElement("td", { style: bTd() }, /*#__PURE__*/React.createElement("input", { title: "Auto-computes To − From when both are numbers; you can also type a fare directly", style: paperIn({ textAlign: "right" }), value: r.totalKm, onChange: e => setRow(i, "totalKm", e.target.value) })), /*#__PURE__*/React.createElement("td", { style: bTd() }, /*#__PURE__*/React.createElement("input", { style: paperIn(), list: "smer-models", value: r.instrument, onChange: e => setRow(i, "instrument", e.target.value) })), /*#__PURE__*/React.createElement("td", { style: bTd() }, /*#__PURE__*/React.createElement("input", { style: paperIn(), value: r.isr, onChange: e => setRow(i, "isr", e.target.value) })), /*#__PURE__*/React.createElement("td", { style: bTd() }, /*#__PURE__*/React.createElement("input", { style: paperIn(), value: r.dcr, onChange: e => setRow(i, "dcr", e.target.value) })), /*#__PURE__*/React.createElement("td", { style: bTd() }, /*#__PURE__*/React.createElement("input", { style: paperIn({ textAlign: "right" }), value: r.meals, onChange: e => setRow(i, "meals", e.target.value) })), /*#__PURE__*/React.createElement("td", { style: bTd() }, /*#__PURE__*/React.createElement("input", { style: paperIn({ textAlign: "right" }), value: r.parking, onChange: e => setRow(i, "parking", e.target.value) })))), /*#__PURE__*/React.createElement("tr", null, /*#__PURE__*/React.createElement("td", { style: bTd({ textAlign: "center", fontWeight: 800, fontSize: 11.5 }) }, "TOTAL:"), /*#__PURE__*/React.createElement("td", { style: bTd() }), /*#__PURE__*/React.createElement("td", { style: bTd() }), /*#__PURE__*/React.createElement("td", { style: bTd() }), /*#__PURE__*/React.createElement("td", { style: bTd({ textAlign: "right", fontWeight: 800, fontSize: 11.5, padding: "0 3px" }) }, tKm.toFixed(2)), /*#__PURE__*/React.createElement("td", { style: bTd() }), /*#__PURE__*/React.createElement("td", { style: bTd() }), /*#__PURE__*/React.createElement("td", { style: bTd() }), /*#__PURE__*/React.createElement("td", { style: bTd({ textAlign: "right", fontWeight: 800, fontSize: 11.5, padding: "0 3px" }) }, tMeals.toFixed(2)), /*#__PURE__*/React.createElement("td", { style: bTd({ textAlign: "right", fontWeight: 800, fontSize: 11.5, padding: "0 3px" }) }, tPark.toFixed(2))))), /*#__PURE__*/React.createElement("datalist", { id: "smer-models" }, models.map((m2, i2) => /*#__PURE__*/React.createElement("option", { key: m2 + i2, value: m2 }))), /*#__PURE__*/React.createElement("div", {
     style: { display: "flex", justifyContent: "space-between", marginTop: 14, flexWrap: "wrap", gap: 20 }
   }, /*#__PURE__*/React.createElement("div", {
     style: { fontSize: 12, width: 300 }
-  }, [["1. Gas/Fare", tKm.toFixed(2), null], ["2. Meals", tMeals.toFixed(2), null], ["3. Parking", null, "parkingS"], ["4. Toll", null, "tollS"], ["5. Load", null, "loadS"]].map(([lb, val, key2]) => /*#__PURE__*/React.createElement("div", {
+  }, [["1. Gas/Fare", null, "gasS"], ["2. Meals", tMeals.toFixed(2), null], ["3. Parking", null, "parkingS"], ["4. Toll", null, "tollS"], ["5. Load", null, "loadS"]].map(([lb, val, key2]) => /*#__PURE__*/React.createElement("div", {
     key: lb,
     style: { display: "flex", justifyContent: "space-between", alignItems: "center", padding: "1px 0" }
   }, /*#__PURE__*/React.createElement("span", null, lb), key2 ? /*#__PURE__*/React.createElement("input", {
@@ -16659,7 +16710,7 @@ function PermEditor({
       marginBottom: 8,
       lineHeight: 1.5
     }
-  }, "For a non-administrator, ", /*#__PURE__*/React.createElement("b", null, "Institutions “edit”"), " means they can add service visits and update a machine's Last PM date — it does ", /*#__PURE__*/React.createElement("b", null, "not"), " allow adding, editing, or deleting laboratories or machines (administrators only). Overtime is always private to each employee. Bin, Audit and Settings are administrator-only."), [["dashboard", "Dashboard"], ["labs", "Institutions"], ["analytics", "Analytics"], ["visits", "Visits"], ["inventory", "Inventory"], ["overtime", "Overtime"]].map(([id, label]) => /*#__PURE__*/React.createElement("div", {
+  }, "For a non-administrator, ", /*#__PURE__*/React.createElement("b", null, "Institutions “edit”"), " means they can add service visits and update a machine's Last PM date — it does ", /*#__PURE__*/React.createElement("b", null, "not"), " allow adding, editing, or deleting laboratories or machines (administrators only). Overtime is always private to each employee. Bin, Audit and Settings are administrator-only. The WPOA board is OFF by default \u2014 tick WPOA \u201cview\u201d to let this user open and edit the shared live weekly plan."), [["dashboard", "Dashboard"], ["labs", "Institutions"], ["analytics", "Analytics"], ["visits", "Visits"], ["inventory", "Inventory"], ["overtime", "Overtime"], ["wpoa", "WPOA (shared weekly plan)"]].map(([id, label]) => /*#__PURE__*/React.createElement("div", {
     key: id,
     style: {
       marginBottom: 6
@@ -18118,7 +18169,7 @@ function App() {
   }, (signedProfile.isAdmin || pCanTab(signedProfile, "overtime", "view")) && !tabHidden(tabsCfg, "overtime") && {
     id: "overtime",
     label: tabLabel(tabsCfg, "overtime", "🕒 Overtime")
-  }, !tabHidden(tabsCfg, "wpoa") && {
+  }, pCanTab(signedProfile, "wpoa", "view") && !tabHidden(tabsCfg, "wpoa") && {
     id: "wpoa",
     label: tabLabel(tabsCfg, "wpoa", "🗓 WPOA")
   }, !tabHidden(tabsCfg, "smer") && {
@@ -18416,7 +18467,7 @@ function App() {
     labs: labs,
     catalog: catalog,
     notify: notify
-  }), tab === "wpoa" && /*#__PURE__*/React.createElement(WpoaTab, {
+  }), tab === "wpoa" && pCanTab(signedProfile, "wpoa", "view") && /*#__PURE__*/React.createElement(WpoaTab, {
     profile: signedProfile,
     notify: notify
   }), tab === "smer" && /*#__PURE__*/React.createElement(SmerTab, {
