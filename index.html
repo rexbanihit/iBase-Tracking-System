@@ -337,7 +337,7 @@
 (function () {
   var okLibs = (typeof firebase !== "undefined") && (typeof React !== "undefined") && (typeof ReactDOM !== "undefined") && (typeof XLSX !== "undefined");
   window.__IBASE_LIBS_OK = okLibs;
-  window.__IBASE_BUILD = "v173";
+  window.__IBASE_BUILD = "v174";
   if (!okLibs) {
     document.getElementById("root").innerHTML =
       "<div style='max-width:520px;margin:90px auto;padding:30px;background:#16181d;border:1px solid #f8717155;border-radius:16px;font-family:system-ui,sans-serif;color:#e5e7eb;text-align:center'>" +
@@ -3154,7 +3154,7 @@ function Login({
       letterSpacing: 2.5,
       textTransform: "uppercase"
     }
-  }, "Installed Base Management \u00b7 build v173"), !dept ? /*#__PURE__*/React.createElement("div", null,
+  }, "Installed Base Management \u00b7 build v174"), !dept ? /*#__PURE__*/React.createElement("div", null,
     /*#__PURE__*/React.createElement("div", { style: { fontSize: 12.5, color: "var(--c-text3)", textAlign: "center", marginBottom: 14 } }, "Select your department or module to continue"),
     /*#__PURE__*/React.createElement("div", { style: { display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 } },
       (depts || []).filter(d => !d.disabled).map((d, i) => /*#__PURE__*/React.createElement("button", { key: (d.id || d.name) + i, onClick: () => pickDept(d.name), style: { background: "var(--c-bg)", border: "1px solid var(--c-border)", borderRadius: 12, padding: "16px 10px", cursor: "pointer", display: "flex", flexDirection: "column", alignItems: "center", gap: 8, color: "var(--c-text2)" } },
@@ -11127,7 +11127,35 @@ function SmerTab({ profile, notify }) {
   const logo = brandDoc && brandDoc.logo || "";
   const logoW = Math.max(40, Math.min(260, Number(brandDoc && brandDoc.logoW) || 84));
   const emptyRow = () => ({ date: "", travel: "", kmFrom: "", kmTo: "", totalKm: "", instrument: "", isr: "", dcr: "", meals: "", parking: "" });
-  const blank = () => ({ title: "", gasS: "", name: profile && profile.name || "", position: "Field Service Engineer", rows: Array.from({ length: 23 }, emptyRow), parkingS: "", tollS: "", loadS: "" });
+  const blank = () => ({ title: "", gasS: "", name: profile && profile.name || "", position: "Field Service Engineer", rows: Array.from({ length: 23 }, emptyRow), parkingS: "", tollS: "", loadS: "", empSig: "" });
+  const SMER_DEF_W = ["9%", "18%", "8%", "8%", "8%", "17%", "8%", "11%", "6%", "7%"];
+  const [colW, setColW] = useState(() => { try { return JSON.parse(localStorage.getItem("ibase_smer_colw") || "{}"); } catch (e) { return {}; } });
+  useEffect(() => { try { localStorage.setItem("ibase_smer_colw", JSON.stringify(colW)); } catch (e) {} }, [colW]);
+  const startColDrag = (e2, i2) => {
+    e2.preventDefault();
+    const th2 = e2.target.parentElement;
+    const startW = th2 ? th2.offsetWidth : 100;
+    const startX = e2.clientX;
+    const mv = ev => setColW(x => ({ ...x, [i2]: Math.max(46, startW + (ev.clientX - startX)) }));
+    const up = () => { window.removeEventListener("mousemove", mv); window.removeEventListener("mouseup", up); };
+    window.addEventListener("mousemove", mv);
+    window.addEventListener("mouseup", up);
+  };
+  const resetCol = i2 => setColW(x => { const n = { ...x }; delete n[i2]; return n; });
+  const [sigOpen, setSigOpen] = useState(false);
+  function upSig(ev) {
+    const file = ev.target.files && ev.target.files[0];
+    ev.target.value = "";
+    if (!file) return;
+    if (file.size > 400 * 1024) { notify("Image too large \u2014 keep the signature picture under 400 KB.", "error"); return; }
+    const rd2 = new FileReader();
+    rd2.onload = () => {
+      const url = String(rd2.result || "");
+      if (url.length > 600000) { notify("Image too large after encoding \u2014 use a smaller or simpler picture.", "error"); return; }
+      setF(x => ({ ...x, empSig: url }));
+    };
+    rd2.readAsDataURL(file);
+  }
   const [sheets, setSheets] = useState(null);
   const [curId, setCurId] = useState("");
   const [f, setF] = useState(blank);
@@ -11164,7 +11192,7 @@ function SmerTab({ profile, notify }) {
   function saveSheet(forceNew) {
     const id = !forceNew && curId ? curId : uid + "_" + Date.now();
     const title = String(f.title || "").trim() || "SMER " + today();
-    db.collection("smer").doc(id).set({ uid: uid, by: meEmail(profile) || "", title: title, gasS: f.gasS, name: f.name, position: f.position, rows: f.rows, parkingS: f.parkingS, tollS: f.tollS, loadS: f.loadS, savedAt: new Date().toISOString() }).then(() => {
+    db.collection("smer").doc(id).set({ uid: uid, by: meEmail(profile) || "", title: title, gasS: f.gasS, name: f.name, position: f.position, rows: f.rows, parkingS: f.parkingS, tollS: f.tollS, loadS: f.loadS, empSig: f.empSig || "", savedAt: new Date().toISOString() }).then(() => {
       setCurId(id);
       setF(x => ({ ...x, title: title }));
       notify(forceNew ? "Saved as a NEW copy — the previous sheet stays untouched." : "SMER sheet \u201C" + title + "\u201D saved.", "ok");
@@ -11174,7 +11202,7 @@ function SmerTab({ profile, notify }) {
     const sh = (sheets || []).find(x => x.id === id);
     if (!sh) { setCurId(""); setF(blank()); return; }
     setCurId(id);
-    setF({ title: sh.title || "", gasS: sh.gasS || "", name: sh.name || "", position: sh.position || "Field Service Engineer", rows: Array.isArray(sh.rows) && sh.rows.length ? sh.rows.map(r => ({ ...emptyRow(), ...r })) : Array.from({ length: 23 }, emptyRow), parkingS: sh.parkingS || "", tollS: sh.tollS || "", loadS: sh.loadS || "" });
+    setF({ title: sh.title || "", gasS: sh.gasS || "", name: sh.name || "", position: sh.position || "Field Service Engineer", rows: Array.isArray(sh.rows) && sh.rows.length ? sh.rows.map(r => ({ ...emptyRow(), ...r })) : Array.from({ length: 23 }, emptyRow), parkingS: sh.parkingS || "", tollS: sh.tollS || "", loadS: sh.loadS || "", empSig: sh.empSig || "" });
   }
   function delSheet() {
     if (!curId) return;
@@ -11222,7 +11250,7 @@ function SmerTab({ profile, notify }) {
       '<tr><th class="y">From</th><th class="y">To</th></tr>' + body +
       '<tr class="tot"><td style="text-align:center">TOTAL:</td><td></td><td></td><td></td><td style="text-align:right">' + tKm.toFixed(2) + '</td><td></td><td></td><td></td><td style="text-align:right">' + tMeals.toFixed(2) + '</td><td style="text-align:right">' + tPark.toFixed(2) + "</td></tr></table>" +
       '<div class="foot"><div class="sums"><div><span>1. Gas/Fare</span><span class="u">' + num(f.gasS).toFixed(2) + '</span></div><div><span>2. Meals</span><span class="u">' + tMeals.toFixed(2) + '</span></div><div><span>3. Parking</span><span class="u">' + num(f.parkingS).toFixed(2) + '</span></div><div><span>4. Toll</span><span class="u">' + num(f.tollS).toFixed(2) + '</span></div><div><span>5. Load</span><span class="u">' + num(f.loadS).toFixed(2) + '</span></div><div class="g"><span>TOTAL :</span><span class="u">' + grand.toFixed(2) + '</span></div></div>' +
-      '<div class="sig"><div class="l">Employee&#39;s Signature</div><div class="l" style="margin-top:44px">Vice President for Operations</div></div></div></body></html>';
+      '<div class="sig">' + (f.empSig ? '<img src="' + f.empSig + '" style="height:40px;max-width:230px;object-fit:contain;display:block;margin:0 auto 2px">' : '') + '<div class="l">Employee&#39;s Signature</div><div class="l" style="margin-top:44px">Vice President for Operations</div></div></div></body></html>';
     const w = window.open("", "_blank", "width=1150,height=780");
     if (!w) { notify("Allow pop-ups to print the SMER sheet.", "error"); return; }
     w.document.write(html);
@@ -11289,7 +11317,7 @@ function SmerTab({ profile, notify }) {
   }, "+") : null, logo ? /*#__PURE__*/React.createElement("button", {
     style: btnSt("#3a1d1d", "#fca5a5"), onClick: rmLogo
   }, "🗑 Remove") : null, /*#__PURE__*/React.createElement("span", { style: { color: "var(--c-text5)" } }, "applies to every user's sheet and printout instantly")) : null, /*#__PURE__*/React.createElement("div", {
-    style: { background: "#ffffff", color: "#000", border: "1px solid var(--c-border)", borderRadius: 6, padding: "14px 16px", maxWidth: 1150, overflowX: "auto", boxShadow: "0 6px 24px rgba(0,0,0,.25)" }
+    style: { background: "#ffffff", color: "#000", border: "1px solid var(--c-border)", borderRadius: 6, padding: "14px 16px", width: "100%", boxSizing: "border-box", overflowX: "auto", boxShadow: "0 6px 24px rgba(0,0,0,.25)" }
   }, /*#__PURE__*/React.createElement("div", {
     style: { display: "flex", alignItems: "center", gap: 10 }
   }, logo ? /*#__PURE__*/React.createElement("img", { src: logo, alt: "company logo", style: { width: logoW, height: "auto", display: "block" } }) : /*#__PURE__*/React.createElement(React.Fragment, null, /*#__PURE__*/React.createElement("div", {
@@ -11319,12 +11347,14 @@ function SmerTab({ profile, notify }) {
     onChange: e => setF(x => ({ ...x, position: e.target.value }))
   })), /*#__PURE__*/React.createElement("div", {
     style: { fontSize: 10, fontStyle: "italic", margin: "2px 0 5px" }
-  }, "One hospital/laboratory per box. Pls use separate sheet if necessary."), /*#__PURE__*/React.createElement("table", {
+  }, "One hospital/laboratory per box. Pls use separate sheet if necessary."), /*#__PURE__*/React.createElement("div", {
+    style: { fontSize: 9.5, color: "#6b7280", margin: "0 0 4px" }
+  }, "\u21d4 Drag a column edge to resize \u00b7 double-click the edge to reset \u2014 your view only; the printed A4 landscape layout never changes."), /*#__PURE__*/React.createElement("table", {
     style: { width: "100%", borderCollapse: "collapse", tableLayout: "fixed", minWidth: 1050 }
-  }, /*#__PURE__*/React.createElement("colgroup", null, ["9%", "18%", "8%", "8%", "8%", "17%", "8%", "11%", "6%", "7%"].map((w, i) => /*#__PURE__*/React.createElement("col", {
+  }, /*#__PURE__*/React.createElement("colgroup", null, SMER_DEF_W.map((w, i) => /*#__PURE__*/React.createElement("col", {
     key: i,
-    style: { width: w }
-  }))), /*#__PURE__*/React.createElement("thead", null, /*#__PURE__*/React.createElement("tr", null, /*#__PURE__*/React.createElement("th", { rowSpan: 2, style: bTd({ fontSize: 11 }) }, "Date"), /*#__PURE__*/React.createElement("th", { rowSpan: 2, style: bTd({ fontSize: 11 }) }, "Travel Details (From/To)"), /*#__PURE__*/React.createElement("th", { colSpan: 2, style: bTd({ ...yl, fontSize: 11 }) }, "Daily KM Reading/FARE"), /*#__PURE__*/React.createElement("th", { rowSpan: 2, style: bTd({ ...yl, fontSize: 11 }) }, "Total KM/FARE"), /*#__PURE__*/React.createElement("th", { rowSpan: 2, style: bTd({ fontSize: 11 }) }, "Instrument"), /*#__PURE__*/React.createElement("th", { rowSpan: 2, style: bTd({ fontSize: 11 }) }, "ISR", /*#__PURE__*/React.createElement("br", null), "Number"), /*#__PURE__*/React.createElement("th", { rowSpan: 2, style: bTd({ fontSize: 11 }) }, "DCR (TIME & OUT)"), /*#__PURE__*/React.createElement("th", { rowSpan: 2, style: bTd({ ...yl, fontSize: 11 }) }, "Meals"), /*#__PURE__*/React.createElement("th", { rowSpan: 2, style: bTd({ ...yl, fontSize: 11 }) }, "Parking/", /*#__PURE__*/React.createElement("br", null), "Toll/Load")), /*#__PURE__*/React.createElement("tr", null, /*#__PURE__*/React.createElement("th", { style: bTd({ ...yl, fontSize: 11 }) }, "From"), /*#__PURE__*/React.createElement("th", { style: bTd({ ...yl, fontSize: 11 }) }, "To"))), /*#__PURE__*/React.createElement("tbody", null, f.rows.map((r, i) => /*#__PURE__*/React.createElement("tr", {
+    style: { width: colW[i] != null ? colW[i] + "px" : w }
+  }))), /*#__PURE__*/React.createElement("thead", null, /*#__PURE__*/React.createElement("tr", null, /*#__PURE__*/React.createElement("th", { rowSpan: 2, style: bTd({ fontSize: 11, position: "relative" }) }, "Date", /*#__PURE__*/React.createElement("span", { onMouseDown: e2 => startColDrag(e2, 0), onDoubleClick: () => resetCol(0), title: "Drag to resize this column \u00b7 double-click to reset \u2014 your view only", style: { position: "absolute", top: 0, right: -4, width: 8, height: "100%", cursor: "col-resize", zIndex: 2 } })), /*#__PURE__*/React.createElement("th", { rowSpan: 2, style: bTd({ fontSize: 11, position: "relative" }) }, "Travel Details (From/To)", /*#__PURE__*/React.createElement("span", { onMouseDown: e2 => startColDrag(e2, 1), onDoubleClick: () => resetCol(1), title: "Drag to resize this column \u00b7 double-click to reset \u2014 your view only", style: { position: "absolute", top: 0, right: -4, width: 8, height: "100%", cursor: "col-resize", zIndex: 2 } })), /*#__PURE__*/React.createElement("th", { colSpan: 2, style: bTd({ ...yl, fontSize: 11 }) }, "Daily KM Reading/FARE"), /*#__PURE__*/React.createElement("th", { rowSpan: 2, style: bTd({ ...yl, fontSize: 11, position: "relative" }) }, "Total KM/FARE", /*#__PURE__*/React.createElement("span", { onMouseDown: e2 => startColDrag(e2, 4), onDoubleClick: () => resetCol(4), title: "Drag to resize this column \u00b7 double-click to reset \u2014 your view only", style: { position: "absolute", top: 0, right: -4, width: 8, height: "100%", cursor: "col-resize", zIndex: 2 } })), /*#__PURE__*/React.createElement("th", { rowSpan: 2, style: bTd({ fontSize: 11, position: "relative" }) }, "Instrument", /*#__PURE__*/React.createElement("span", { onMouseDown: e2 => startColDrag(e2, 5), onDoubleClick: () => resetCol(5), title: "Drag to resize this column \u00b7 double-click to reset \u2014 your view only", style: { position: "absolute", top: 0, right: -4, width: 8, height: "100%", cursor: "col-resize", zIndex: 2 } })), /*#__PURE__*/React.createElement("th", { rowSpan: 2, style: bTd({ fontSize: 11, position: "relative" }) }, "ISR", /*#__PURE__*/React.createElement("br", null), "Number", /*#__PURE__*/React.createElement("span", { onMouseDown: e2 => startColDrag(e2, 6), onDoubleClick: () => resetCol(6), title: "Drag to resize this column \u00b7 double-click to reset \u2014 your view only", style: { position: "absolute", top: 0, right: -4, width: 8, height: "100%", cursor: "col-resize", zIndex: 2 } })), /*#__PURE__*/React.createElement("th", { rowSpan: 2, style: bTd({ fontSize: 11, position: "relative" }) }, "DCR (TIME & OUT)", /*#__PURE__*/React.createElement("span", { onMouseDown: e2 => startColDrag(e2, 7), onDoubleClick: () => resetCol(7), title: "Drag to resize this column \u00b7 double-click to reset \u2014 your view only", style: { position: "absolute", top: 0, right: -4, width: 8, height: "100%", cursor: "col-resize", zIndex: 2 } })), /*#__PURE__*/React.createElement("th", { rowSpan: 2, style: bTd({ ...yl, fontSize: 11, position: "relative" }) }, "Meals", /*#__PURE__*/React.createElement("span", { onMouseDown: e2 => startColDrag(e2, 8), onDoubleClick: () => resetCol(8), title: "Drag to resize this column \u00b7 double-click to reset \u2014 your view only", style: { position: "absolute", top: 0, right: -4, width: 8, height: "100%", cursor: "col-resize", zIndex: 2 } })), /*#__PURE__*/React.createElement("th", { rowSpan: 2, style: bTd({ ...yl, fontSize: 11, position: "relative" }) }, "Parking/", /*#__PURE__*/React.createElement("br", null), "Toll/Load", /*#__PURE__*/React.createElement("span", { onMouseDown: e2 => startColDrag(e2, 9), onDoubleClick: () => resetCol(9), title: "Drag to resize this column \u00b7 double-click to reset \u2014 your view only", style: { position: "absolute", top: 0, right: -4, width: 8, height: "100%", cursor: "col-resize", zIndex: 2 } }))), /*#__PURE__*/React.createElement("tr", null, /*#__PURE__*/React.createElement("th", { style: bTd({ ...yl, fontSize: 11, position: "relative" }) }, "From", /*#__PURE__*/React.createElement("span", { onMouseDown: e2 => startColDrag(e2, 2), onDoubleClick: () => resetCol(2), title: "Drag to resize this column \u00b7 double-click to reset \u2014 your view only", style: { position: "absolute", top: 0, right: -4, width: 8, height: "100%", cursor: "col-resize", zIndex: 2 } })), /*#__PURE__*/React.createElement("th", { style: bTd({ ...yl, fontSize: 11, position: "relative" }) }, "To", /*#__PURE__*/React.createElement("span", { onMouseDown: e2 => startColDrag(e2, 3), onDoubleClick: () => resetCol(3), title: "Drag to resize this column \u00b7 double-click to reset \u2014 your view only", style: { position: "absolute", top: 0, right: -4, width: 8, height: "100%", cursor: "col-resize", zIndex: 2 } })))), /*#__PURE__*/React.createElement("tbody", null, f.rows.map((r, i) => /*#__PURE__*/React.createElement("tr", {
     key: i
   }, /*#__PURE__*/React.createElement("td", { style: { ...bTd(), position: "relative" } }, /*#__PURE__*/React.createElement("input", { style: paperIn({ paddingRight: 12 }), value: r.date, onChange: e => setRow(i, "date", e.target.value), placeholder: "" }), /*#__PURE__*/React.createElement("button", { title: "Delete this row", onClick: () => delRow(i), style: { position: "absolute", top: 0, right: 0, background: "none", border: "none", cursor: "pointer", fontSize: 9, color: "#a00", lineHeight: "14px", padding: "0 2px" } }, "✕")), /*#__PURE__*/React.createElement("td", { style: bTd() }, /*#__PURE__*/React.createElement("input", { style: paperIn(), value: r.travel, onChange: e => setRow(i, "travel", e.target.value) })), /*#__PURE__*/React.createElement("td", { style: bTd() }, /*#__PURE__*/React.createElement("input", { style: paperIn({ textAlign: "right" }), value: r.kmFrom, onChange: e => setRow(i, "kmFrom", e.target.value) })), /*#__PURE__*/React.createElement("td", { style: bTd() }, /*#__PURE__*/React.createElement("input", { style: paperIn({ textAlign: "right" }), value: r.kmTo, onChange: e => setRow(i, "kmTo", e.target.value) })), /*#__PURE__*/React.createElement("td", { style: bTd() }, /*#__PURE__*/React.createElement("input", { title: "Auto-computes To − From when both are numbers; you can also type a fare directly", style: paperIn({ textAlign: "right" }), value: r.totalKm, onChange: e => setRow(i, "totalKm", e.target.value) })), /*#__PURE__*/React.createElement("td", { style: bTd() }, /*#__PURE__*/React.createElement("input", { style: paperIn(), list: "smer-models", value: r.instrument, onChange: e => setRow(i, "instrument", e.target.value) })), /*#__PURE__*/React.createElement("td", { style: bTd() }, /*#__PURE__*/React.createElement("input", { style: paperIn(), value: r.isr, onChange: e => setRow(i, "isr", e.target.value) })), /*#__PURE__*/React.createElement("td", { style: bTd() }, /*#__PURE__*/React.createElement("input", { style: paperIn(), value: r.dcr, onChange: e => setRow(i, "dcr", e.target.value) })), /*#__PURE__*/React.createElement("td", { style: bTd() }, /*#__PURE__*/React.createElement("input", { style: paperIn({ textAlign: "right" }), value: r.meals, onChange: e => setRow(i, "meals", e.target.value) })), /*#__PURE__*/React.createElement("td", { style: bTd() }, /*#__PURE__*/React.createElement("input", { style: paperIn({ textAlign: "right" }), value: r.parking, onChange: e => setRow(i, "parking", e.target.value) })))), /*#__PURE__*/React.createElement("tr", null, /*#__PURE__*/React.createElement("td", { style: bTd({ textAlign: "center", fontWeight: 800, fontSize: 11.5 }) }, "TOTAL:"), /*#__PURE__*/React.createElement("td", { style: bTd() }), /*#__PURE__*/React.createElement("td", { style: bTd() }), /*#__PURE__*/React.createElement("td", { style: bTd() }), /*#__PURE__*/React.createElement("td", { style: bTd({ textAlign: "right", fontWeight: 800, fontSize: 11.5, padding: "0 3px" }) }, tKm.toFixed(2)), /*#__PURE__*/React.createElement("td", { style: bTd() }), /*#__PURE__*/React.createElement("td", { style: bTd() }), /*#__PURE__*/React.createElement("td", { style: bTd() }), /*#__PURE__*/React.createElement("td", { style: bTd({ textAlign: "right", fontWeight: 800, fontSize: 11.5, padding: "0 3px" }) }, tMeals.toFixed(2)), /*#__PURE__*/React.createElement("td", { style: bTd({ textAlign: "right", fontWeight: 800, fontSize: 11.5, padding: "0 3px" }) }, tPark.toFixed(2))))), /*#__PURE__*/React.createElement("datalist", { id: "smer-models" }, models.map((m2, i2) => /*#__PURE__*/React.createElement("option", { key: m2 + i2, value: m2 }))), /*#__PURE__*/React.createElement("div", {
     style: { display: "flex", justifyContent: "space-between", marginTop: 14, flexWrap: "wrap", gap: 20 }
@@ -11345,11 +11375,45 @@ function SmerTab({ profile, notify }) {
     style: { borderBottom: "1px solid #000", minWidth: 90, textAlign: "right" }
   }, grand.toFixed(2)))), /*#__PURE__*/React.createElement("div", {
     style: { width: 280, textAlign: "center", fontSize: 11 }
-  }, /*#__PURE__*/React.createElement("div", {
-    style: { borderTop: "1px solid #000", marginTop: 34, paddingTop: 2 }
+  }, f.empSig ? /*#__PURE__*/React.createElement("img", {
+    src: f.empSig,
+    alt: "signature",
+    style: { height: 44, maxWidth: 260, objectFit: "contain", display: "block", margin: "10px auto 0" }
+  }) : null, /*#__PURE__*/React.createElement("div", {
+    style: { display: "flex", gap: 6, justifyContent: "center", marginTop: f.empSig ? 2 : 12 }
+  }, /*#__PURE__*/React.createElement("button", {
+    type: "button",
+    style: { ...btnSt("var(--c-key)", "var(--c-bg)"), padding: "3px 9px", fontSize: 11 },
+    onClick: () => setSigOpen(true)
+  }, f.empSig ? "\u270d Sign again" : "\u270d Sign"), /*#__PURE__*/React.createElement("label", {
+    title: "Upload a picture of the signature instead",
+    style: { ...btnSt("var(--c-border)", "var(--c-text2)"), padding: "3px 9px", fontSize: 11, cursor: "pointer" }
+  }, "\ud83d\udcce Upload", /*#__PURE__*/React.createElement("input", {
+    type: "file",
+    accept: "image/*",
+    style: { display: "none" },
+    onChange: upSig
+  })), f.empSig ? /*#__PURE__*/React.createElement("button", {
+    type: "button",
+    style: { ...btnSt("var(--c-border)", "var(--c-text2)"), padding: "3px 9px", fontSize: 11 },
+    onClick: () => setF(x => ({ ...x, empSig: "" }))
+  }, "\u2715") : null), /*#__PURE__*/React.createElement("div", {
+    style: { borderTop: "1px solid #000", marginTop: f.empSig ? 4 : 10, paddingTop: 2 }
   }, "Employee's Signature"), /*#__PURE__*/React.createElement("div", {
     style: { borderTop: "1px solid #000", marginTop: 46, paddingTop: 2 }
-  }, "Vice President for Operations")))));
+  }, "Vice President for Operations"), sigOpen ? /*#__PURE__*/React.createElement(Modal, {
+    title: "\u270d Employee's signature \u2014 sign inside the box",
+    onClose: () => setSigOpen(false)
+  }, /*#__PURE__*/React.createElement(SignaturePad, {
+    value: f.empSig,
+    onChange: v => setF(x => ({ ...x, empSig: v }))
+  }), /*#__PURE__*/React.createElement("div", {
+    style: { display: "flex", justifyContent: "flex-end", marginTop: 10 }
+  }, /*#__PURE__*/React.createElement("button", {
+    type: "button",
+    style: btnSt("var(--c-key)", "var(--c-bg)"),
+    onClick: () => setSigOpen(false)
+  }, "\u2713 Done"))) : null))));
 }
 function OvertimeTab({
   profile,
