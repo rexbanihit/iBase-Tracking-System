@@ -337,7 +337,7 @@
 (function () {
   var okLibs = (typeof firebase !== "undefined") && (typeof React !== "undefined") && (typeof ReactDOM !== "undefined") && (typeof XLSX !== "undefined");
   window.__IBASE_LIBS_OK = okLibs;
-  window.__IBASE_BUILD = "v177";
+  window.__IBASE_BUILD = "v178";
   if (!okLibs) {
     document.getElementById("root").innerHTML =
       "<div style='max-width:520px;margin:90px auto;padding:30px;background:#16181d;border:1px solid #f8717155;border-radius:16px;font-family:system-ui,sans-serif;color:#e5e7eb;text-align:center'>" +
@@ -3154,7 +3154,7 @@ function Login({
       letterSpacing: 2.5,
       textTransform: "uppercase"
     }
-  }, "Installed Base Management \u00b7 build v177"), !dept ? /*#__PURE__*/React.createElement("div", null,
+  }, "Installed Base Management \u00b7 build v178"), !dept ? /*#__PURE__*/React.createElement("div", null,
     /*#__PURE__*/React.createElement("div", { style: { fontSize: 12.5, color: "var(--c-text3)", textAlign: "center", marginBottom: 14 } }, "Select your department or module to continue"),
     /*#__PURE__*/React.createElement("div", { style: { display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 } },
       (depts || []).filter(d => !d.disabled).map((d, i) => /*#__PURE__*/React.createElement("button", { key: (d.id || d.name) + i, onClick: () => pickDept(d.name), style: { background: "var(--c-bg)", border: "1px solid var(--c-border)", borderRadius: 12, padding: "16px 10px", cursor: "pointer", display: "flex", flexDirection: "column", alignItems: "center", gap: 8, color: "var(--c-text2)" } },
@@ -11168,23 +11168,24 @@ function SmerTab({ profile, labs, notify }) {
   // arrival-home.  Joined as "START - END" (space, dash, space).
   // Format any date-or-datetime value: with a time it reads "MM/DD/YYYY hh:mmAP",
   // a plain date reads "MM/DD/YYYY", anything unparseable is returned as-is.
-  const fmtAny = v => {
+  // DCR shows TIME ONLY (24-hour, HH:MM) — the date lives in its own column.
+  const timeOnly = v => {
     const raw = String(v || "").trim();
     if (!raw) return "";
+    // Prefer the literal HH:MM inside a "…THH:MM" or "… HH:MM" value (no timezone shifting).
+    const m = raw.match(/[T ](\d{1,2}):(\d{2})/);
+    if (m) return String(m[1]).padStart(2, "0") + ":" + m[2];
     const t = Date.parse(raw);
-    if (isNaN(t)) return raw;
+    if (isNaN(t)) return "";
     const d2 = new Date(t), p2 = n => String(n).padStart(2, "0");
-    const dateP = p2(d2.getMonth() + 1) + "/" + p2(d2.getDate()) + "/" + d2.getFullYear();
-    if (raw.indexOf("T") === -1 && raw.indexOf(":") === -1) return dateP; // date only
-    let h = d2.getHours();
-    const ap = h >= 12 ? "PM" : "AM";
-    h = h % 12 || 12;
-    return dateP + " " + p2(h) + ":" + p2(d2.getMinutes()) + ap;
+    return p2(d2.getHours()) + ":" + p2(d2.getMinutes());
   };
+  // START time — earliest available: reported → departure → arrival-to-account → work-started.
   const dcrStart = v => v.dtReported || v.dtDeparture || v.dtArrivalAccount || v.dtWorkStarted || "";
-  const dcrEnd = v => v.dtWorkEnded || v.dtArrivalHome || "";
+  // END time — arrival-to-home wins over work-ended (a later, truer "OUT").
+  const dcrEnd = v => v.dtArrivalHome || v.dtWorkEnded || "";
   const dcrOf = v => {
-    const s2 = fmtAny(dcrStart(v)), e2 = fmtAny(dcrEnd(v));
+    const s2 = timeOnly(dcrStart(v)), e2 = timeOnly(dcrEnd(v));
     if (!s2 && !e2) return "";
     return s2 + " - " + e2;
   };
@@ -11462,7 +11463,7 @@ function SmerTab({ profile, labs, notify }) {
     const per = curPeriod();
     if (!per) return null;
     const vs = visitsForPeriod(per);
-    const withDcr = vs.filter(r => r.dcr && r.dcr.trim() && r.dcr.trim() !== "-").length;
+    const withDcr = vs.filter(r => r.dcr && r.dcr.replace(/[\s-]/g, "")).length;
     if (!vs.length) return /*#__PURE__*/React.createElement("div", { style: { fontSize: 10.5, color: "#b45309", background: "rgba(245,158,11,.10)", border: "1px solid rgba(245,158,11,.4)", borderRadius: 6, padding: "4px 8px", margin: "2px 0 5px" } }, "No service visits found for you (" + (myName || "unmatched name") + ") in this period. If you expect some, check that your account name matches the engineer named on those visits.");
     if (withDcr < vs.length) return /*#__PURE__*/React.createElement("div", { style: { fontSize: 10.5, color: "#6b7280", margin: "2px 0 5px" } }, "DCR auto-filled for " + withDcr + " of " + vs.length + " visit(s). The rest have no \u201cDate & time\u201d values recorded on the visit (only a date) \u2014 open those visits and add the reported/departure/work-started & work-ended/arrival-home times, then press \u21bb Refresh from visits.");
     return null;
