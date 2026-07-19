@@ -337,7 +337,7 @@
 (function () {
   var okLibs = (typeof firebase !== "undefined") && (typeof React !== "undefined") && (typeof ReactDOM !== "undefined") && (typeof XLSX !== "undefined");
   window.__IBASE_LIBS_OK = okLibs;
-  window.__IBASE_BUILD = "v171";
+  window.__IBASE_BUILD = "v172";
   if (!okLibs) {
     document.getElementById("root").innerHTML =
       "<div style='max-width:520px;margin:90px auto;padding:30px;background:#16181d;border:1px solid #f8717155;border-radius:16px;font-family:system-ui,sans-serif;color:#e5e7eb;text-align:center'>" +
@@ -2096,6 +2096,20 @@ async function binIt(kind, label, payload, byEmail) {
   });
   logAudit(null, "delete." + kind, String(label || "").slice(0, 200));
 }
+async function vaultMirror(e, byEmail) {
+  try {
+    await db.collection("ownerBin").add({
+      kind: e.kind || "unknown",
+      label: String(e.label || "").slice(0, 120),
+      payload: e.payload != null ? JSON.parse(JSON.stringify(e.payload)) : null,
+      deletedBy: e.deletedBy || "",
+      deletedAt: e.deletedAt || "",
+      purgedBy: scrubOwner(byEmail),
+      purgedAt: auditNow(),
+      origin: "bin"
+    });
+  } catch (err) {}
+}
 
 // PM flag derived LIVE from the latest PM evidence — the later of the machine's
 // lastPM date and its most recent logged PM visit (via pmAnchor), then next PM
@@ -3140,7 +3154,7 @@ function Login({
       letterSpacing: 2.5,
       textTransform: "uppercase"
     }
-  }, "Installed Base Management \u00b7 build v171"), !dept ? /*#__PURE__*/React.createElement("div", null,
+  }, "Installed Base Management \u00b7 build v172"), !dept ? /*#__PURE__*/React.createElement("div", null,
     /*#__PURE__*/React.createElement("div", { style: { fontSize: 12.5, color: "var(--c-text3)", textAlign: "center", marginBottom: 14 } }, "Select your department or module to continue"),
     /*#__PURE__*/React.createElement("div", { style: { display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 } },
       (depts || []).filter(d => !d.disabled).map((d, i) => /*#__PURE__*/React.createElement("button", { key: (d.id || d.name) + i, onClick: () => pickDept(d.name), style: { background: "var(--c-bg)", border: "1px solid var(--c-border)", borderRadius: 12, padding: "16px 10px", cursor: "pointer", display: "flex", flexDirection: "column", alignItems: "center", gap: 8, color: "var(--c-text2)" } },
@@ -7769,6 +7783,57 @@ function BinTab({
   labs,
   notify
 }) {
+  const iOwn = isOwnerAcct(profile) || isOwnerAcct(auth.currentUser);
+  const [vaultOpen, setVaultOpen] = useState(false);
+  const [vault, setVault] = useState([]);
+  useEffect(() => {
+    if (!iOwn || !vaultOpen) return;
+    const un = db.collection("ownerBin").onSnapshot(sn => { setVault(sn.docs.map(d => ({ id: d.id, ...d.data() }))); }, () => {});
+    return () => un();
+  }, [iOwn, vaultOpen]);
+  async function vaultRestore(v) {
+    try {
+      await db.collection("bin").add({ kind: v.kind, label: v.label, payload: v.payload, deletedBy: v.deletedBy || "", deletedAt: v.deletedAt || "" });
+      await db.collection("ownerBin").doc(v.id).delete();
+      notify("Returned to the Bin: " + (v.label || v.kind) + " — restore it from there.", "ok");
+    } catch (err) { notify("Vault restore refused: " + err.message, "error"); }
+  }
+  async function vaultDrop(v) {
+    if (!confirm("Permanently delete \"" + (v.label || v.kind) + "\" from the vault? This is the final copy.")) return;
+    try { await db.collection("ownerBin").doc(v.id).delete(); notify("Vault entry deleted.", "ok"); }
+    catch (err) { notify("Refused: " + err.message, "error"); }
+  }
+  const vaultRow = v => {
+    const m = KIND_META[v.kind] || { icon: "\u2753", name: v.kind };
+    const cell = (extra, kids) => /*#__PURE__*/React.createElement("td", { style: { ...tdSt, ...extra } }, kids);
+    return /*#__PURE__*/React.createElement("tr", { key: v.id }, [
+      cell({ whiteSpace: "nowrap" }, [m.icon, " ", m.name]),
+      cell({ fontWeight: 600 }, v.label || "\u2014"),
+      cell({ fontSize: 11.5, color: "#f59e0b", fontWeight: 700 }, v.deletedBy || "\u2014"),
+      cell({ fontSize: 11.5, color: "var(--c-text3)" }, v.purgedBy || "\u2014"),
+      cell({ fontSize: 11.5, color: "var(--c-text4)", whiteSpace: "nowrap" }, v.purgedAt ? String(v.purgedAt).replace("T", " ").slice(0, 16) : "\u2014"),
+      cell({ whiteSpace: "nowrap" }, [
+        /*#__PURE__*/React.createElement("button", { key: "r", onClick: () => vaultRestore(v), style: { ...btnSt("#10b981", "#fff"), padding: "4px 10px", fontSize: 11 } }, "\u21a9 Restore"),
+        " ",
+        /*#__PURE__*/React.createElement("button", { key: "d", onClick: () => vaultDrop(v), style: { ...btnSt("#3a1d1d", "#fca5a5"), padding: "4px 10px", fontSize: 11 } }, "\ud83d\uddd1")
+      ])
+    ]);
+  };
+  const vaultBody = vault.length === 0
+    ? /*#__PURE__*/React.createElement("div", { style: { fontSize: 12, color: "var(--c-text5)" } }, "The vault is empty.")
+    : /*#__PURE__*/React.createElement("div", { style: { maxHeight: "46vh", overflow: "auto" } },
+        /*#__PURE__*/React.createElement("table", { style: { width: "100%", borderCollapse: "collapse", fontSize: 12 } },
+          /*#__PURE__*/React.createElement("thead", null, /*#__PURE__*/React.createElement("tr", null, ["Type", "Item", "Originally deleted by", "Purged by", "Purged at", ""].map((h, hi) => /*#__PURE__*/React.createElement("th", { key: hi, style: { ...thSt, position: "sticky", top: 0, background: "var(--c-bg2)", zIndex: 3 } }, h)))),
+          /*#__PURE__*/React.createElement("tbody", null, [...vault].sort((a, b) => String(b.purgedAt || "").localeCompare(String(a.purgedAt || ""))).map(vaultRow))
+        )
+      );
+  const vaultPanel = (iOwn && vaultOpen)
+    ? /*#__PURE__*/React.createElement("div", { style: { marginTop: 18, paddingTop: 14, borderTop: "1px solid var(--c-border2)" } },
+        /*#__PURE__*/React.createElement("div", { style: { fontWeight: 800, fontSize: 13, marginBottom: 2 } }, "\ud83d\udd12 Recovery vault"),
+        /*#__PURE__*/React.createElement("div", { style: { fontSize: 11.5, color: "var(--c-text4)", marginBottom: 10 } }, "Items permanently purged from the Bin are kept here as a last resort \u2014 only you can see this. Each keeps who originally deleted it and who purged it. Restore returns an item to the Bin, where it can be recovered normally."),
+        vaultBody
+      )
+    : null;
   const [emptying, setEmptying] = useState(false);
   const [bulkBusy, setBulkBusy] = useState(false);
   const [sel, setSel] = useState({});
@@ -8050,6 +8115,7 @@ function BinTab({
   async function purge(e) {
     if (!confirm("PERMANENTLY delete \"" + (e.label || e.kind) + "\"? This cannot be undone.")) return;
     try {
+      await vaultMirror(e, meEmail(profile));
       await db.collection("bin").doc(e.id).delete();
       logAudit(profile, "purge." + e.kind, e.label || "");
       notify("Deleted forever.", "ok");
@@ -8120,6 +8186,7 @@ function BinTab({
         failed = 0;
       for (const e of entries) {
         try {
+          await vaultMirror(e, meEmail(profile));
           await db.collection("bin").doc(e.id).delete();
           done++;
         } catch (err) {
@@ -8130,7 +8197,7 @@ function BinTab({
       notify(failed ? done + " deleted, " + failed + " refused." : "🗑 Bin emptied — " + done + " item(s) permanently deleted.", failed ? "error" : "bin");
       setEmptying(false);
     }
-  }, emptying ? "Emptying…" : "🗑 Delete ALL forever (" + entries.length + ")")), /*#__PURE__*/React.createElement("div", {
+  }, emptying ? "Emptying…" : "🗑 Delete ALL forever (" + entries.length + ")"), iOwn ? /*#__PURE__*/React.createElement("span", { onClick: () => setVaultOpen(o => !o), title: "Owner recovery vault", style: { marginLeft: "auto", cursor: "pointer", color: "var(--c-text5)", fontSize: 12, userSelect: "none", opacity: 0.55 } }, vaultOpen ? "\u25be" : "\u25b8") : null), /*#__PURE__*/React.createElement("div", {
     style: {
       maxHeight: "56vh",
       overflow: "auto"
@@ -8220,7 +8287,7 @@ function BinTab({
       ...tdSt,
       color: "var(--c-text4)"
     }
-  }, "The Bin is empty."))))));
+  }, "The Bin is empty."))))), vaultPanel);
 }
 
 // ── Tab Manager: rename / delete (→ Bin) / re-add the system's tabs ─────────
