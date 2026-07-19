@@ -337,7 +337,7 @@
 (function () {
   var okLibs = (typeof firebase !== "undefined") && (typeof React !== "undefined") && (typeof ReactDOM !== "undefined") && (typeof XLSX !== "undefined");
   window.__IBASE_LIBS_OK = okLibs;
-  window.__IBASE_BUILD = "v163";
+  window.__IBASE_BUILD = "v164";
   if (!okLibs) {
     document.getElementById("root").innerHTML =
       "<div style='max-width:520px;margin:90px auto;padding:30px;background:#16181d;border:1px solid #f8717155;border-radius:16px;font-family:system-ui,sans-serif;color:#e5e7eb;text-align:center'>" +
@@ -3122,7 +3122,7 @@ function Login({
       letterSpacing: 2.5,
       textTransform: "uppercase"
     }
-  }, "Installed Base Management \u00b7 build v163"), !dept ? /*#__PURE__*/React.createElement("div", null,
+  }, "Installed Base Management \u00b7 build v164"), !dept ? /*#__PURE__*/React.createElement("div", null,
     /*#__PURE__*/React.createElement("div", { style: { fontSize: 12.5, color: "var(--c-text3)", textAlign: "center", marginBottom: 14 } }, "Select your department or module to continue"),
     /*#__PURE__*/React.createElement("div", { style: { display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 } },
       (depts || []).filter(d => !d.disabled).map((d, i) => /*#__PURE__*/React.createElement("button", { key: (d.id || d.name) + i, onClick: () => pickDept(d.name), style: { background: "var(--c-bg)", border: "1px solid var(--c-border)", borderRadius: 12, padding: "16px 10px", cursor: "pointer", display: "flex", flexDirection: "column", alignItems: "center", gap: 8, color: "var(--c-text2)" } },
@@ -10658,6 +10658,12 @@ function WpoaTab({ profile, notify }) {
     }
     return out;
   }
+  const weekLabel = mon => {
+    const a = new Date(mon + "T00:00:00"), b = new Date(mon + "T00:00:00");
+    b.setDate(b.getDate() + 6);
+    const same = a.getMonth() === b.getMonth();
+    return MO_FULL[a.getMonth()] + " " + a.getDate() + "-" + (same ? "" : MO_FULL[b.getMonth()] + " ") + b.getDate() + ", " + b.getFullYear();
+  };
   const PERIODS = [
     { id: "2026", label: "Aug – Dec 2026", weeks: mondaysBetween("2026-08-01", "2026-12-31") },
     { id: "2027", label: "Year 2027", weeks: mondaysBetween("2027-01-01", "2027-12-31") }
@@ -10678,11 +10684,7 @@ function WpoaTab({ profile, notify }) {
   }, [week]);
   const isHol = di => !!holidayMap[weekDates[di]];
   const holName = di => (holidayMap[weekDates[di]] || {}).name || "Holiday";
-  const rangeLabel = useMemo(() => {
-    const a = new Date(weekDates[0] + "T00:00:00"), b = new Date(weekDates[6] + "T00:00:00");
-    const same = a.getMonth() === b.getMonth();
-    return MO_FULL[a.getMonth()] + " " + a.getDate() + "-" + (same ? "" : MO_FULL[b.getMonth()] + " ") + b.getDate() + ", " + b.getFullYear();
-  }, [weekDates]);
+  const rangeLabel = useMemo(() => weekLabel(week), [week]);
   const DEFAULT_IDS = ["p1", "p2", "p3", "p4", "p5", "p6", "p7", "p8", "p9", "p10"];
   const SECTIONS = [
     { sec: "main", def: "MANILA" },
@@ -10752,6 +10754,23 @@ function WpoaTab({ profile, notify }) {
     return r === undefined || r === "" ? secDef(sec) : r;
   };
   const writeTitle = (sec, v) => stage("t:" + sec, v, { titles: { [sec]: v } });
+  const hdrRangeOv = () => {
+    if (!und(localOv["hr"])) return localOv["hr"];
+    const r = rd.hdrRange;
+    return r === undefined ? "" : r;
+  };
+  const writeHdrRange = v => stage("hr", v, { hdrRange: v });
+  const hdrDayOv = di => {
+    const k = "hd:" + di;
+    if (!und(localOv[k])) return localOv[k];
+    const r = (rd.hdrDays || {})[String(di)];
+    return r === undefined ? "" : r;
+  };
+  const effDay = di => {
+    const o = hdrDayOv(di);
+    return o !== "" ? o : String(new Date(weekDates[di] + "T00:00:00").getDate());
+  };
+  const writeHdrDay = (di, v) => stage("hd:" + di, v, { hdrDays: { [String(di)]: v } });
   const cellDefault = (di, li) => li === 0 && holidayMap[weekDates[di]] ? { t: "Holiday", bg: "#f2ceef", fc: "", al: "center" } : { t: "", bg: "", fc: "", al: "" };
   const cellOf = (sec, pid, di, li) => {
     const fk = sec + "_" + pid + "_" + di + "_" + li;
@@ -10786,19 +10805,19 @@ function WpoaTab({ profile, notify }) {
   const applyFmt = patch => { if (!focusCell) return; writeCell(focusCell.sec, focusCell.pid, focusCell.di, focusCell.li, patch); };
   function gridHTML(sec, esc) {
     const head = '<tr><td class="corner" rowspan="2">' + esc(titleOf(sec)) + '</td>' + DAYS.map((d, di) => '<th class="day' + (isHol(di) ? ' hol' : '') + '">' + d + '</th>').join('') + '</tr>' +
-      '<tr>' + weekDates.map((dt, di) => '<th class="day num' + (isHol(di) ? ' hol' : '') + '">' + new Date(dt + "T00:00:00").getDate() + '</th>').join('') + '</tr>';
+      '<tr>' + weekDates.map((dt, di) => '<th class="day num' + (isHol(di) ? ' hol' : '') + '">' + esc(effDay(di)) + '</th>').join('') + '</tr>';
     const body = orderOf(sec).map(pid => [0, 1, 2].map(li => '<tr>' + (li === 0 ? '<td class="nm" rowspan="3">' + esc(nameOf(sec, pid) || "[Name]") + '</td>' : '') + weekDates.map((dt, di) => {
       const c = cellOf(sec, pid, di, li);
       return '<td class="c" style="' + (c.bg ? 'background:' + c.bg + ';' : '') + (c.fc ? 'color:' + c.fc + ';' : '') + 'text-align:' + (c.al || 'left') + '">' + esc(c.t) + '&nbsp;</td>';
     }).join('') + '</tr>').join('')).join('');
     return '<table><colgroup><col style="width:9%">' + '<col style="width:13%">'.repeat(7) + '</colgroup>' +
-      '<tr><td class="blank"></td><td class="wk" colspan="7">' + esc(rangeLabel) + '</td></tr>' + head + body + '</table>';
+      '<tr><td class="blank"></td><td class="wk" colspan="7">' + esc(hdrRangeOv() || rangeLabel) + '</td></tr>' + head + body + '</table>';
   }
   function printSecs(secs) {
     const esc = t => String(t == null ? "" : t).replace(/&/g, "&amp;").replace(/</g, "&lt;");
     const boards = secs.map((sec, i) => '<div class="sheet"' + (i < secs.length - 1 ? ' style="page-break-after:always"' : '') + '>' + gridHTML(sec, esc) +
       '<div class="foot"><span><b>Prepared by:</b>' + esc(preparedBy) + '</span><span><b>Approved by:</b>Ma. Leelyn Arellano</span></div></div>').join('');
-    const html = '<!doctype html><html><head><title>WPOA</title><style>@page{size:A4 landscape;margin:6mm}body{font-family:Arial,Helvetica,sans-serif;color:#000;margin:0}table{width:100%;border-collapse:collapse;table-layout:fixed;margin-bottom:8px}td,th{border:1px solid #000;box-sizing:border-box;font-size:8.5px;height:13px;overflow:hidden;white-space:nowrap;padding:0 2px}.blank{border:none}.wk{background:#ffff00;font-weight:800;text-align:center;font-size:10px;-webkit-print-color-adjust:exact;print-color-adjust:exact}.day{background:#92d4ec;font-weight:800;text-align:center;-webkit-print-color-adjust:exact;print-color-adjust:exact}.day.hol{background:#f2ceef}.corner{border:2.5px solid #000;box-sizing:border-box;font-weight:900;font-size:15px;text-align:center;vertical-align:middle}.nm{font-weight:700;text-align:center;vertical-align:middle}.c{-webkit-print-color-adjust:exact;print-color-adjust:exact}.foot{display:flex;gap:60px;justify-content:center;font-size:10px;margin-top:4px}.foot b{margin-right:8px}</style></head><body>' +
+    const html = '<!doctype html><html><head><title>WPOA</title><style>@page{size:A4 landscape;margin:6mm}body{font-family:Arial,Helvetica,sans-serif;color:#000;margin:0}table{width:100%;border-collapse:collapse;table-layout:fixed;margin-bottom:8px}td,th{border:1px solid #000;box-sizing:border-box;font-size:8.5px;height:13px;overflow:hidden;white-space:nowrap;padding:0 2px}.blank{border:none}.wk{background:#ffff00;font-weight:800;text-align:center;font-size:10px;-webkit-print-color-adjust:exact;print-color-adjust:exact}.day{background:#92d4ec;font-weight:800;text-align:center;-webkit-print-color-adjust:exact;print-color-adjust:exact}.day.hol{background:#f2ceef}.corner{border:1px solid #000;box-sizing:border-box;font-weight:900;font-size:15px;text-align:center;vertical-align:middle}.nm{font-weight:700;text-align:center;vertical-align:middle}.c{-webkit-print-color-adjust:exact;print-color-adjust:exact}.foot{display:flex;gap:60px;justify-content:center;font-size:10px;margin-top:4px}.foot b{margin-right:8px}</style></head><body>' +
       boards + '</body></html>';
     const w2 = window.open("", "_blank", "width=1200,height=800");
     if (!w2) { notify("Allow pop-ups to print the WPOA sheet.", "error"); return; }
@@ -10823,10 +10842,15 @@ function WpoaTab({ profile, notify }) {
     style: { border: "none", boxSizing: "border-box" }
   }), /*#__PURE__*/React.createElement("td", {
     colSpan: 7,
-    style: { border: CELLBORDER, boxSizing: "border-box", background: "#ffff00", color: "#000", fontWeight: 800, textAlign: "center", fontSize: 12.5, height: 22 }
-  }, rangeLabel)), /*#__PURE__*/React.createElement("tr", null, /*#__PURE__*/React.createElement("td", {
+    style: { border: CELLBORDER, boxSizing: "border-box", background: "#ffff00", color: "#000", padding: 0, height: 22 }
+  }, /*#__PURE__*/React.createElement("input", {
+    value: hdrRangeOv() || rangeLabel,
+    onChange: e => writeHdrRange(e.target.value),
+    title: "Auto-filled from the calendar (Monday to Sunday). Type to correct it; clear it to go back to automatic.",
+    style: { width: "100%", boxSizing: "border-box", border: "none", outline: "none", background: "transparent", color: "#000", fontWeight: 800, textAlign: "center", fontSize: 12.5, fontFamily: "inherit", height: "100%", padding: 0 }
+  }))), /*#__PURE__*/React.createElement("tr", null, /*#__PURE__*/React.createElement("td", {
     rowSpan: 2,
-    style: { border: "2.5px solid #000", boxSizing: "border-box", background: "#fff", color: "#000", padding: 0, verticalAlign: "middle" }
+    style: { border: CELLBORDER, boxSizing: "border-box", background: "#fff", color: "#000", padding: 0, verticalAlign: "middle" }
   }, /*#__PURE__*/React.createElement("input", {
     value: titleOf(sec),
     onChange: e => writeTitle(sec, e.target.value),
@@ -10837,9 +10861,13 @@ function WpoaTab({ profile, notify }) {
     style: { border: CELLBORDER, boxSizing: "border-box", background: isHol(di) ? "#f2ceef" : "#92d4ec", color: "#000", fontWeight: 800, fontSize: 11.5, height: 20 }
   }, d))), /*#__PURE__*/React.createElement("tr", null, weekDates.map((dt, di) => /*#__PURE__*/React.createElement("th", {
     key: dt,
-    title: isHol(di) ? holName(di) : dt,
-    style: { border: CELLBORDER, boxSizing: "border-box", background: isHol(di) ? "#f2ceef" : "#92d4ec", color: "#000", fontWeight: 800, fontSize: 11.5, height: 18 }
-  }, new Date(dt + "T00:00:00").getDate()))), orderOf(sec).map((pid, pi) => [0, 1, 2].map(li => /*#__PURE__*/React.createElement("tr", {
+    title: (isHol(di) ? holName(di) + " \u2014 " : "") + dt + " \u00b7 auto-filled; type to correct, clear to restore",
+    style: { border: CELLBORDER, boxSizing: "border-box", background: isHol(di) ? "#f2ceef" : "#92d4ec", color: "#000", padding: 0, height: 18 }
+  }, /*#__PURE__*/React.createElement("input", {
+    value: effDay(di),
+    onChange: e => writeHdrDay(di, e.target.value),
+    style: { width: "100%", boxSizing: "border-box", border: "none", outline: "none", background: "transparent", color: "#000", fontWeight: 800, fontSize: 11.5, textAlign: "center", fontFamily: "inherit", padding: 0 }
+  })))), orderOf(sec).map((pid, pi) => [0, 1, 2].map(li => /*#__PURE__*/React.createElement("tr", {
     key: pid + "-" + li
   }, li === 0 ? /*#__PURE__*/React.createElement("td", {
     rowSpan: 3,
@@ -10872,11 +10900,7 @@ function WpoaTab({ profile, notify }) {
     style: { ...inputSt(), maxWidth: 240 },
     value: week,
     onChange: e => setWeek(e.target.value)
-  }, period.weeks.map(w2 => {
-    const b2 = new Date(w2 + "T00:00:00");
-    b2.setDate(b2.getDate() + 6);
-    return /*#__PURE__*/React.createElement("option", { key: w2, value: w2 }, w2 + " → " + b2.toISOString().slice(0, 10));
-  })), /*#__PURE__*/React.createElement("button", {
+  }, period.weeks.map(w2 => /*#__PURE__*/React.createElement("option", { key: w2, value: w2 }, weekLabel(w2)))), /*#__PURE__*/React.createElement("button", {
     style: btnSt("var(--c-border)", "var(--c-text2)"),
     title: "Everything already saves as you type — this just pushes any pending keystrokes immediately",
     onClick: () => { flushAll(); notify("Synced.", "ok"); }
