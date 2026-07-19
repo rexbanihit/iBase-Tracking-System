@@ -337,7 +337,7 @@
 (function () {
   var okLibs = (typeof firebase !== "undefined") && (typeof React !== "undefined") && (typeof ReactDOM !== "undefined") && (typeof XLSX !== "undefined");
   window.__IBASE_LIBS_OK = okLibs;
-  window.__IBASE_BUILD = "v197";
+  window.__IBASE_BUILD = "v198";
   if (!okLibs) {
     document.getElementById("root").innerHTML =
       "<div style='max-width:520px;margin:90px auto;padding:30px;background:#16181d;border:1px solid #f8717155;border-radius:16px;font-family:system-ui,sans-serif;color:#e5e7eb;text-align:center'>" +
@@ -2521,6 +2521,43 @@ function HeaderClock() {
 // ── Login (cosmic interactive background + live presence) ───────────────────
 // Default login-department cards — used ONLY until an administrator saves a
 // custom set in Settings → Tabs & Visibility → Login Departments.
+function isImgIcon(v) { return typeof v === "string" && v.slice(0, 5) === "data:"; }
+// Render a department icon: an <img> when it's an uploaded picture (data URL), else the emoji/text.
+function deptIcon(icon, px) {
+  const size = px || 26;
+  if (isImgIcon(icon)) return /*#__PURE__*/React.createElement("img", {
+    src: icon, alt: "", draggable: false,
+    style: { width: size, height: size, objectFit: "cover", borderRadius: 6, display: "block", pointerEvents: "none" }
+  });
+  return /*#__PURE__*/React.createElement("span", { style: { fontSize: Math.round(size * 0.8), lineHeight: 1 } }, icon || "\uD83C\uDFF7");
+}
+// Downscale any chosen image to a small square PNG data URL so it fits Firestore's per-doc limit.
+function resizeIconImage(file, done, fail) {
+  try {
+    if (!file || !/^image\//.test(file.type)) { fail && fail("Please choose an image file."); return; }
+    const rd = new FileReader();
+    rd.onload = () => {
+      const img = new Image();
+      img.onload = () => {
+        try {
+          const S = 96; // stored icon is 96×96 (crisp on the login card, tiny in bytes)
+          const cv = document.createElement("canvas"); cv.width = S; cv.height = S;
+          const ctx = cv.getContext("2d");
+          const scale = Math.max(S / img.width, S / img.height);
+          const w = img.width * scale, h = img.height * scale;
+          ctx.drawImage(img, (S - w) / 2, (S - h) / 2, w, h); // center-crop to square
+          let url = cv.toDataURL("image/png");
+          if (url.length > 60000) url = cv.toDataURL("image/jpeg", 0.82); // fall back smaller if needed
+          done(url);
+        } catch (e) { fail && fail("Could not process that image."); }
+      };
+      img.onerror = () => fail && fail("Could not read that image.");
+      img.src = rd.result;
+    };
+    rd.onerror = () => fail && fail("Could not read that file.");
+    rd.readAsDataURL(file);
+  } catch (e) { fail && fail("Upload failed."); }
+}
 const DEFAULT_LOGIN_DEPTS = [
   { id: "sales",  name: "Sales Department",      icon: "💼" },
   { id: "wh",     name: "Warehouse Department",  icon: "📦" },
@@ -3023,19 +3060,20 @@ function LoginDeptsCard({ profile, notify }) {
       "The cards users pick on the login screen before signing in. ",
       depts === null ? "Currently showing the built-in default set — any change below saves your own list." : "Custom list active."),
     list.map((d, i) => /*#__PURE__*/React.createElement("div", { key: (d.id || d.name) + i, style: { display: "flex", alignItems: "center", gap: 8, padding: "5px 0", borderTop: "1px solid var(--c-border)", fontSize: 12.5, opacity: d.disabled ? .45 : 1 } },
-      /*#__PURE__*/React.createElement("span", { style: { fontSize: 17, width: 26, textAlign: "center" } }, d.icon || "🏷"),
+      /*#__PURE__*/React.createElement("span", { style: { width: 26, display: "flex", alignItems: "center", justifyContent: "center" } }, deptIcon(d.icon, 22)),
       /*#__PURE__*/React.createElement("span", { style: { flex: 1, textDecoration: d.disabled ? "line-through" : "none" } }, d.name),
       /*#__PURE__*/React.createElement("button", { title: "Move up", style: { ...btnSt("var(--c-border)", "var(--c-text2)"), padding: "2px 7px", fontSize: 11 }, onClick: () => move(i, -1) }, "▲"),
       /*#__PURE__*/React.createElement("button", { title: "Move down", style: { ...btnSt("var(--c-border)", "var(--c-text2)"), padding: "2px 7px", fontSize: 11 }, onClick: () => move(i, 1) }, "▼"),
       /*#__PURE__*/React.createElement("button", { title: "Rename", style: { ...btnSt("var(--c-border)", "var(--c-text2)"), padding: "2px 7px", fontSize: 11 }, onClick: () => { const v = prompt("Department name:", d.name); if (v === null || !v.trim()) return; const a = list.slice(); a[i] = { ...d, name: v.trim() }; save(a); } }, "✏️"),
       /*#__PURE__*/React.createElement("button", { title: "Change icon (any emoji)", style: { ...btnSt("var(--c-border)", "var(--c-text2)"), padding: "2px 7px", fontSize: 11 }, onClick: () => { const v = prompt("Icon (emoji) for " + d.name + ":", d.icon || ""); if (v === null) return; const a = list.slice(); a[i] = { ...d, icon: v.trim() }; save(a); } }, "🎨"),
+      /*#__PURE__*/React.createElement("label", { title: "Upload a picture as the icon", style: { ...btnSt("var(--c-border)", "var(--c-text2)"), padding: "2px 7px", fontSize: 11, cursor: "pointer", display: "inline-flex", alignItems: "center" } }, "\uD83D\uDDBC\uFE0F", /*#__PURE__*/React.createElement("input", { type: "file", accept: "image/*", style: { display: "none" }, onChange: e => { const f = e.target.files && e.target.files[0]; e.target.value = ""; if (!f) return; resizeIconImage(f, url => { const a = list.slice(); a[i] = { ...d, icon: url }; save(a); notify("Icon updated.", "success"); }, msg => notify(msg, "error")); } })),
       /*#__PURE__*/React.createElement("button", { title: d.disabled ? "Enable — show on the login screen" : "Disable — hide from the login screen (kept here)", style: { ...btnSt(d.disabled ? "var(--c-key)" : "var(--c-border)", d.disabled ? "var(--c-bg)" : "var(--c-text2)"), padding: "2px 7px", fontSize: 11 }, onClick: () => { const a = list.slice(); a[i] = { ...d, disabled: !d.disabled }; save(a); } }, d.disabled ? "Enable" : "Disable"),
       /*#__PURE__*/React.createElement("button", { title: "Remove this card", style: { ...btnSt("#3a1d1d", "#fca5a5"), padding: "2px 7px", fontSize: 11 }, onClick: () => { if (!confirm("Remove \u201C" + d.name + "\u201D from the login screen?")) return; save(list.filter((_, j) => j !== i)); } }, "🗑")
     )),
     /*#__PURE__*/React.createElement("div", { style: { display: "flex", gap: 8, marginTop: 10, flexWrap: "wrap", alignItems: "flex-end" } },
       /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("label", { style: labelSt }, "New department"), /*#__PURE__*/React.createElement("input", { style: { ...inputSt(), minWidth: 190 }, value: nm, onChange: e => setNm(e.target.value), placeholder: "e.g. Service Department" })),
-      /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("label", { style: labelSt }, "Icon"), /*#__PURE__*/React.createElement("input", { style: { ...inputSt(), width: 64 }, value: ic, onChange: e => setIc(e.target.value), placeholder: "🏷" })),
-      /*#__PURE__*/React.createElement("button", { style: btnSt("var(--c-key)", "var(--c-bg)"), disabled: !nm.trim(), onClick: () => { save([...list, { id: "d" + Date.now(), name: nm.trim(), icon: (ic || "🏷").trim() }]); setNm(""); setIc(""); } }, "+ Add card")));
+      /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("label", { style: labelSt }, "Icon"), /*#__PURE__*/React.createElement("div", { style: { display: "flex", alignItems: "center", gap: 6 } }, /*#__PURE__*/React.createElement("span", { style: { width: 30, height: 30, display: "flex", alignItems: "center", justifyContent: "center", border: "1px solid var(--c-border)", borderRadius: 6 } }, deptIcon(ic, 24)), /*#__PURE__*/React.createElement("input", { style: { ...inputSt(), width: 56 }, value: isImgIcon(ic) ? "" : ic, onChange: e => setIc(e.target.value), placeholder: "🏷", title: "Type an emoji, or upload a picture →" }), /*#__PURE__*/React.createElement("label", { title: "Upload a picture", style: { ...btnSt("var(--c-border)", "var(--c-text2)"), padding: "5px 8px", fontSize: 12, cursor: "pointer" } }, "\uD83D\uDDBC\uFE0F", /*#__PURE__*/React.createElement("input", { type: "file", accept: "image/*", style: { display: "none" }, onChange: e => { const f = e.target.files && e.target.files[0]; e.target.value = ""; if (!f) return; resizeIconImage(f, url => setIc(url), msg => notify(msg, "error")); } })), isImgIcon(ic) ? /*#__PURE__*/React.createElement("button", { title: "Clear the uploaded picture", onClick: () => setIc(""), style: { ...btnSt("var(--c-border)", "var(--c-text2)"), padding: "5px 8px", fontSize: 12 } }, "\u2715") : null)),
+      /*#__PURE__*/React.createElement("button", { style: btnSt("var(--c-key)", "var(--c-bg)"), disabled: !nm.trim(), onClick: () => { save([...list, { id: "d" + Date.now(), name: nm.trim(), icon: isImgIcon(ic) ? ic : ((ic || "🏷").trim()) }]); setNm(""); setIc(""); } }, "+ Add card")));
 }
 function Login({
   notify,
@@ -3161,11 +3199,11 @@ function Login({
       letterSpacing: 2.5,
       textTransform: "uppercase"
     }
-  }, "Installed Base Management \u00b7 build v197"), !dept ? /*#__PURE__*/React.createElement("div", null,
+  }, "Installed Base Management \u00b7 build v198"), !dept ? /*#__PURE__*/React.createElement("div", null,
     /*#__PURE__*/React.createElement("div", { style: { fontSize: 12.5, color: "var(--c-text3)", textAlign: "center", marginBottom: 14 } }, "Select your department or module to continue"),
     /*#__PURE__*/React.createElement("div", { style: { display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 } },
       (depts || []).filter(d => !d.disabled).map((d, i) => /*#__PURE__*/React.createElement("button", { key: (d.id || d.name) + i, onClick: () => pickDept(d.name), style: { background: "var(--c-bg)", border: "1px solid var(--c-border)", borderRadius: 12, padding: "16px 10px", cursor: "pointer", display: "flex", flexDirection: "column", alignItems: "center", gap: 8, color: "var(--c-text2)" } },
-        /*#__PURE__*/React.createElement("span", { style: { fontSize: 26 } }, d.icon || "🏷"),
+        /*#__PURE__*/React.createElement("span", { style: { display: "flex", alignItems: "center", justifyContent: "center", height: 34 } }, deptIcon(d.icon, 34)),
         /*#__PURE__*/React.createElement("span", { style: { fontSize: 11.5, fontWeight: 700, textAlign: "center", lineHeight: 1.3 } }, d.name)))),
     depts === null ? /*#__PURE__*/React.createElement("div", { style: { fontSize: 11, color: "var(--c-text5)", textAlign: "center", marginTop: 10 } }, "Loading departments…") : null
   ) : /*#__PURE__*/React.createElement(React.Fragment, null, /*#__PURE__*/React.createElement("div", { style: { display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 14, padding: "8px 12px", border: "1px dashed var(--c-border)", borderRadius: 10 } },
