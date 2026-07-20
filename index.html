@@ -337,7 +337,7 @@
 (function () {
   var okLibs = (typeof firebase !== "undefined") && (typeof React !== "undefined") && (typeof ReactDOM !== "undefined") && (typeof XLSX !== "undefined");
   window.__IBASE_LIBS_OK = okLibs;
-  window.__IBASE_BUILD = "v198";
+  window.__IBASE_BUILD = "v214";
   if (!okLibs) {
     document.getElementById("root").innerHTML =
       "<div style='max-width:520px;margin:90px auto;padding:30px;background:#16181d;border:1px solid #f8717155;border-radius:16px;font-family:system-ui,sans-serif;color:#e5e7eb;text-align:center'>" +
@@ -3199,7 +3199,7 @@ function Login({
       letterSpacing: 2.5,
       textTransform: "uppercase"
     }
-  }, "Installed Base Management \u00b7 build v198"), !dept ? /*#__PURE__*/React.createElement("div", null,
+  }, "Installed Base Management \u00b7 build v214"), !dept ? /*#__PURE__*/React.createElement("div", null,
     /*#__PURE__*/React.createElement("div", { style: { fontSize: 12.5, color: "var(--c-text3)", textAlign: "center", marginBottom: 14 } }, "Select your department or module to continue"),
     /*#__PURE__*/React.createElement("div", { style: { display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 } },
       (depts || []).filter(d => !d.disabled).map((d, i) => /*#__PURE__*/React.createElement("button", { key: (d.id || d.name) + i, onClick: () => pickDept(d.name), style: { background: "var(--c-bg)", border: "1px solid var(--c-border)", borderRadius: 12, padding: "16px 10px", cursor: "pointer", display: "flex", flexDirection: "column", alignItems: "center", gap: 8, color: "var(--c-text2)" } },
@@ -11325,6 +11325,16 @@ function SmerTab({ profile, labs, notify }) {
   const [sheets, setSheets] = useState(null);
   const [curId, setCurId] = useState("");
   const [f, setF] = useState(blank);
+  // Auto-fill the Name once, from the signed-in user, when the sheet has no name yet.
+  // It stays fully editable — the user can overwrite or clear it.
+  const autoNameRef = React.useRef(false);
+  React.useEffect(() => {
+    const who = myName || (profile && profile.name) || "";
+    if (!autoNameRef.current && who && !String(f.name || "").trim()) {
+      autoNameRef.current = true;
+      setF(x => (String(x.name || "").trim() ? x : { ...x, name: who }));
+    }
+  }, [myName, profile, f.name]);
   useEffect(() => {
     if (!uid) return;
     const un = db.collection("smer").where("uid", "==", uid).onSnapshot(sn => {
@@ -11410,18 +11420,54 @@ function SmerTab({ profile, labs, notify }) {
     db.collection("config").doc("branding").set({ logo: "" }, { merge: true }).then(() => notify("Logo removed \u2014 default mark restored for everyone.", "ok")).catch(e => notify("Remove failed: " + (e && e.message || e), "error"));
   }
   function xlsxOut() {
-    const aoa = [["SEMI-MONTHLY EXPENSE REPORT (SMER)"], ["Name:", f.name], ["Position:", f.position], ["One hospital/laboratory per box. Pls use separate sheet if necessary."], ["Date", "Travel Details (From/To)", "Daily KM Reading/FARE — From", "Daily KM Reading/FARE — To", "Total KM/FARE", "Instrument", "ISR Number", "DCR (TIME & OUT)", "Meals", "Parking/Toll/Load"]].concat(f.rows.map(r => [r.date, r.travel, r.kmFrom, r.kmTo, r.totalKm, r.instrument, r.isr, r.dcr, r.meals, r.parking]), [["TOTAL:", "", "", "", tKm.toFixed(2), "", "", "", tMeals.toFixed(2), tPark.toFixed(2)], [], ["1. Gas/Fare", num(f.gasS).toFixed(2)], ["2. Meals", tMeals.toFixed(2)], ["3. Parking", num(f.parkingS).toFixed(2)], ["4. Toll", num(f.tollS).toFixed(2)], ["5. Load", num(f.loadS).toFixed(2)], ["TOTAL :", grand.toFixed(2)]]);
-    const ws = XLSX.utils.aoa_to_sheet(aoa);
-    ws["!cols"] = [{ wch: 11 }, { wch: 30 }, { wch: 13 }, { wch: 13 }, { wch: 12 }, { wch: 22 }, { wch: 12 }, { wch: 16 }, { wch: 9 }, { wch: 14 }];
-    const wb = XLSX.utils.book_new();
-    XLSX.utils.book_append_sheet(wb, ws, "SMER");
-    XLSX.writeFile(wb, "SMER_" + (f.name || "sheet").replace(/[^A-Za-z0-9]+/g, "_") + ".xlsx");
+    // Excel opens an HTML document as a worksheet and honours table borders, cell
+    // background colours (the yellow columns) and the embedded logo <img> — so we
+    // export the SAME styled report HTML as .xls instead of a plain value-only sheet.
+    const esc = t => String(t == null ? "" : t).replace(/&/g, "&amp;").replace(/</g, "&lt;");
+    const cells = r => [r.date, r.travel, r.kmFrom, r.kmTo, r.totalKm, r.instrument, r.isr, r.dcr, r.meals, r.parking];
+    const body = f.rows.map(r => "<tr>" + cells(r).map((c, ci) => '<td style="text-align:' + alignOf(SMER_COLS[ci]) + '">' + esc(c) + "&nbsp;</td>").join("") + "</tr>").join("");
+    const html = "<!doctype html><html><head><title>SMER</title><style>@page{size:A4 landscape;margin:8mm}@media print{html,body{width:297mm}}body{font-family:Arial,Helvetica,sans-serif;color:#000;margin:0;padding:4px 6px}.logo{display:flex;align-items:center;gap:10px}.sq{display:grid;grid-template-columns:repeat(3,11px);grid-auto-rows:11px}.sq i{display:block}.sq i.b{background:#1a1a1a}.brand{border-left:1pt solid #000;padding-left:10px}.fas{font-weight:900;font-size:24px;letter-spacing:2px;line-height:1}.sub{font-size:9.5px;line-height:1.1}h1{font-size:13px;text-align:center;margin:-18px 0 8px;font-weight:800}.meta{font-size:11.5px;font-weight:700;margin:1px 0;display:flex}.meta em{font-style:normal;width:64px;flex-shrink:0}.meta span{font-weight:400;border-bottom:.5pt solid #000;display:inline-block;min-width:420px;padding:0 4px}.note{font-size:9.5px;font-style:italic;margin:2px 0 4px}table{width:100%;border-collapse:collapse;table-layout:fixed}table.main th,table.main td{border:.5pt solid #000;mso-border-alt:solid #000 .5pt;font-size:9.8px;padding:1px 3px;height:15.5px;overflow:hidden;white-space:nowrap}table.main th{font-weight:700;text-align:center}.y{background:#ffff00 !important;-webkit-print-color-adjust:exact;print-color-adjust:exact}.tot td{font-weight:700}.foot{width:100%;margin-top:10px;border-collapse:collapse}.foot td{border:none}.foot>tr>td{vertical-align:bottom}.sums{font-size:11px;border-collapse:collapse}.sums td{padding:1px 6px 1px 0;border:none}.sums .lbl{text-align:left;white-space:nowrap}.sums .u{border-bottom:.5pt solid #000;text-align:right;min-width:80px;padding-left:16px}.sums .n{text-align:right;min-width:80px;padding-left:16px}.sums .g td{font-weight:800;padding-top:2px}.sums .g .u{border-top:.5pt solid #000}.sums .g .lbl{border-top:none}.foot td.sigspace{height:34px;text-align:center;vertical-align:bottom;border:none}.foot td.siggap{height:40px;border:none}.foot td.sigline{border-top:.5pt solid #000;border-left:none;border-right:none;border-bottom:none;text-align:center;padding-top:2px;font-size:10.5px}</style></head><body>" +
+      '<div class="logo">' + (logo ? '<img src="' + logo + '" width="' + logoW + '" style="width:' + logoW + 'px;height:auto">' : '<div class="sq"><i class="b"></i><i></i><i class="b"></i><i></i><i class="b"></i><i></i><i class="b"></i><i class="b"></i><i></i></div><div class="brand"><div class="fas">FAS</div><div class="sub">Diagnostic<br>Group<br>Inc.</div></div>') + '</div>' +
+      "<h1>SEMI-MONTHLY EXPENSE REPORT(SMER)</h1>" +
+      '<div class="meta"><em>Name:</em><span>' + esc(f.name) + '</span></div><div class="meta"><em>Position:</em><span>' + esc(f.position) + '</span></div>' +
+      '<div class="note">One hospital/laboratory per box. Pls use separate sheet if necessary.</div>' +
+      '<table class="main"><colgroup><col style="width:9%"><col style="width:18%"><col style="width:8%"><col style="width:8%"><col style="width:8%"><col style="width:17%"><col style="width:8%"><col style="width:11%"><col style="width:6%"><col style="width:7%"></colgroup>' +
+      '<tr><th rowspan="2">Date</th><th rowspan="2">Travel Details (From/To)</th><th colspan="2" class="y">Daily KM Reading/FARE</th><th rowspan="2" class="y">Total KM/FARE</th><th rowspan="2">Instrument</th><th rowspan="2">ISR<br>Number</th><th rowspan="2">DCR (TIME &amp; OUT)</th><th rowspan="2" class="y">Meals</th><th rowspan="2" class="y">Parking/<br>Toll/Load</th></tr>' +
+      '<tr><th class="y">From</th><th class="y">To</th></tr>' + body +
+      '<tr class="tot"><td style="text-align:center">TOTAL:</td><td></td><td></td><td></td><td style="text-align:right">' + tKm.toFixed(2) + '</td><td></td><td></td><td></td><td style="text-align:right">' + tMeals.toFixed(2) + '</td><td style="text-align:right">' + tPark.toFixed(2) + "</td></tr></table>" +
+      '<table class="foot"><colgroup><col style="width:9%"><col style="width:18%"><col style="width:8%"><col style="width:8%"><col style="width:8%"><col style="width:17%"><col style="width:8%"><col style="width:11%"><col style="width:6%"><col style="width:7%"></colgroup>' +
+      '<tr><td colspan="7" rowspan="4" valign="top">' +
+      '<table class="sums">' +
+      '<tr><td class="lbl">1. Gas/Fare</td><td class="u">' + num(f.gasS).toFixed(2) + '</td></tr>' +
+      '<tr><td class="lbl">2. Meals</td><td class="u">' + tMeals.toFixed(2) + '</td></tr>' +
+      '<tr><td class="lbl">3. Parking</td><td class="u">' + num(f.parkingS).toFixed(2) + '</td></tr>' +
+      '<tr><td class="lbl">4. Toll</td><td class="u">' + num(f.tollS).toFixed(2) + '</td></tr>' +
+      '<tr><td class="lbl">5. Load</td><td class="n">' + num(f.loadS).toFixed(2) + '</td></tr>' +
+      '<tr class="g"><td class="lbl">TOTAL :</td><td class="u">' + grand.toFixed(2) + '</td></tr>' +
+      '</table></td>' +
+      '<td colspan="3" class="sigspace">' + (f.empSig ? '<img src="' + f.empSig + '" height="28" width="150" style="height:28px;width:150px;object-fit:contain;display:block;margin:0 auto">' : '&nbsp;') + '</td></tr>' +
+      '<tr><td colspan="3" class="sigline">Employee&#39;s Signature</td></tr>' +
+      '<tr><td colspan="3" class="siggap">&nbsp;</td></tr>' +
+      '<tr><td colspan="3" class="sigline">Vice President for Operations</td></tr>' +
+      '</table></body></html>';
+    const xlsHtml = html
+      .replace("<html>", '<html xmlns:o="urn:schemas-microsoft-com:office:office" xmlns:x="urn:schemas-microsoft-com:office:excel" xmlns="http://www.w3.org/TR/REC-html40">')
+      .replace("</head>", '<!--[if gte mso 9]><xml><x:ExcelWorkbook><x:ExcelWorksheets><x:ExcelWorksheet><x:Name>SMER</x:Name><x:WorksheetOptions><x:DisplayGridlines/></x:WorksheetOptions></x:ExcelWorksheet></x:ExcelWorksheets></x:ExcelWorkbook></xml><![endif]--></head>');
+    try {
+      const blob = new Blob(["\ufeff" + xlsHtml], { type: "application/vnd.ms-excel;charset=utf-8" });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = "SMER_" + (f.name || "sheet").replace(/[^A-Za-z0-9]+/g, "_") + ".xls";
+      document.body.appendChild(a); a.click(); document.body.removeChild(a);
+      setTimeout(() => URL.revokeObjectURL(url), 1500);
+    } catch (e) { notify("Download failed: " + e.message, "error"); }
   }
   function printSheet() {
     const esc = t => String(t == null ? "" : t).replace(/&/g, "&amp;").replace(/</g, "&lt;");
     const cells = r => [r.date, r.travel, r.kmFrom, r.kmTo, r.totalKm, r.instrument, r.isr, r.dcr, r.meals, r.parking];
     const body = f.rows.map(r => "<tr>" + cells(r).map((c, ci) => '<td style="text-align:' + alignOf(SMER_COLS[ci]) + '">' + esc(c) + "&nbsp;</td>").join("") + "</tr>").join("");
-    const html = "<!doctype html><html><head><title>SMER</title><style>@page{size:A4 landscape;margin:8mm}@media print{html,body{width:297mm}}body{font-family:Arial,Helvetica,sans-serif;color:#000;margin:0;padding:4px 6px}.logo{display:flex;align-items:center;gap:10px}.sq{display:grid;grid-template-columns:repeat(3,11px);grid-auto-rows:11px}.sq i{display:block}.sq i.b{background:#1a1a1a}.brand{border-left:2px solid #000;padding-left:10px}.fas{font-weight:900;font-size:24px;letter-spacing:2px;line-height:1}.sub{font-size:9.5px;line-height:1.1}h1{font-size:13px;text-align:center;margin:-18px 0 8px;font-weight:800}.meta{font-size:11.5px;font-weight:700;margin:1px 0;display:flex}.meta em{font-style:normal;width:64px;flex-shrink:0}.meta span{font-weight:400;border-bottom:1px solid #000;display:inline-block;min-width:420px;padding:0 4px}.note{font-size:9.5px;font-style:italic;margin:2px 0 4px}table{width:100%;border-collapse:collapse;table-layout:fixed}th,td{border:1px solid #000;font-size:9.8px;padding:1.5px 3px;height:15.5px;overflow:hidden;white-space:nowrap}th{font-weight:700;text-align:center}.y{background:#ffff00 !important;-webkit-print-color-adjust:exact;print-color-adjust:exact}.tot td{font-weight:700}.foot{display:flex;justify-content:space-between;margin-top:10px}.sums{font-size:11px;width:300px}.sums div{display:flex;justify-content:space-between;padding:1px 0}.sums .u{border-bottom:1px solid #000;min-width:90px;text-align:right}.sums .g{font-weight:800;border-top:1px solid #000;margin-top:3px;padding-top:3px}.sig{width:280px;text-align:center;font-size:10.5px}.sig .l{border-top:1px solid #000;margin-top:30px;padding-top:2px}</style></head><body>" +
+    const html = "<!doctype html><html><head><title></title><style>@page{size:A4 landscape;margin:0}@media print{html,body{width:297mm}}body{font-family:Arial,Helvetica,sans-serif;color:#000;margin:0;padding:8mm 8mm 6mm}.logo{display:flex;align-items:center;gap:10px}.sq{display:grid;grid-template-columns:repeat(3,11px);grid-auto-rows:11px}.sq i{display:block}.sq i.b{background:#1a1a1a}.brand{border-left:2px solid #000;padding-left:10px}.fas{font-weight:900;font-size:24px;letter-spacing:2px;line-height:1}.sub{font-size:9.5px;line-height:1.1}h1{font-size:13px;text-align:center;margin:-18px 0 8px;font-weight:800}.meta{font-size:11.5px;font-weight:700;margin:1px 0;display:flex}.meta em{font-style:normal;width:64px;flex-shrink:0}.meta span{font-weight:400;border-bottom:1px solid #000;display:inline-block;min-width:420px;padding:0 4px}.note{font-size:9.5px;font-style:italic;margin:2px 0 4px}table{width:100%;border-collapse:collapse;table-layout:fixed}th,td{border:1px solid #000;font-size:9.8px;padding:1.5px 3px;height:15.5px;overflow:hidden;white-space:nowrap}th{font-weight:700;text-align:center}.y{background:#ffff00 !important;-webkit-print-color-adjust:exact;print-color-adjust:exact}.tot td{font-weight:700}.foot{display:flex;justify-content:space-between;margin-top:10px}.sums{font-size:11px;width:300px}.sums div{display:flex;justify-content:space-between;padding:1px 0}.sums .u{border-bottom:1px solid #000;min-width:90px;text-align:right}.sums .n{min-width:90px;text-align:right}.sums .g{font-weight:800;border-top:1px solid #000;margin-top:3px;padding-top:3px}.sig{width:280px;text-align:center;font-size:10.5px}.sig .l{border-top:1px solid #000;margin-top:30px;padding-top:2px}</style></head><body>" +
       '<div class="logo">' + (logo ? '<img src="' + logo + '" style="width:' + logoW + 'px;height:auto">' : '<div class="sq"><i class="b"></i><i></i><i class="b"></i><i></i><i class="b"></i><i></i><i class="b"></i><i class="b"></i><i></i></div><div class="brand"><div class="fas">FAS</div><div class="sub">Diagnostic<br>Group<br>Inc.</div></div>') + '</div>' +
       "<h1>SEMI-MONTHLY EXPENSE REPORT(SMER)</h1>" +
       '<div class="meta"><em>Name:</em><span>' + esc(f.name) + '</span></div><div class="meta"><em>Position:</em><span>' + esc(f.position) + '</span></div>' +
@@ -11430,7 +11476,7 @@ function SmerTab({ profile, labs, notify }) {
       '<tr><th rowspan="2">Date</th><th rowspan="2">Travel Details (From/To)</th><th colspan="2" class="y">Daily KM Reading/FARE</th><th rowspan="2" class="y">Total KM/FARE</th><th rowspan="2">Instrument</th><th rowspan="2">ISR<br>Number</th><th rowspan="2">DCR (TIME &amp; OUT)</th><th rowspan="2" class="y">Meals</th><th rowspan="2" class="y">Parking/<br>Toll/Load</th></tr>' +
       '<tr><th class="y">From</th><th class="y">To</th></tr>' + body +
       '<tr class="tot"><td style="text-align:center">TOTAL:</td><td></td><td></td><td></td><td style="text-align:right">' + tKm.toFixed(2) + '</td><td></td><td></td><td></td><td style="text-align:right">' + tMeals.toFixed(2) + '</td><td style="text-align:right">' + tPark.toFixed(2) + "</td></tr></table>" +
-      '<div class="foot"><div class="sums"><div><span>1. Gas/Fare</span><span class="u">' + num(f.gasS).toFixed(2) + '</span></div><div><span>2. Meals</span><span class="u">' + tMeals.toFixed(2) + '</span></div><div><span>3. Parking</span><span class="u">' + num(f.parkingS).toFixed(2) + '</span></div><div><span>4. Toll</span><span class="u">' + num(f.tollS).toFixed(2) + '</span></div><div><span>5. Load</span><span class="u">' + num(f.loadS).toFixed(2) + '</span></div><div class="g"><span>TOTAL :</span><span class="u">' + grand.toFixed(2) + '</span></div></div>' +
+      '<div class="foot"><div class="sums"><div><span>1. Gas/Fare</span><span class="u">' + num(f.gasS).toFixed(2) + '</span></div><div><span>2. Meals</span><span class="u">' + tMeals.toFixed(2) + '</span></div><div><span>3. Parking</span><span class="u">' + num(f.parkingS).toFixed(2) + '</span></div><div><span>4. Toll</span><span class="u">' + num(f.tollS).toFixed(2) + '</span></div><div><span>5. Load</span><span class="n">' + num(f.loadS).toFixed(2) + '</span></div><div class="g"><span>TOTAL :</span><span class="u">' + grand.toFixed(2) + '</span></div></div>' +
       '<div class="sig">' + (f.empSig ? '<img src="' + f.empSig + '" style="height:40px;max-width:230px;object-fit:contain;display:block;margin:0 auto 2px">' : '') + '<div class="l">Employee&#39;s Signature</div><div class="l" style="margin-top:44px">Vice President for Operations</div></div></div></body></html>';
     const w = window.open("", "_blank", "width=1150,height=780");
     try { if (w) w.__wantLandscape = true; } catch (e) {}
@@ -11581,7 +11627,7 @@ function SmerTab({ profile, labs, notify }) {
     key: lb,
     style: { display: "flex", justifyContent: "space-between", alignItems: "center", padding: "1px 0" }
   }, /*#__PURE__*/React.createElement("span", null, lb), key2 ? /*#__PURE__*/React.createElement("input", {
-    style: paperIn({ borderBottom: "1px solid #000", width: 90, textAlign: "right" }),
+    style: paperIn({ borderBottom: key2 === "loadS" ? "none" : "1px solid #000", width: 90, textAlign: "right" }),
     value: f[key2],
     onChange: e => setF(x => ({ ...x, [key2]: e.target.value }))
   }) : /*#__PURE__*/React.createElement("span", {
@@ -14223,19 +14269,28 @@ function impParseInventory(wb) {
       defval: ""
     });
     let hi = -1,
-      map = null;
-    for (let i = 0; i < Math.min(grid.length, 25); i++) {
+      map = null,
+      bestScore = 0;
+    // Choose the row with the MOST recognized headers (not merely the first row with >=2).
+    // This avoids latching onto a title/subtitle row that happens to contain a couple of
+    // header-like words, which would then misalign every data row and yield 0 items.
+    const scanTo = Math.min(grid.length, 40);
+    for (let i = 0; i < scanTo; i++) {
       const m = invMapHeaders(grid[i] || []);
-      if (Object.keys(m).length >= 2 && (m.serialNo !== undefined || m.itemCode !== undefined || m.machineModel !== undefined)) {
+      const score = Object.keys(m).length;
+      const hasId = m.serialNo !== undefined || m.itemCode !== undefined || m.machineModel !== undefined;
+      if (hasId && score >= 2 && score > bestScore) {
+        bestScore = score;
         hi = i;
         map = m;
-        break;
       }
     }
     if (hi === -1) {
       sheetInfo.push({
         name,
-        used: false
+        used: false,
+        rows: 0,
+        headerFound: false
       });
       return;
     }
@@ -14579,7 +14634,20 @@ function ImportRulesGuide({
         navigator.clipboard.writeText("Timestamp\tName\tActivity/Job type\tSupport type\tAccount\tBrand\tInstrument\tSerial number\tISR no.\tDate & Time reported\tDate & Time of Departure\tDate & Time of Arrival to Account\tDate & Time work started\tDate & Time work ended\tDate & Time of Arrival to Home\tProblem Description\tSystem Condition\tInstrument Status\tRecommendation\tEndorsed to\tPriority\tDescription of Work\tSoftware Version\tFirmware Version\tLocation\tSub-location");
       } catch (e) {}
     }
-  }, "📋 Copy"))), dest === "inventory" && /*#__PURE__*/React.createElement(React.Fragment, null, /*#__PURE__*/React.createElement(H, null, "Machine Inventory — how rows are written"), /*#__PURE__*/React.createElement(R, null, "Detected when at least 2 recognized columns exist including one of: ", /*#__PURE__*/React.createElement(B, null, "Serial No, Item Code, Model"), "."), /*#__PURE__*/React.createElement(R, null, "Recognized fields: Brand, Model, Serial No, Item Code, Condition, Status, Import date, Ownership, Location, Dealer, Remarks, Sales person, PO date."), /*#__PURE__*/React.createElement(R, null, "Defaults when blank: Condition → ", /*#__PURE__*/React.createElement(B, null, "BRAND NEW"), " · Status → ", /*#__PURE__*/React.createElement(B, null, "Available"), " · Location → ", /*#__PURE__*/React.createElement(B, null, "warehouse"), "."), /*#__PURE__*/React.createElement(R, null, "Duplicates (same Serial No or Item Code already in stock) are skipped. No visits or PM data are written."), /*#__PURE__*/React.createElement(H, null, "Machine Inventory — accepted headers (order does not matter)"), /*#__PURE__*/React.createElement(HdrHead, null), /*#__PURE__*/React.createElement(Hdr, {
+  }, "📋 Copy"))), dest === "inventory" && /*#__PURE__*/React.createElement(React.Fragment, null, /*#__PURE__*/React.createElement(H, null, "Machine Inventory — how rows are written"), /*#__PURE__*/React.createElement("div", {
+    style: { background: "var(--c-bg2)", border: "1px solid var(--c-border)", borderRadius: 8, padding: "9px 11px", margin: "2px 0 10px" }
+  }, /*#__PURE__*/React.createElement("div", {
+    style: { fontSize: 11, fontWeight: 800, color: "var(--c-text3)", textTransform: "uppercase", marginBottom: 5 }
+  }, "Paste this exact header row (row 1) into your sheet"), /*#__PURE__*/React.createElement("div", {
+    style: { display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }
+  }, /*#__PURE__*/React.createElement("code", {
+    style: { flex: 1, minWidth: 220, fontSize: 11.5, fontFamily: "monospace", color: "var(--c-text2)", background: "var(--c-bg)", border: "1px solid var(--c-border)", borderRadius: 6, padding: "6px 8px", whiteSpace: "pre-wrap", wordBreak: "break-word" }
+  }, "Brand  Model  Serial No  Item Code  Condition  Status  Import date  Ownership  Location  Dealer  Sales person  PO date  Remarks"), /*#__PURE__*/React.createElement("button", {
+    style: { ...btnSt("var(--c-key)", "var(--c-bg)"), fontSize: 11, whiteSpace: "nowrap" },
+    onClick: () => { try { navigator.clipboard.writeText("Brand\tModel\tSerial No\tItem Code\tCondition\tStatus\tImport date\tOwnership\tLocation\tDealer\tSales person\tPO date\tRemarks"); notify("Header row copied — paste into row 1 of your Excel sheet (it will split into columns).", "success"); } catch (e) { notify("Copy not supported here — type the headers shown.", "error"); } }
+  }, "\uD83D\uDCCB Copy header row")), /*#__PURE__*/React.createElement("div", {
+    style: { fontSize: 10.5, color: "var(--c-text5)", marginTop: 6 }
+  }, "Order doesn\u2019t matter \u2014 columns are matched by name \u2014 but Serial No + Model are what identify a unit (a row is skipped only if that pair already exists). Put your data starting on row 2.")), /*#__PURE__*/React.createElement(R, null, "Detected when at least 2 recognized columns exist including one of: ", /*#__PURE__*/React.createElement(B, null, "Serial No, Item Code, Model"), "."), /*#__PURE__*/React.createElement(R, null, "Recognized fields: Brand, Model, Serial No, Item Code, Condition, Status, Import date, Ownership, Location, Dealer, Remarks, Sales person, PO date."), /*#__PURE__*/React.createElement(R, null, "Defaults when blank: Condition → ", /*#__PURE__*/React.createElement(B, null, "BRAND NEW"), " · Status → ", /*#__PURE__*/React.createElement(B, null, "Available"), " · Location → ", /*#__PURE__*/React.createElement(B, null, "warehouse"), "."), /*#__PURE__*/React.createElement(R, null, /*#__PURE__*/React.createElement(B, null, "Skip rule: "), "a row is skipped ONLY when the same ", /*#__PURE__*/React.createElement(B, null, "Serial No"), " AND ", /*#__PURE__*/React.createElement(B, null, "Model"), " already exist in your inventory. Same model but a different serial (or the same serial with a different model) is imported as a new unit. Item Code is stored but does NOT affect skipping."), /*#__PURE__*/React.createElement(R, null, "You can see exactly which rows will be added vs skipped in the preview before importing."), /*#__PURE__*/React.createElement(R, null, "Every import is kept under \u201CStored import files\u201D below \u2014 you can re-import (restore) or delete it later."), /*#__PURE__*/React.createElement(H, null, "Machine Inventory — accepted headers (order does not matter)"), /*#__PURE__*/React.createElement(HdrHead, null), /*#__PURE__*/React.createElement(Hdr, {
     name: "Brand",
     names: "brand · make · manufacturer"
   }), /*#__PURE__*/React.createElement(Hdr, {
@@ -14730,10 +14798,28 @@ function ImportExcel({
   const [reimportBusy, setReimportBusy] = useState("");
   async function reimportFile(rec) {
     if (!rec.rows) { notify("This file was too large to keep a re-importable copy — re-upload the original file instead.", "error"); return; }
-    if (!confirm("\u267b Re-import \u201C" + rec.name + "\u201D?\n\nSafe to repeat: records are only ADDED \u2014 existing laboratories, machines and visits are never removed or replaced, and duplicates are skipped.")) return;
+    if (!confirm("\u267b Re-import \u201C" + rec.name + "\u201D?\n\nSafe to repeat: records are only ADDED \u2014 existing records are never removed or replaced, and duplicates are skipped.")) return;
     setReimportBusy(rec.id);
     try {
       const rows = JSON.parse(rec.rows);
+      if (rec.dest === "inventory") {
+        // Restore inventory rows — skip only when the SAME Serial No + Model pair already exists.
+        const comboKey = (sn, md) => String(sn == null ? "" : sn).trim().toLowerCase() + "||" + String(md == null ? "" : md).trim().toLowerCase();
+        const existing = await db.collection("inventory").get();
+        const have = {};
+        existing.forEach(d => { const x = d.data(); const sn = String(x.serialNo == null ? "" : x.serialNo).trim(); const md = String(x.machineModel == null ? "" : x.machineModel).trim(); if (sn || md) have[comboKey(sn, md)] = 1; });
+        let done = 0, skipped = 0, failed = 0;
+        for (const r of rows) {
+          const sn = String(r.serialNo == null ? "" : r.serialNo).trim(), md = String(r.machineModel == null ? "" : r.machineModel).trim();
+          const key = comboKey(sn, md);
+          if ((sn || md) && have[key]) { skipped++; continue; }
+          try { await db.collection("inventory").add({ ...r, imported: true, createdAt: FieldValue.serverTimestamp() }); if (sn || md) have[key] = 1; done++; } catch (e) { failed++; }
+        }
+        logAudit(profile, "import.reimport", rec.name + " \u2192 " + done + " inventory item(s)" + (failed ? " (" + failed + " failed)" : ""));
+        notify(failed ? done + " added, " + failed + " refused, " + skipped + " duplicate(s) skipped." : "\u267b Restored \u201C" + rec.name + "\u201D \u2014 " + done + " item(s) added, " + skipped + " duplicate(s) skipped.", failed ? "error" : "ok");
+        setReimportBusy("");
+        return;
+      }
       const p = impBuildPlan(rows, [], meEmail(profile), true);
       const res = await applyOpsSafe(db, p.ops, () => false, notify);
       logAudit(profile, "import.reimport", rec.name + " \u2192 " + res.done + " laborator" + (res.done === 1 ? "y" : "ies"));
@@ -14742,7 +14828,7 @@ function ImportExcel({
     setReimportBusy("");
   }
   async function deleteImpFile(rec) {
-    if (!confirm("Move the imported file record \u201C" + rec.name + "\u201D to the Bin?\n\nThis removes ONLY the stored file \u2014 the laboratories, machines and visits it created stay untouched.")) return;
+    if (!confirm("Move the imported file record \u201C" + rec.name + "\u201D to the Bin?\n\nThis removes ONLY the stored file \u2014 the " + (rec.dest === "inventory" ? "inventory items" : "laboratories, machines and visits") + " it created stay untouched.")) return;
     try {
       await binIt("importFile", rec.name, { id: rec.id, ...rec }, profile.email);
       await db.collection("config").doc(rec.id).delete();
@@ -14791,23 +14877,27 @@ function ImportExcel({
           return;
         }
         const existing = await db.collection("inventory").get();
+        // A unit is the same only when BOTH its Serial No AND Item Code match — so the dedup key
+        // is the pair together. Units that merely share an Item Code (same model, different serial)
+        // or share a Serial No are NOT duplicates and will be imported.
+        const comboKey = (sn, md) => String(sn == null ? "" : sn).trim().toLowerCase() + "||" + String(md == null ? "" : md).trim().toLowerCase();
         const have = {};
         existing.forEach(d => {
           const x = d.data();
-          const k1 = String(x.serialNo || "").trim().toLowerCase();
-          const k2 = String(x.itemCode || "").trim().toLowerCase();
-          if (k1) have["s:" + k1] = 1;
-          if (k2) have["c:" + k2] = 1;
+          const sn = String(x.serialNo == null ? "" : x.serialNo).trim();
+          const md = String(x.machineModel == null ? "" : x.machineModel).trim();
+          if (sn || md) have[comboKey(sn, md)] = 1;
         });
         const fresh = [],
           dupes = [];
         pInv.rows.forEach(r => {
-          const k1 = String(r.serialNo || "").trim().toLowerCase(),
-            k2 = String(r.itemCode || "").trim().toLowerCase();
-          if (k1 && have["s:" + k1] || k2 && have["c:" + k2]) dupes.push(r);else {
+          const sn = String(r.serialNo == null ? "" : r.serialNo).trim();
+          const md = String(r.machineModel == null ? "" : r.machineModel).trim();
+          const key = comboKey(sn, md);
+          // duplicate only when there's an identifier AND the exact Serial No + Model pair exists
+          if ((sn || md) && have[key]) dupes.push(r);else {
             fresh.push(r);
-            if (k1) have["s:" + k1] = 1;
-            if (k2) have["c:" + k2] = 1;
+            if (sn || md) have[key] = 1;
           }
         });
         setInvPlan({
@@ -14939,12 +15029,28 @@ function ImportExcel({
         failed++;
       }
     }
-    logAudit(profile, "import.inventory", invPlan.file + " → " + done + " item(s)" + (failed ? " (" + failed + " failed)" : ""));
-    notify(failed ? done + " added, " + failed + " refused." : "✅ " + done + " inventory item(s) imported. " + invPlan.dupes.length + " duplicate(s) skipped.", failed ? "error" : "ok");
-    setBusy(false);
-    setInvPlan(null);
-    setGrids(null);
-  }
+    // Keep a re-importable copy of the file (all recognized rows, fresh + duplicates) so the
+      // owner can restore or delete it later from "Stored import files".
+      try {
+        const allRows = (invPlan.fresh || []).concat(invPlan.dupes || []);
+        const rowsJson = JSON.stringify(allRows);
+        await db.collection("config").doc("impf_" + Date.now()).set({
+          kind: "importFile",
+          name: invPlan.file || "inventory.xlsx",
+          at: auditNow(),
+          by: scrubOwner(meEmail(profile)),
+          dest: "inventory",
+          rowCount: allRows.length,
+          rows: rowsJson.length > 700000 ? null : rowsJson,
+          note: rowsJson.length > 700000 ? "too large to keep a re-importable copy" : ""
+        });
+      } catch (e) {}
+      logAudit(profile, "import.inventory", invPlan.file + " → " + done + " item(s)" + (failed ? " (" + failed + " failed)" : ""));
+      notify(failed ? done + " added, " + failed + " refused." : "✅ " + done + " inventory item(s) imported. " + invPlan.dupes.length + " duplicate(s) skipped.", failed ? "error" : "ok");
+      setBusy(false);
+      setInvPlan(null);
+      setGrids(null);
+    }
   function applyManualMap() {
     const grid = grids.sheets[mapUI.sheet] || [];
     const map = {};
@@ -15004,7 +15110,7 @@ function ImportExcel({
     style: { border: "1px dashed var(--c-border)", borderRadius: 10, padding: "10px 14px", marginBottom: 12 }
   }, /*#__PURE__*/React.createElement("div", { style: { fontSize: 11.5, fontWeight: 800, color: "var(--c-text4)", textTransform: "uppercase", marginBottom: 6 } }, "🗂 Imported files (", impFiles.length, ")"),
   impFiles.map(rec => /*#__PURE__*/React.createElement("div", { key: rec.id, style: { display: "flex", alignItems: "center", gap: 10, padding: "5px 0", borderTop: "1px solid var(--c-border)", fontSize: 12 } },
-    /*#__PURE__*/React.createElement("span", { style: { flex: 1, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" } }, "📄 ", rec.name || "file", /*#__PURE__*/React.createElement("span", { style: { color: "var(--c-text5)", marginLeft: 8 } }, String(rec.at || "").replace("T", " ").slice(0, 16), " · ", rec.rowCount || 0, " row(s)", rec.note ? " · " + rec.note : "")),
+    /*#__PURE__*/React.createElement("span", { style: { flex: 1, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" } }, (rec.dest === "inventory" ? "📦 " : "📄 "), rec.name || "file", /*#__PURE__*/React.createElement("span", { style: { color: "var(--c-text5)", marginLeft: 8 } }, String(rec.at || "").replace("T", " ").slice(0, 16), " · ", rec.rowCount || 0, " row(s) · ", rec.dest === "inventory" ? "Machine Inventory" : rec.dest === "institutions" ? "Institutions" : "LOGS", rec.note ? " · " + rec.note : "")),
     /*#__PURE__*/React.createElement("button", { title: rec.rows ? "Re-import — safe to repeat: only ADDS, duplicates skipped" : "No re-importable copy was kept (file too large)", disabled: !rec.rows || reimportBusy === rec.id, style: { ...btnSt("var(--c-border)", rec.rows ? "#34d399" : "var(--c-text5)"), padding: "3px 9px", fontSize: 11 }, onClick: () => reimportFile(rec) }, reimportBusy === rec.id ? "…" : "♻ Re-import"),
     /*#__PURE__*/React.createElement("button", { title: "Move this stored file to the Bin (data it created stays)", style: { ...btnSt("#3a1d1d", "#fca5a5"), padding: "3px 9px", fontSize: 11 }, onClick: () => deleteImpFile(rec) }, "🗑 Delete")))) : null, /*#__PURE__*/React.createElement("div", {
     style: {
@@ -15077,13 +15183,15 @@ function ImportExcel({
       fontWeight: 800,
       marginBottom: 6
     }
-  }, "Preview — ", invPlan.file, " → 📦 Machine Inventory"), /*#__PURE__*/React.createElement("div", {
+  }, "Preview — ", invPlan.file, " → 📦 Machine Inventory"), invPlan.fresh.length === 0 && /*#__PURE__*/React.createElement("div", {
+    style: { fontSize: 12, background: "#3a2a12", color: "#fcd9a5", border: "1px solid #7a5a2a", borderRadius: 8, padding: "8px 10px", margin: "0 0 8px", lineHeight: 1.55 }
+  }, /*#__PURE__*/React.createElement("b", null, "Nothing new to add. "), invPlan.dupes.length > 0 ? "All " + invPlan.dupes.length + " row(s) in this file match BOTH the Serial No AND Model of a unit already in your inventory, so they were skipped as duplicates. To re-add them, first remove the existing copies, or change their Serial No or Model so the pair differs." : "No data rows were read beneath the header. Make sure the rows with values sit directly under the header row (no fully-blank separator row), and that at least the Serial No or Item Code column has values."), /*#__PURE__*/React.createElement("div", {
     style: {
       fontSize: 12,
       color: "var(--c-text2)",
       lineHeight: 1.7
     }
-  }, /*#__PURE__*/React.createElement("b", null, invPlan.fresh.length), " new item(s) will be added · ", /*#__PURE__*/React.createElement("b", null, invPlan.dupes.length), " duplicate(s) skipped (same Serial No or Item Code already in stock) · sheets used: ", invPlan.sheets.filter(s => s.used).map(s => s.name + " (" + s.rows + ")").join(", ") || "none"), /*#__PURE__*/React.createElement("div", {
+  }, /*#__PURE__*/React.createElement("b", null, invPlan.fresh.length), " new item(s) will be added · ", /*#__PURE__*/React.createElement("b", null, invPlan.dupes.length), " duplicate(s) skipped (same Serial No AND Model already in stock) · sheets used: ", invPlan.sheets.filter(s => s.used).map(s => s.name + " (" + s.rows + ")").join(", ") || "none"), /*#__PURE__*/React.createElement("div", {
     style: {
       maxHeight: 130,
       overflowY: "auto",
@@ -15101,7 +15209,20 @@ function ImportExcel({
       fontSize: 11,
       color: "var(--c-text5)"
     }
-  }, "… and ", invPlan.fresh.length - 12, " more")), /*#__PURE__*/React.createElement("div", {
+  }, "… and ", invPlan.fresh.length - 12, " more")), invPlan.dupes.length > 0 && /*#__PURE__*/React.createElement("div", {
+    style: { marginTop: 10, borderTop: "1px solid var(--c-border)", paddingTop: 8 }
+  }, /*#__PURE__*/React.createElement("div", {
+    style: { fontSize: 11, fontWeight: 800, color: "var(--c-text3)", textTransform: "uppercase", marginBottom: 4 }
+  }, "\u23ed " + invPlan.dupes.length + " duplicate(s) that will be SKIPPED"), /*#__PURE__*/React.createElement("div", {
+    style: { fontSize: 10.5, color: "var(--c-text5)", marginBottom: 6 }
+  }, "Same Serial No + Model already in your inventory \u2014 these rows will NOT be added."), /*#__PURE__*/React.createElement("div", {
+    style: { maxHeight: 130, overflowY: "auto" }
+  }, invPlan.dupes.slice(0, 12).map((r, i) => /*#__PURE__*/React.createElement("div", {
+    key: "d" + i,
+    style: { fontSize: 11.5, color: "var(--c-text4)", padding: "2px 0", opacity: .8 }
+  }, "\u23ed ", r.brand || "\u2014", " \u00b7 ", r.machineModel || "\u2014", " \u00b7 SN ", r.serialNo || "\u2014", " \u00b7 ", r.itemCode || "no code")), invPlan.dupes.length > 12 && /*#__PURE__*/React.createElement("div", {
+    style: { fontSize: 11, color: "var(--c-text5)" }
+  }, "\u2026 and ", invPlan.dupes.length - 12, " more"))), /*#__PURE__*/React.createElement("div", {
     style: {
       display: "flex",
       gap: 10,
