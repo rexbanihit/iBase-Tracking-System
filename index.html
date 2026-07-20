@@ -337,7 +337,7 @@
 (function () {
   var okLibs = (typeof firebase !== "undefined") && (typeof React !== "undefined") && (typeof ReactDOM !== "undefined") && (typeof XLSX !== "undefined");
   window.__IBASE_LIBS_OK = okLibs;
-  window.__IBASE_BUILD = "v218";
+  window.__IBASE_BUILD = "v222";
   if (!okLibs) {
     document.getElementById("root").innerHTML =
       "<div style='max-width:520px;margin:90px auto;padding:30px;background:#16181d;border:1px solid #f8717155;border-radius:16px;font-family:system-ui,sans-serif;color:#e5e7eb;text-align:center'>" +
@@ -366,6 +366,58 @@ const OT_MONTH_NAMES = ["January","February","March","April","May","June","July"
 
 function otHoursBetween(a, b) { return Math.max(0, (b.getTime() - a.getTime()) / 3600000); }
 
+// ── Excel-style edit history (undo/redo) + a lightweight cross-cell clipboard. ──
+// Snapshot-based: callers push a snapshot of their editable state BEFORE each change;
+// undo() restores the previous snapshot, redo() re-applies. Framework-agnostic; a thin
+// React wrapper (useHistory) exposes it with a keydown handler for Ctrl+Z / Ctrl+Y.
+var IBASE_CLIP = { v: null };  // shared one-cell clipboard (value copied from a focused cell)
+function useHistory(getSnap, setSnap, opts) {
+  opts = opts || {};
+  const past = React.useRef([]);
+  const future = React.useRef([]);
+  const lastPushed = React.useRef(null);
+  // record the CURRENT state as an undo point (call right before applying a change)
+  const record = React.useCallback(() => {
+    try {
+      future.current = [];                          // any fresh edit invalidates the redo stack
+      const snap = JSON.stringify(getSnap());
+      if (snap === lastPushed.current) return;      // don't stack identical snapshots
+      past.current.push(snap);
+      if (past.current.length > 100) past.current.shift();
+      lastPushed.current = snap;
+    } catch (e) {}
+  }, [getSnap]);
+  const undo = React.useCallback(() => {
+    if (!past.current.length) return false;
+    let cur;
+    try { cur = JSON.stringify(getSnap()); } catch (e) { cur = null; }
+    const prev = past.current.pop();
+    if (cur != null) future.current.push(cur);
+    lastPushed.current = prev;
+    try { setSnap(JSON.parse(prev)); } catch (e) {}
+    return true;
+  }, [getSnap, setSnap]);
+  const redo = React.useCallback(() => {
+    if (!future.current.length) return false;
+    let cur;
+    try { cur = JSON.stringify(getSnap()); } catch (e) { cur = null; }
+    const nxt = future.current.pop();
+    if (cur != null) past.current.push(cur);
+    lastPushed.current = nxt;
+    try { setSnap(JSON.parse(nxt)); } catch (e) {}
+    return true;
+  }, [getSnap, setSnap]);
+  const reset = React.useCallback(() => { past.current = []; future.current = []; lastPushed.current = null; }, []);
+  // keydown handler to attach to a container: Ctrl/Cmd+Z = undo, Ctrl+Y / Ctrl+Shift+Z = redo
+  const onKeyDown = React.useCallback(e => {
+    const mod = e.ctrlKey || e.metaKey;
+    if (!mod) return;
+    const key = (e.key || "").toLowerCase();
+    if (key === "z" && !e.shiftKey) { if (undo()) { e.preventDefault(); e.stopPropagation(); } }
+    else if ((key === "y") || (key === "z" && e.shiftKey)) { if (redo()) { e.preventDefault(); e.stopPropagation(); } }
+  }, [undo, redo]);
+  return { record: record, undo: undo, redo: redo, reset: reset, onKeyDown: onKeyDown };
+}
 function otParseDT(s) {
   if (!s) return null;
   var d = new Date(s);
@@ -3206,7 +3258,7 @@ function Login({
       letterSpacing: 2.5,
       textTransform: "uppercase"
     }
-  }, "Installed Base Management \u00b7 build v218"), !dept ? /*#__PURE__*/React.createElement("div", null,
+  }, "Installed Base Management \u00b7 build v222"), !dept ? /*#__PURE__*/React.createElement("div", null,
     /*#__PURE__*/React.createElement("div", { style: { fontSize: 12.5, color: "var(--c-text3)", textAlign: "center", marginBottom: 14 } }, "Select your department or module to continue"),
     /*#__PURE__*/React.createElement("div", { style: { display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 } },
       (depts || []).filter(d => !d.disabled).map((d, i) => /*#__PURE__*/React.createElement("button", { key: (d.id || d.name) + i, onClick: () => pickDept(d.name), style: { background: "var(--c-bg)", border: "1px solid var(--c-border)", borderRadius: 12, padding: "16px 10px", cursor: "pointer", display: "flex", flexDirection: "column", alignItems: "center", gap: 8, color: "var(--c-text2)" } },
@@ -10831,6 +10883,13 @@ function WpoaTab({ profile, notify }) {
   const [remote, setRemote] = useState(null);
   const [localOv, setLocalOv] = useState({});
   const [focusCell, setFocusCell] = useState(null); // {sec, pid, di, li}
+  const [recentColors, setRecentColors] = useState([]);
+  const pushRecent = col => { if (!col) return; setRecentColors(r => [col].concat(r.filter(x => x !== col)).slice(0, 8)); };
+  // WPOA Excel-style undo/redo — value-level so it flows through the same sync path (writeCell)
+  // and never clobbers other people's cells. Each entry is a list of {fk, before, after} cell edits.
+  const wpoaPast = React.useRef([]);
+  const wpoaFuture = React.useRef([]);
+  const wpoaHistPush = entry => { if (!entry || !entry.length) return; wpoaPast.current.push(entry); if (wpoaPast.current.length > 100) wpoaPast.current.shift(); wpoaFuture.current = []; };
   const timersRef = React.useRef({});
   const migTried = React.useRef({}); // one-shot per week: adopt the old Sunday-keyed doc (pre-v165 timezone bug)
   const tabRef = React.useRef(null);
@@ -10840,7 +10899,9 @@ function WpoaTab({ profile, notify }) {
     }
   }, [week, periodId]);
   const meKey = ((auth.currentUser && auth.currentUser.uid) || meEmail(profile) || "anon").replace(/[^A-Za-z0-9_-]/g, "_");
-  const meName = (profile && profile.name) || meEmail(profile) || "Someone";
+  const meName = (profile && profile.name) || "Teammate";  // never store an email as the presence label
+  // Only show a real display name; never render an email address to teammates.
+  const wpoaDisp = n => { const s2 = String(n || "").trim(); return (s2 && s2.indexOf("@") === -1) ? s2 : ""; };
   const PRES_COLORS = ["#f97316", "#a855f7", "#22c55e", "#e11d48", "#0ea5e9", "#eab308", "#14b8a6", "#f43f5e"];
   const colorFor = k => {
     let h = 0;
@@ -10910,22 +10971,8 @@ function WpoaTab({ profile, notify }) {
         } catch (e) {}
       }
       const nd = sn.exists ? sn.data() || {} : {};
-      const pc = prevCellsRef.current, nc = nd.cells || {};
-      if (pc) {
-        const ch = {};
-        Object.keys(nc).forEach(k2 => {
-          if (recentMineRef.current[k2] && Date.now() - recentMineRef.current[k2] < 3000) return;
-          if (JSON.stringify(nc[k2] || null) !== JSON.stringify(pc[k2] || null)) ch[k2] = Date.now();
-        });
-        if (Object.keys(ch).length) {
-          setFlash(f => ({ ...f, ...ch }));
-          setTimeout(() => setFlash(f => {
-            const n = { ...f };
-            Object.keys(ch).forEach(k2 => { if (n[k2] === ch[k2]) delete n[k2]; });
-            return n;
-          }), 1700);
-        }
-      }
+      const nc = nd.cells || {};
+      // Live sync stays on (changes appear on every screen) — but cells no longer blink.
       prevCellsRef.current = nc;
       setRemote(nd);
       // drop local overlays that are no longer pending — the confirmed (or
@@ -10980,9 +11027,15 @@ function WpoaTab({ profile, notify }) {
     const r = (rd.cells || {})[fk];
     return r !== undefined ? { t: "", bg: "", fc: "", al: "", ...r } : cellDefault(di, li);
   };
+  const writeCellRaw = (sec, pid, di, li, fullCell) => {
+    const fk = sec + "_" + pid + "_" + di + "_" + li;
+    stage("c:" + fk, fullCell, { cells: { [fk]: fullCell } });
+  };
   const writeCell = (sec, pid, di, li, patch) => {
     const fk = sec + "_" + pid + "_" + di + "_" + li;
-    const merged = { ...cellOf(sec, pid, di, li), ...patch };
+    const before = { ...cellOf(sec, pid, di, li) };
+    const merged = { ...before, ...patch };
+    wpoaHistPush([{ fk: fk, sec: sec, pid: pid, di: di, li: li, before: before, after: merged }]);
     stage("c:" + fk, merged, { cells: { [fk]: merged } });
   };
   const writeName = (sec, pid, v) => {
@@ -11010,13 +11063,43 @@ function WpoaTab({ profile, notify }) {
     setLocalOv(ov => ({ ...ov, ["o:" + sec]: nxt }));
     push({ ["order_" + sec]: nxt });
   };
-  const applyFmt = patch => { if (!focusCell) return; writeCell(focusCell.sec, focusCell.pid, focusCell.di, focusCell.li, patch); };
+  const applyFmt = patch => { if (!focusCell) return; if (patch.bg) pushRecent(patch.bg); writeCell(focusCell.sec, focusCell.pid, focusCell.di, focusCell.li, patch); };
+  // Apply a fill color to an ENTIRE day column (every person, all 3 lines) of the focused section.
+  const fillColumn = col => {
+    if (!focusCell) return;
+    pushRecent(col);
+    const sec = focusCell.sec, di = focusCell.di;
+    orderOf(sec).forEach(pid => { [0, 1, 2].forEach(li => { writeCell(sec, pid, di, li, { bg: col }); }); });
+  }
+  const wpoaUndo = () => {
+    if (!wpoaPast.current.length) return false;
+    const entry = wpoaPast.current.pop();
+    wpoaFuture.current.push(entry);
+    entry.slice().reverse().forEach(ed => writeCellRaw(ed.sec, ed.pid, ed.di, ed.li, ed.before));
+    return true;
+  };
+  const wpoaRedo = () => {
+    if (!wpoaFuture.current.length) return false;
+    const entry = wpoaFuture.current.pop();
+    wpoaPast.current.push(entry);
+    entry.forEach(ed => writeCellRaw(ed.sec, ed.pid, ed.di, ed.li, ed.after));
+    return true;
+  };
+  const wpoaOnKeyDown = e => {
+    const mod = e.ctrlKey || e.metaKey; if (!mod) return;
+    const key = (e.key || "").toLowerCase();
+    if (key === "z" && !e.shiftKey) { if (wpoaUndo()) { e.preventDefault(); e.stopPropagation(); } return; }
+    if (key === "y" || (key === "z" && e.shiftKey)) { if (wpoaRedo()) { e.preventDefault(); e.stopPropagation(); } return; }
+    const el = e.target;
+    const isCell = el && el.tagName === "INPUT" && (el.type === "text" || !el.type);
+    if (isCell && el.selectionStart === el.selectionEnd && key === "c") { IBASE_CLIP.v = el.value; }
+  };;
   function gridHTML(sec, esc) {
     const head = '<tr>' + DAYS.map((d, di) => '<th class="day' + (isHol(di) ? ' hol' : '') + '">' + d + '</th>').join('') + '</tr>' +
       '<tr>' + weekDates.map((dt, di) => '<th class="day num' + (isHol(di) ? ' hol' : '') + '">' + esc(effDay(di)) + '</th>').join('') + '</tr>';
     const body = orderOf(sec).map(pid => [0, 1, 2].map(li => '<tr>' + (li === 0 ? '<td class="nm" rowspan="3">' + esc(nameOf(sec, pid) || "[Name]") + '</td>' : '') + weekDates.map((dt, di) => {
       const c = cellOf(sec, pid, di, li);
-      return '<td class="c" style="' + (c.bg ? 'background:' + c.bg + ';' : '') + (c.fc ? 'color:' + c.fc + ';' : '') + 'text-align:' + (c.al || 'left') + '">' + esc(c.t) + '&nbsp;</td>';
+      return '<td class="c" style="' + (c.bg ? 'background:' + c.bg + ';' : '') + (c.fc ? 'color:' + c.fc + ';' : '') + 'text-align:' + (c.al || 'center') + '">' + esc(c.t) + '&nbsp;</td>';
     }).join('') + '</tr>').join('')).join('');
     return '<table><colgroup><col style="width:9%">' + '<col style="width:13%">'.repeat(7) + '</colgroup>' +
       '<tr><td class="corner" rowspan="3">' + esc(titleOf(sec)) + '</td><td class="wk" colspan="7">' + esc(hdrRangeOv() || rangeLabel) + '</td></tr>' + head + body + '</table>';
@@ -11047,14 +11130,12 @@ function WpoaTab({ profile, notify }) {
         on = on ? on + ", " + p2.n : p2.n;
       }
     });
-    const fts = flash[pkey];
-    const flashing = !oc && fts && Date.now() - fts < 1600;
     return /*#__PURE__*/React.createElement("input", {
       value: c.t,
       onChange: e => writeCell(sec, pid, di, li, { t: e.target.value }),
       onFocus: () => setFocusCell({ sec: sec, pid: pid, di: di, li: li }),
-      title: oc ? "\u270e " + on + " is editing this cell right now" : undefined,
-      style: { width: "100%", boxSizing: "border-box", border: "none", outline: "none", background: c.bg || "transparent", color: c.fc || "#000", textAlign: c.al || "left", fontSize: 11, fontFamily: "Arial, Helvetica, sans-serif", padding: "1px 3px", height: 19, boxShadow: oc ? "inset 0 0 0 2px " + oc : flashing ? "inset 0 0 0 2px #22c55e" : "none" }
+      title: oc ? "\u270e " + (wpoaDisp(on) || "A teammate") + " is editing this cell right now" : undefined,
+      style: { width: "100%", boxSizing: "border-box", border: "none", outline: "none", background: c.bg || "transparent", color: c.fc || "#000", textAlign: c.al || "center", fontSize: 11, fontFamily: "Arial, Helvetica, sans-serif", padding: "1px 3px", height: 19, boxShadow: oc ? "inset 0 0 0 2px " + oc : "none" }
     });
   };
   const grid = sec => /*#__PURE__*/React.createElement("table", {
@@ -11109,7 +11190,7 @@ function WpoaTab({ profile, notify }) {
     style: btnSt("var(--c-border)", "var(--c-text2)"),
     onClick: () => applyFmt({ al: al })
   }, sym);
-  return /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("div", {
+  return /*#__PURE__*/React.createElement("div", { onKeyDownCapture: wpoaOnKeyDown }, /*#__PURE__*/React.createElement("div", {
     style: { display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap", marginBottom: 10 }
   }, PERIODS.map(p => /*#__PURE__*/React.createElement("button", {
     key: p.id,
@@ -11149,17 +11230,28 @@ function WpoaTab({ profile, notify }) {
       style: { display: "inline-flex", alignItems: "center", gap: 4, fontWeight: 700 }
     }, /*#__PURE__*/React.createElement("span", {
       style: { width: 9, height: 9, borderRadius: 999, background: colorFor(k2), display: "inline-block" }
-    }), pres[k2].n))) : null;
+    }), wpoaDisp(pres[k2].n)))) : null;
   })(), /*#__PURE__*/React.createElement("span", {
     style: { fontSize: 11, color: "var(--c-text5)" }
-  }, "changes save automatically and appear on every teammate's screen instantly", rd.savedAt ? " · last activity " + String(rd.savedAt).slice(0, 16).replace("T", " ") + (scrubOwner(rd.savedBy) ? " by " + scrubOwner(rd.savedBy) : "") : "")), /*#__PURE__*/React.createElement("div", {
+  }, "changes save automatically and appear on every teammate's screen instantly", rd.savedAt ? " · last activity " + String(rd.savedAt).slice(0, 16).replace("T", " ") : "")), /*#__PURE__*/React.createElement("div", {
     style: { display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap", marginBottom: 10, fontSize: 11.5 }
   }, /*#__PURE__*/React.createElement("span", { style: { color: "var(--c-text4)" } }, "Selected cell:"), /*#__PURE__*/React.createElement("label", { style: { display: "inline-flex", alignItems: "center", gap: 4, color: "var(--c-text3)" } }, "🎨 Fill", /*#__PURE__*/React.createElement("input", {
     type: "color",
     title: "Cell background color",
     onChange: e => applyFmt({ bg: e.target.value }),
     style: { width: 30, height: 22, border: "1px solid var(--c-border)", background: "none", cursor: "pointer", padding: 0 }
-  })), /*#__PURE__*/React.createElement("label", { style: { display: "inline-flex", alignItems: "center", gap: 4, color: "var(--c-text3)" } }, "🅰 Font", /*#__PURE__*/React.createElement("input", {
+  })), /*#__PURE__*/React.createElement("label", { title: "Fill the whole day column (all people) with a color", style: { display: "inline-flex", alignItems: "center", gap: 4, color: "var(--c-text3)" } }, "🖍 Fill column", /*#__PURE__*/React.createElement("input", {
+    type: "color",
+    title: "Highlight the entire day column with this color",
+    disabled: !focusCell,
+    onChange: e => fillColumn(e.target.value),
+    style: { width: 30, height: 22, border: "1px solid var(--c-border)", background: "none", cursor: focusCell ? "pointer" : "not-allowed", padding: 0 }
+  })), recentColors.length > 0 && /*#__PURE__*/React.createElement("span", { style: { display: "inline-flex", alignItems: "center", gap: 4 } }, /*#__PURE__*/React.createElement("span", { style: { color: "var(--c-text5)" } }, "Recent:"), recentColors.map((col, i) => /*#__PURE__*/React.createElement("button", {
+    key: "rc" + i,
+    title: "Reuse " + col + " (click = fill cell · shift-click = fill column)",
+    onClick: e => { if (e.shiftKey) fillColumn(col); else applyFmt({ bg: col }); },
+    style: { width: 18, height: 18, borderRadius: 3, border: "1px solid var(--c-border)", background: col, cursor: "pointer", padding: 0 }
+  }))), /*#__PURE__*/React.createElement("label", { style: { display: "inline-flex", alignItems: "center", gap: 4, color: "var(--c-text3)" } }, "🅰 Font", /*#__PURE__*/React.createElement("input", {
     type: "color",
     title: "Font color",
     onChange: e => applyFmt({ fc: e.target.value }),
@@ -11168,7 +11260,7 @@ function WpoaTab({ profile, notify }) {
     title: "Clear this cell's colors",
     style: btnSt("var(--c-border)", "var(--c-text2)"),
     onClick: () => applyFmt({ bg: "", fc: "" })
-  }, "⌫ Clear color"), /*#__PURE__*/React.createElement("span", { style: { color: "var(--c-text5)" } }, focusCell ? "editing " + titleOf(focusCell.sec) + " · row " + (orderOf(focusCell.sec).indexOf(focusCell.pid) + 1) + " · " + DAYS[focusCell.di] : "click a cell first")), /*#__PURE__*/React.createElement("div", {
+  }, "⌫ Clear color"), /*#__PURE__*/React.createElement("span", { style: { color: "var(--c-text5)" } }, focusCell ? "editing " + titleOf(focusCell.sec) + " · row " + (orderOf(focusCell.sec).indexOf(focusCell.pid) + 1) + " · " + DAYS[focusCell.di] : "click a cell first"), /*#__PURE__*/React.createElement("span", { style: { color: "var(--c-text5)", marginLeft: 8 } }, "· Ctrl+Z undo · Ctrl+Y redo")), /*#__PURE__*/React.createElement("div", {
     style: { background: "#fff", color: "#000", border: "1px solid var(--c-border)", borderRadius: 6, padding: "12px 14px", overflowX: "auto", boxShadow: "0 6px 24px rgba(0,0,0,.25)" }
   }, SECTIONS.map(sc => /*#__PURE__*/React.createElement("div", {
     key: sc.sec,
@@ -11332,6 +11424,20 @@ function SmerTab({ profile, labs, notify }) {
   const [sheets, setSheets] = useState(null);
   const [curId, setCurId] = useState("");
   const [f, setF] = useState(blank);
+  const smerHist = useHistory(() => f, snap => setF(snap));
+  const smerOnFocusCapture = () => smerHist.record();
+  const smerOnKeyDown = e => {
+    smerHist.onKeyDown(e);
+    if (e.defaultPrevented) return;
+    const mod = e.ctrlKey || e.metaKey;
+    if (!mod) return;
+    const el = e.target;
+    const isCell = el && el.tagName === "INPUT" && (el.type === "text" || !el.type);
+    if (!isCell) return;
+    const noSel = el.selectionStart === el.selectionEnd;
+    const key = (e.key || "").toLowerCase();
+    if (key === "c" && noSel) { IBASE_CLIP.v = el.value; }
+  };
   // Auto-fill the Name once, from the signed-in user, when the sheet has no name yet.
   // It stays fully editable — the user can overwrite or clear it.
   const autoNameRef = React.useRef(false);
@@ -11497,7 +11603,7 @@ function SmerTab({ profile, labs, notify }) {
   const bTd = extra => ({ border: "1px solid #000", padding: 0, height: 21, ...(extra || {}) });
   const yl = { background: "#ffff00", color: "#000" };
   const models = (window.__ibaseCatalog && window.__ibaseCatalog.machines || []).map(x => x.model).filter(Boolean);
-  return /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("div", {
+  return /*#__PURE__*/React.createElement("div", { onKeyDownCapture: smerOnKeyDown, onFocusCapture: smerOnFocusCapture }, /*#__PURE__*/React.createElement("div", {
     style: { display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap", marginBottom: 12 }
   }, /*#__PURE__*/React.createElement("select", {
     style: { ...inputSt(), maxWidth: 300 },
@@ -11697,6 +11803,18 @@ function OvertimeTab({
   const [otView, setOtView] = useState("main"); // "main" | "rules" — the General Rules sub-tab
   const [otSort, setOtSort] = useState({ col: "Date", dir: -1 }); // headers sortable; default = LATEST date first
   const [otForm, setOtForm] = useState(null); // the OVERTIME FORM (standalone or pre-filing)
+  const otHist = useHistory(() => (otForm ? otForm.f : null), snap => { if (snap != null) setOtForm(x => x ? { ...x, f: snap } : x); });
+  const otOnFocusCapture = () => { if (otForm) otHist.record(); };
+  const otOnKeyDown = e => {
+    otHist.onKeyDown(e);
+    if (e.defaultPrevented) return;
+    const mod = e.ctrlKey || e.metaKey; if (!mod) return;
+    const el = e.target;
+    const isCell = el && el.tagName === "INPUT" && (el.type === "text" || !el.type);
+    if (!isCell) return;
+    const noSel = el.selectionStart === el.selectionEnd;
+    if ((e.key || "").toLowerCase() === "c" && noSel) { IBASE_CLIP.v = el.value; }
+  };
   const [otFormsList, setOtFormsList] = useState(null); // this user's saved standalone forms
   useEffect(() => {
     const u2 = auth.currentUser && auth.currentUser.uid || "";
@@ -12907,7 +13025,7 @@ function OvertimeTab({
       title: "Pick the date and time",
       style: { position: "absolute", left: 0, top: 0, width: "100%", height: "100%", opacity: 0, cursor: "pointer" }
     }));
-    return /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("div", {
+    return /*#__PURE__*/React.createElement("div", { onKeyDownCapture: otOnKeyDown, onFocusCapture: otOnFocusCapture }, /*#__PURE__*/React.createElement("div", {
       style: { background: "#fff", color: "#000", border: "2px solid #000", padding: "12px 14px", fontFamily: "Arial, Helvetica, sans-serif" }
     }, /*#__PURE__*/React.createElement("div", {
       style: { textAlign: "center", fontWeight: 800, fontSize: 15, marginBottom: 10 }
