@@ -337,7 +337,7 @@
 (function () {
   var okLibs = (typeof firebase !== "undefined") && (typeof React !== "undefined") && (typeof ReactDOM !== "undefined") && (typeof XLSX !== "undefined");
   window.__IBASE_LIBS_OK = okLibs;
-  window.__IBASE_BUILD = "v238";
+  window.__IBASE_BUILD = "v245";
   if (!okLibs) {
     document.getElementById("root").innerHTML =
       "<div style='max-width:520px;margin:90px auto;padding:30px;background:#16181d;border:1px solid #f8717155;border-radius:16px;font-family:system-ui,sans-serif;color:#e5e7eb;text-align:center'>" +
@@ -429,6 +429,36 @@ function otParseDT(s) {
 }
 
 function otRound2(n) { return Math.round((n + Number.EPSILON) * 100) / 100; }
+// Cash entry uses HOURS.MINUTES notation — the whole part is hours, the fractional
+// digits are MINUTES read as two digits (.2 = 20 min, .15 = 15 min, .05 = 5 min,
+// so one minute is .01; a lone .45 = 45 minutes). Returns total MINUTES, or null
+// when the text is not valid h.mm (bad characters, minutes >= 60, >2 digits).
+function otParseHMM(text) {
+  var s = String(text == null ? "" : text).trim();
+  if (!s) return null;
+  var m = s.match(/^(\d+)?(?:\.(\d{1,2}))?$/);
+  if (!m || (m[1] === undefined && m[2] === undefined)) return null;
+  var h = parseInt(m[1] || "0", 10);
+  var mm = m[2] === undefined ? 0 : parseInt(m[2].length === 1 ? m[2] + "0" : m[2], 10);
+  if (mm >= 60) return null;
+  return h * 60 + mm;
+}
+// Minutes -> "3 hr & 15 min" compact wording (the printed Note / echo / toast).
+function otMinShort(min) {
+  var h = Math.floor(min / 60), mm = Math.round(min % 60);
+  var parts = [];
+  if (h > 0) parts.push(h + " hr");
+  if (mm > 0) parts.push(mm + " min");
+  return parts.length ? parts.join(" & ") : "0 min";
+}
+// Minutes -> "3 hours & 15 minutes" wording (zero parts omitted).
+function otMinWords(min) {
+  var h = Math.floor(min / 60), mm = Math.round(min % 60);
+  var parts = [];
+  if (h > 0) parts.push(h + " hour" + (h === 1 ? "" : "s"));
+  if (mm > 0) parts.push(mm + " minute" + (mm === 1 ? "" : "s"));
+  return parts.length ? parts.join(" & ") : "0 minutes";
+}
 
 const DEFAULT_OT_SCHEDULE = {
   mon: { off: false, start: "08:00", end: "17:30" },
@@ -3351,7 +3381,7 @@ function Login({
       letterSpacing: 2.5,
       textTransform: "uppercase"
     }
-  }, "Installed Base Management \u00b7 build v238"), !dept ? /*#__PURE__*/React.createElement("div", null,
+  }, "Installed Base Management \u00b7 build v245"), !dept ? /*#__PURE__*/React.createElement("div", null,
     /*#__PURE__*/React.createElement("div", { style: { fontSize: 12.5, color: "var(--c-text3)", textAlign: "center", marginBottom: 14 } }, "Select your department or module to continue"),
     /*#__PURE__*/React.createElement("div", { style: { display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 } },
       (depts || []).filter(d => !d.disabled).map((d, i) => /*#__PURE__*/React.createElement("button", { key: (d.id || d.name) + i, onClick: () => pickDept(d.name), style: { background: "var(--c-bg)", border: "1px solid var(--c-border)", borderRadius: 12, padding: "16px 10px", cursor: "pointer", display: "flex", flexDirection: "column", alignItems: "center", gap: 8, color: "var(--c-text2)" } },
@@ -11666,14 +11696,44 @@ function SmerTab({ profile, labs, notify }) {
     if (!confirm("Remove the uploaded logo for ALL users? The default FAS mark will show instead.")) return;
     db.collection("config").doc("branding").set({ logo: "" }, { merge: true }).then(() => notify("Logo removed \u2014 default mark restored for everyone.", "ok")).catch(e => notify("Remove failed: " + (e && e.message || e), "error"));
   }
-  function xlsxOut() {
+  // Excel sizes a row to the image's REAL pixel height, ignoring the width/height
+  // attributes — a large signature canvas therefore stretched the signature row.
+  // Re-draw the signature onto a small canvas so its TRUE size already matches the
+  // printed size; then Excel has nothing to stretch. Falls back to the original
+  // data URI if the browser refuses to decode it.
+  function smerSmallSig(dataUrl, boxW, boxH) {
+    return new Promise(resolve => {
+      if (!dataUrl) { resolve(""); return; }
+      try {
+        const img = new Image();
+        img.onload = () => {
+          try {
+            const scale = Math.min(boxW / (img.width || boxW), boxH / (img.height || boxH), 1);
+            const w = Math.max(1, Math.round((img.width || boxW) * scale));
+            const h = Math.max(1, Math.round((img.height || boxH) * scale));
+            const cv = document.createElement("canvas");
+            cv.width = w; cv.height = h;
+            const cx = cv.getContext("2d");
+            cx.clearRect(0, 0, w, h);
+            cx.drawImage(img, 0, 0, w, h);
+            resolve(cv.toDataURL("image/png"));
+          } catch (e) { resolve(dataUrl); }
+        };
+        img.onerror = () => resolve(dataUrl);
+        img.src = dataUrl;
+      } catch (e) { resolve(dataUrl); }
+    });
+  }
+  async function xlsxOut() {
     // Excel opens an HTML document as a worksheet and honours table borders, cell
     // background colours (the yellow columns) and the embedded logo <img> — so we
     // export the SAME styled report HTML as .xls instead of a plain value-only sheet.
     const esc = t => String(t == null ? "" : t).replace(/&/g, "&amp;").replace(/</g, "&lt;");
+    const SIG_W = 150, SIG_H = 26;
+    const sigSmall = await smerSmallSig(f.empSig, SIG_W, SIG_H);
     const cells = r => [r.date, r.travel, r.kmFrom, r.kmTo, r.totalKm, r.instrument, r.isr, r.dcr, r.meals, r.parking];
     const body = f.rows.map(r => "<tr>" + cells(r).map((c, ci) => '<td style="text-align:' + alignOf(SMER_COLS[ci]) + '">' + esc(c) + "&nbsp;</td>").join("") + "</tr>").join("");
-    const html = "<!doctype html><html><head><title>SMER</title><style>@page{size:A4 landscape;margin:8mm}@media print{html,body{width:297mm}}body{font-family:Arial,Helvetica,sans-serif;color:#000;margin:0;padding:4px 6px}.logo{display:flex;align-items:center;gap:10px}.sq{display:grid;grid-template-columns:repeat(3,11px);grid-auto-rows:11px}.sq i{display:block}.sq i.b{background:#1a1a1a}.brand{border-left:1pt solid #000;padding-left:10px}.fas{font-weight:900;font-size:24px;letter-spacing:2px;line-height:1}.sub{font-size:9.5px;line-height:1.1}h1{font-size:13px;text-align:center;margin:-18px 0 8px;font-weight:800}.meta{font-size:11.5px;font-weight:700;margin:1px 0;display:flex}.meta em{font-style:normal;width:64px;flex-shrink:0}.meta span{font-weight:400;border-bottom:.5pt solid #000;display:inline-block;min-width:420px;padding:0 4px}.note{font-size:9.5px;font-style:italic;margin:2px 0 4px}table{width:100%;border-collapse:collapse;table-layout:fixed}table.main th,table.main td{border:.5pt solid #000;mso-border-alt:solid #000 .5pt;font-size:9.8px;padding:1px 3px;height:15.5px;overflow:hidden;white-space:nowrap}table.main th{font-weight:700;text-align:center}.y{background:#ffff00 !important;-webkit-print-color-adjust:exact;print-color-adjust:exact}.tot td{font-weight:700}.foot{width:100%;margin-top:10px;border-collapse:collapse}.foot td{border:none}.foot>tr>td{vertical-align:bottom}.sums{font-size:11px;border-collapse:collapse}.sums td{padding:1px 6px 1px 0;border:none}.sums .lbl{text-align:left;white-space:nowrap}.sums .u{border-bottom:.5pt solid #000;text-align:right;min-width:80px;padding-left:16px}.sums .n{text-align:right;min-width:80px;padding-left:16px}.sums .g td{font-weight:800;padding-top:2px}.sums .g .u{border-top:.5pt solid #000}.sums .g .lbl{border-top:none}.foot td.sigspace{height:34px;text-align:center;vertical-align:bottom;border:none}.foot td.siggap{height:40px;border:none}.foot td.sigline{border-top:.5pt solid #000;border-left:none;border-right:none;border-bottom:none;text-align:center;padding-top:2px;font-size:10.5px}</style></head><body>" +
+    const html = "<!doctype html><html><head><title>SMER</title><style>@page{size:A4 landscape;margin:8mm}@media print{html,body{width:297mm}}body{font-family:Arial,Helvetica,sans-serif;color:#000;margin:0;padding:4px 6px}.logo{display:flex;align-items:center;gap:10px}.sq{display:grid;grid-template-columns:repeat(3,11px);grid-auto-rows:11px}.sq i{display:block}.sq i.b{background:#1a1a1a}.brand{border-left:1pt solid #000;padding-left:10px}.fas{font-weight:900;font-size:24px;letter-spacing:2px;line-height:1}.sub{font-size:9.5px;line-height:1.1}h1{font-size:13px;text-align:center;margin:-18px 0 8px;font-weight:800}.meta{font-size:11.5px;font-weight:700;margin:1px 0;display:flex}.meta em{font-style:normal;width:64px;flex-shrink:0}.meta span{font-weight:400;border-bottom:.5pt solid #000;display:inline-block;min-width:420px;padding:0 4px}.note{font-size:9.5px;font-style:italic;margin:2px 0 4px}table{width:100%;border-collapse:collapse;table-layout:fixed}table.main th,table.main td{border:.5pt solid #000;mso-border-alt:solid #000 .5pt;font-size:9.8px;padding:1px 3px;height:15.5px;overflow:hidden;white-space:nowrap}table.main th{font-weight:700;text-align:center}.y{background:#ffff00 !important;-webkit-print-color-adjust:exact;print-color-adjust:exact}.tot td{font-weight:700}.foot{width:100%;margin-top:10px;border-collapse:collapse}.foot td{border:none}.foot>tr>td{vertical-align:bottom}.sums{font-size:11px;border-collapse:collapse}.sums td{padding:1px 6px 1px 0;border:none}.sums .lbl{text-align:left;white-space:nowrap}.sums .u{border-bottom:.5pt solid #000;text-align:right;min-width:80px;padding-left:16px}.sums .n{text-align:right;min-width:80px;padding-left:16px}.sums .g td{font-weight:800;padding-top:2px}.sums .g .u{border-top:.5pt solid #000}.sums .g .lbl{border-top:none}.foot td.sigspace{height:26pt;mso-height-source:userset;text-align:center;vertical-align:bottom;border:none;overflow:hidden}.foot td.siggap{height:30pt;mso-height-source:userset;border:none}.foot td.sigline{border-top:.5pt solid #000;border-left:none;border-right:none;border-bottom:none;text-align:center;padding-top:2px;font-size:10.5px}</style></head><body>" +
       '<div class="logo">' + (logo ? '<img src="' + logo + '" width="' + logoW + '" style="width:' + logoW + 'px;height:auto">' : '<div class="sq"><i class="b"></i><i></i><i class="b"></i><i></i><i class="b"></i><i></i><i class="b"></i><i class="b"></i><i></i></div><div class="brand"><div class="fas">FAS</div><div class="sub">Diagnostic<br>Group<br>Inc.</div></div>') + '</div>' +
       "<h1>SEMI-MONTHLY EXPENSE REPORT(SMER)</h1>" +
       '<div class="meta"><em>Name:</em><span>' + esc(f.name) + '</span></div><div class="meta"><em>Position:</em><span>' + esc(f.position) + '</span></div>' +
@@ -11692,7 +11752,7 @@ function SmerTab({ profile, labs, notify }) {
       '<tr><td class="lbl">5. Load</td><td class="n">' + num(f.loadS).toFixed(2) + '</td></tr>' +
       '<tr class="g"><td class="lbl">TOTAL :</td><td class="u">' + grand.toFixed(2) + '</td></tr>' +
       '</table></td>' +
-      '<td colspan="3" class="sigspace">' + (f.empSig ? '<img src="' + f.empSig + '" height="28" width="150" style="height:28px;width:150px;object-fit:contain;display:block;margin:0 auto">' : '&nbsp;') + '</td></tr>' +
+      '<td colspan="3" class="sigspace" style="height:26.0pt;mso-height-source:userset">' + (sigSmall ? '<img src="' + sigSmall + '" height="' + SIG_H + '" width="' + SIG_W + '" style="height:' + SIG_H + 'px;width:' + SIG_W + 'px;display:block;margin:0 auto">' : '&nbsp;') + '</td></tr>' +
       '<tr><td colspan="3" class="sigline">Employee&#39;s Signature</td></tr>' +
       '<tr><td colspan="3" class="siggap">&nbsp;</td></tr>' +
       '<tr><td colspan="3" class="sigline">Vice President for Operations</td></tr>' +
@@ -11965,7 +12025,7 @@ function OvertimeTab({
     return { reqFrom: "", reqTo: "", isr: "", task: "" };
   }
   function blankOtF() {
-    return { name: myName || profile && profile.name || "", department: profile && profile.department || "", dateFiled: today(), dateOfOt: "", entries: [blankOtEntry()], officeFrom: "", officeTo: "", totalOt: "", tasks: "", requestedBy: myName || profile && profile.name || "", notedBy: "", approvedBy: "" };
+    return { name: myName || profile && profile.name || "", department: profile && profile.department || "", dateFiled: today(), dateOfOt: "", entries: [blankOtEntry(), blankOtEntry(), blankOtEntry(), blankOtEntry()], officeFrom: "", officeTo: "", totalOt: "", tasks: "", note: "", requestedBy: myName || profile && profile.name || "", notedBy: "", approvedBy: "" };
   }
   function otRecompute(ents) {
     let sum = 0, any = false;
@@ -12073,17 +12133,34 @@ function OvertimeTab({
   }
   function printOtForm(fm) {
     const esc = t => String(t == null ? "" : t).replace(/&/g, "&amp;").replace(/</g, "&lt;");
-    const ents = Array.isArray(fm.entries) && fm.entries.length ? fm.entries : [{ reqFrom: fm.reqFrom, reqTo: fm.reqTo, isr: "", task: fm.tasks || "" }];
-    const lines = ents.map(e2 => (e2.isr ? "ISR " + e2.isr + " — " : "") + (e2.task || ""));
+    const entsAll = Array.isArray(fm.entries) && fm.entries.length ? fm.entries : [{ reqFrom: fm.reqFrom, reqTo: fm.reqTo, isr: "", task: fm.tasks || "" }];
+    // Requested-Time column: ALWAYS four standby OT slots (OT 1..OT 4) so the
+    // printed form is maximized-ready — empty slots print with blank From/To rules.
+    // Timed entries fill the slots in order; a legacy form with more than four
+    // timed entries renders them all (nothing is lost).
+    const tEnts = entsAll.filter(e2 => e2.reqFrom || e2.reqTo);
+    const slotN = Math.max(4, tEnts.length);
+    const slots = Array.from({ length: slotN }, (_, i9) => tEnts[i9] || { reqFrom: "", reqTo: "" });
+    // Task lines: every entry with content (ISR or task), padded to 6 ruled lines.
+    const lines = entsAll.filter(e2 => (e2.isr || e2.task)).map(e2 => (e2.isr ? "ISR " + e2.isr + " — " : "") + (e2.task || "")).slice(0, 6);
     while (lines.length < 6) lines.push("");
-    const html = "<!doctype html><html><head><title>Overtime Form</title><style>@page{size:A4 portrait;margin:0}body{font-family:Arial,Helvetica,sans-serif;color:#000;margin:0}.frame{border:1px solid #000;padding:6px 7px;width:96mm;height:138mm;box-sizing:border-box;overflow:hidden;margin:5mm 0 0 4mm}h1{font-size:11.5px;text-align:center;margin:0 0 6px;font-weight:800}.row{display:flex;align-items:baseline;gap:6px;margin:4px 0;font-size:9.5px}.row b{display:inline-block;width:21mm;font-weight:700;flex-shrink:0}.row span{font-weight:400;border-bottom:1px solid #000;flex:1;min-height:11px;padding:0 3px;line-height:1.5}.otn{font-size:8.5px;font-weight:800;margin-top:3px}.colh{font-size:9.5px;font-weight:700;margin-bottom:2px}.tl{display:flex;align-items:baseline;gap:4px;margin:3px 0;font-size:9.5px}.tl i{font-style:italic;font-weight:700;width:11mm;flex-shrink:0}.tl span{border-bottom:1px solid #000;min-height:11px;padding:0 3px;line-height:1.5}.lft span{width:118px}.rgt span{width:64px}.tot{display:flex;flex-direction:column;align-items:flex-start;gap:2px;margin-top:5px}.tot i{font-style:italic;font-weight:800;font-size:8px;line-height:1.1}.box{border:1.2px solid #000;width:24mm;height:7mm;display:flex;align-items:center;justify-content:center;font-size:9px;font-weight:800}.tsk{font-size:9.5px;font-weight:700;margin-top:6px}.ln{border-bottom:1px solid #000;min-height:13px;font-size:9px;padding:1px 2px;white-space:normal;word-break:break-word}.sig{margin-top:8px}.sig .row{margin:5px 0}.sig .row b{width:24mm}.sig .row span{max-width:none;flex:1}</style></head><body><div class=\"frame\"><h1>OVERTIME FORM</h1>" +
+    // Note: free text (fm.note). Forms saved by the previous build carried numeric
+    // noteCash/noteOffset instead — rebuild the sentence from them when note is absent.
+    const noteC = Number(fm.noteCash) || 0, noteO = Number(fm.noteOffset) || 0;
+    const hw = n => n + " hour" + (n === 1 ? "" : "s");
+    const legacyNote = noteC > 0 && noteO > 0 ? hw(noteC) + " for cash and " + hw(noteO) + " for offset."
+      : noteC > 0 ? hw(noteC) + " for cash."
+      : noteO > 0 ? hw(noteO) + " for offset." : "";
+    const noteTxt = fm.note !== undefined && fm.note !== null && String(fm.note).trim() !== "" ? String(fm.note).trim() : legacyNote;
+    const html = "<!doctype html><html><head><title>Overtime Form</title><style>@page{size:A4 portrait;margin:0}body{font-family:Arial,Helvetica,sans-serif;color:#000;margin:0}.frame{border:1px solid #000;padding:6px 7px;width:96mm;height:138mm;box-sizing:border-box;overflow:hidden;margin:5mm 0 0 4mm;display:flex;flex-direction:column}h1{font-size:11.5px;text-align:center;margin:0 0 4px;font-weight:800}.row{display:flex;align-items:baseline;gap:6px;margin:3px 0;font-size:9.5px}.row b{display:inline-block;width:21mm;font-weight:700;flex-shrink:0}.row span{font-weight:400;border-bottom:1px solid #000;flex:1;min-height:11px;padding:0 3px;line-height:1.5}.otn{font-size:8.5px;font-weight:800;margin-top:2px}.colh{font-size:9.5px;font-weight:700;margin-bottom:2px}.tl{display:flex;align-items:baseline;gap:4px;margin:2px 0;font-size:9.5px}.tl i{font-style:italic;font-weight:700;width:11mm;flex-shrink:0}.tl span{border-bottom:1px solid #000;min-height:11px;padding:0 3px;line-height:1.5}.lft span{width:118px}.rgt span{width:64px}.tot{display:flex;flex-direction:column;align-items:flex-start;gap:2px;margin-top:5px}.tot i{font-style:italic;font-weight:800;font-size:8px;line-height:1.1}.box{border:1.2px solid #000;width:24mm;height:7mm;display:flex;align-items:center;justify-content:center;font-size:9px;font-weight:800}.tsk{font-size:9.5px;font-weight:700;margin-top:4px}.ln{border-bottom:1px solid #000;min-height:12px;font-size:9px;padding:1px 2px;white-space:normal;word-break:break-word}.mid{flex:0 1 auto;min-height:0;overflow:hidden}.noterow{margin-top:auto;margin-bottom:auto;flex-shrink:0;font-size:9px}.noterow b{width:24mm}.noterow span{max-height:28px;overflow:hidden}.bot{flex-shrink:0}.sig{margin-top:0}.sig .row{margin:4px 0}.sig .row b{width:24mm}.sig .row span{max-width:none;flex:1}</style></head><body><div class=\"frame\"><h1>OVERTIME FORM</h1><div class=\"mid\">" +
       '<div class="row"><b>Name:</b><span>' + esc(fm.name) + '</span></div>' +
       '<div class="row"><b>Department:</b><span>' + esc(fm.department) + '</span></div>' +
       '<div class="row"><b>Date Filed:</b><span>' + esc(fm.dateFiled) + '</span></div>' +
       '<div class="row"><b>Date of OT:</b><span>' + esc(fm.dateOfOt) + '</span></div>' +
-      '<div style="display:flex;gap:6mm;margin-top:6px"><div class="lft" style="flex:1"><div class="colh">Requested Time</div>' + ents.map((e2, i2) => (ents.length > 1 ? '<div class="otn">OT ' + (i2 + 1) + '</div>' : '') + '<div class="tl"><i>From:</i><span>' + esc(otFmtDT(e2.reqFrom)) + '</span></div><div class="tl"><i>To:</i><span>' + esc(otFmtDT(e2.reqTo)) + '</span></div>').join('') + '</div><div class="rgt"><div class="colh">OFFICE Time</div><div class="tl"><i>From:</i><span>' + esc(fm.officeFrom) + '</span></div><div class="tl"><i>To:</i><span>' + esc(fm.officeTo) + '</span></div><div class="tot"><i>TOTAL OT Hours<br>Rendered</i><div class="box">' + esc(otHM(fm.totalOt)) + '</div></div></div></div>' +
+      '<div style="display:flex;gap:6mm;margin-top:6px"><div class="lft" style="flex:1"><div class="colh">Requested Time</div>' + slots.map((e2, i2) => '<div class="otn">OT ' + (i2 + 1) + '</div><div class="tl"><i>From:</i><span>' + esc(otFmtDT(e2.reqFrom)) + '</span></div><div class="tl"><i>To:</i><span>' + esc(otFmtDT(e2.reqTo)) + '</span></div>').join('') + '</div><div class="rgt"><div class="colh">OFFICE Time</div><div class="tl"><i>From:</i><span>' + esc(fm.officeFrom) + '</span></div><div class="tl"><i>To:</i><span>' + esc(fm.officeTo) + '</span></div><div class="tot"><i>TOTAL OT Hours<br>Rendered</i><div class="box">' + esc(otHM(fm.totalOt)) + '</div></div></div></div>' +
       '<div class="tsk">Tasks to be DONE:</div>' + lines.map(l => '<div class="ln">' + esc(l) + '</div>').join('') +
-      '<div class="sig"><div class="row"><b>Requested By:</b><span>' + esc(fm.requestedBy) + '</span></div><div class="row"><b>Noted By:</b><span>' + esc(fm.notedBy) + '</span></div><div class="row"><b>Approved By:</b><span>' + esc(fm.approvedBy) + '</span></div></div>' +
+      '</div><div class="row noterow"><b>Note:</b><span>' + esc(noteTxt) + '</span></div>' +
+      '<div class="bot"><div class="sig"><div class="row"><b>Requested By:</b><span>' + esc(fm.requestedBy) + '</span></div><div class="row"><b>Noted By:</b><span>' + esc(fm.notedBy) + '</span></div><div class="row"><b>Approved By:</b><span>' + esc(fm.approvedBy) + '</span></div></div></div>' +
       "</div></body></html>";
     const w = window.open("", "_blank", "width=460,height=680");
     if (!w) { notify("Allow pop-ups to print the Overtime Form.", "error"); return; }
@@ -12385,16 +12462,21 @@ function OvertimeTab({
       }
     }, label);
     function submitApply() {
-      const nc = Number(c) || 0,
-        no = Number(o) || 0;
-      if (nc + no <= 0) {
-        setErr("Enter the hours to apply.");
+      // ONE field: cash, in h.mm notation. The offset is whatever remains of the
+      // day's OT — computed automatically, never typed.
+      const otMin = Math.round(d.otHours * 60);
+      const cashMin = otParseHMM(c);
+      if (cashMin == null) {
+        setErr("Enter the cash hours as hours.minutes \u2014 e.g. 1, 2.30, 3.15 (a lone .45 = 45 minutes; one minute is .01).");
         return;
       }
-      if (nc + no > d.otHours + 1e-9) {
-        setErr("Cash + offset can't exceed this day's " + d.otHours.toFixed(2) + " OT hours.");
+      if (cashMin > otMin) {
+        setErr("Entered " + otMinWords(cashMin) + " exceeds this day's OT of " + otMinWords(otMin) + " \u2014 filing not accepted.");
         return;
       }
+      const offMin = otMin - cashMin;
+      const nc = otRound2(cashMin / 60),
+        no = otRound2(offMin / 60);
       // The OVERTIME FORM must be filled out to file — prefilled from the day.
       let rf = "", rt = "";
       if (d.dayEnd) {
@@ -12415,7 +12497,10 @@ function OvertimeTab({
           department: profile && profile.department || "",
           dateFiled: today(),
           dateOfOt: d.date,
-          entries: [{ reqFrom: rf, reqTo: rt, isr: (d.isrNos || []).join(", "), task: (d.sources || []).join("; ") }],
+          entries: [{ reqFrom: rf, reqTo: rt, isr: (d.isrNos || []).join(", "), task: (d.sources || []).join("; ") }, blankOtEntry(), blankOtEntry(), blankOtEntry()],
+          note: cashMin > 0 && offMin > 0 ? otMinShort(cashMin) + " for cash and " + otMinShort(offMin) + " for offset."
+            : cashMin > 0 ? otMinShort(cashMin) + " for cash."
+            : offMin > 0 ? otMinShort(offMin) + " for offset." : "",
           officeFrom: off2.from,
           officeTo: off2.to,
           totalOt: d.otHours.toFixed(2),
@@ -12459,11 +12544,15 @@ function OvertimeTab({
       }
     }, /*#__PURE__*/React.createElement("span", {
       style: tiny
-    }, "💵 Cash"), numIn(c, setC), /*#__PURE__*/React.createElement("span", {
-      style: tiny
-    }, "🔁 Offset"), numIn(o, setO), /*#__PURE__*/React.createElement("span", {
-      style: tiny
-    }, "of ", d.otHours.toFixed(2), "h OT")), err && /*#__PURE__*/React.createElement("div", {
+    }, "💵 Cash (h.mm)"), numIn(c, setC), /*#__PURE__*/React.createElement("span", {
+      style: { ...tiny, whiteSpace: "normal" }
+    }, (() => {
+      const otMin = Math.round(d.otHours * 60);
+      const cm = otParseHMM(c);
+      if (cm == null) return c ? "\u26a0 format: hours.minutes \u2014 e.g. 1, 2.30, .45" : "of " + otMinShort(otMin) + " OT \u00b7 the rest auto-applies as offset";
+      if (cm > otMin) return "\u26a0 " + otMinShort(cm) + " exceeds the " + otMinShort(otMin) + " OT";
+      return "= " + otMinShort(cm) + " cash \u00b7 " + otMinShort(otMin - cm) + " offset";
+    })())), err && /*#__PURE__*/React.createElement("div", {
       style: {
         fontSize: 10,
         color: "#f87171",
@@ -13047,7 +13136,7 @@ function OvertimeTab({
       onClick: () => setOtView("main")
     }, "🕒 Back to Overtime")), /*#__PURE__*/React.createElement("div", {
       style: { background: "var(--c-card)", border: "1px solid var(--c-border)", borderRadius: 12, padding: "16px 18px", maxWidth: 920 }
-    }, S("🕘", "Office hours", "Weekdays (Monday–Friday): " + otFmtHM(schMon.start || "08:00") + " – " + otFmtHM(schMon.end || "17:30") + ". Saturday: " + otFmtHM(schSat.start || "08:00") + " – " + otFmtHM(schSat.end || "12:00") + ". Sunday is a rest day. The Overtime Form fills OFFICE Time From/To automatically from this schedule — and leaves it blank on Sundays and holidays."), S("🧮", "How overtime is computed", "Overtime is computed automatically from your logged service visits, per laboratory per day. START: the later of 6:30 PM and the earliest recorded of Time & Date reported / Departure / Arrival to account / Work started \u2014 gaps between those fields are ignored (work between 5:30 and 6:30 PM is the grace period, never OT). MORNING exception: when the Report AND the Departure are BOTH before office start, the pre-office time (Report \u2192 8:00 AM) also counts as overtime; if the Departure is at/after 8:00 AM the early Report is disregarded. END: the latest of Work ended / Arrival to home. All ISRs at one laboratory on the same Work-Started date merge into ONE span; DIFFERENT laboratories each count their own span and the totals ADD \u2014 the travel gap between laboratories is never overtime (Lab 1 6:30\u20139:30 PM + Lab 2 10:30 PM\u20132:30 AM = 3h + 4h = 7h). A session that runs past midnight counts under the day it started; the same laboratory on different days is always a separate filing. On Sundays and listed holidays the ENTIRE rendered time counts as overtime. The Timestamp column is never used."), S("\u23f1", "Required time sequence", "Every visit's times must follow this order, each equal to or later than (=<) the one before it: Time & Date Reported =< Date & Time of Departure =< Date & Time of Arrival to Account =< Date & Time Work Started =< Date & Time Work Ended =< Date & Time of Arrival to Home. Equal times are valid; blank fields are simply skipped. A visit that breaks the order is flagged in the \u26a0 Time-sequence review panel on the Overtime screen \u2014 visible to the engineer and to the OT managers \u2014 so the service visit can be reviewed and corrected in LOGS. Flagged visits still compute from their recorded times until corrected."), S("🎌", "Holiday rules", "Holidays are maintained in ⚙ Office Hours, Holidays & Cutoff — the Philippine holidays come preloaded and managers can add or remove dates. Work on a listed holiday earns overtime for the whole worked span; the WPOA calendar tints those dates pink and auto-fills “Holiday”; and the Overtime Form leaves OFFICE Time blank on them."), S("🚫", "Exceptions — when NO overtime is credited", "Time finished within office hours plus the grace period; days without any logged service visit under your name; visits that do not list you as one of the engineers; and zero-hour days (shown as “—”), which cannot be filed. Also excluded: visits whose ISR number contains letters, and any single record spanning more than 20 hours (a data error to fix in LOGS). Filing is also capped: the Cash + Offset split can never exceed the overtime actually rendered on that day."), S("📄", "Filing", "Every overtime must be documented on the OVERTIME FORM (the 📄 button above): the exact date and time of each OT — one form can hold several OTs and the TOTAL box sums them automatically — with the ISR number on every task line. OFFICE Time fills itself from the schedule. Filing sends the completed form together with your Cash / Offset request into the application."), S("✅", "Approval & payroll", "Only OT managers can approve or reject applications, deciding between Cash and Offset. The semi-monthly payroll cutoffs fall on the " + otSettings.cutoff1 + "th and the " + otSettings.cutoff2 + "th (adjustable in ⚙). Approved hours flow into the ledgers, and the 🖨 Form reprint stays available on every filed application.")));
+    }, S("🕘", "Office hours", "Weekdays (Monday–Friday): " + otFmtHM(schMon.start || "08:00") + " – " + otFmtHM(schMon.end || "17:30") + ". Saturday: " + otFmtHM(schSat.start || "08:00") + " – " + otFmtHM(schSat.end || "12:00") + ". Sunday is a rest day. The Overtime Form fills OFFICE Time From/To automatically from this schedule — and leaves it blank on Sundays and holidays."), S("🧮", "How overtime is computed", "Overtime is computed automatically from your logged service visits, per laboratory per day, in five steps. STEP 1 \u2014 which visits count: every visit that lists you as an engineer, whose ISR number is numeric. STEP 2 \u2014 which day: the DATE of Date & Time Work Started (the time is disregarded; when Work Started is blank the earliest recorded field\u2019s date is used). STEP 3 \u2014 start: the later of 6:30 PM and the earliest recorded of Time & Date reported / Departure / Arrival to account / Work started \u2014 gaps between those fields are ignored (work between 5:30 and 6:30 PM is the grace period, never OT). MORNING exception: when the Report AND the Departure are BOTH before office start, the pre-office time (Report \u2192 8:00 AM) also counts as overtime; if the Departure is at/after 8:00 AM the early Report is disregarded. STEP 4 \u2014 end: the latest of Work ended / Arrival to home. STEP 5 \u2014 total: add up the laboratories. All ISRs at one laboratory on the same Work-Started date merge into ONE span; DIFFERENT laboratories each count their own span and the totals ADD \u2014 the travel gap between laboratories is never overtime (Lab 1 6:30\u20139:30 PM + Lab 2 10:30 PM\u20132:30 AM = 3h + 4h = 7h). A session that runs past midnight counts under the day it started; the same laboratory on different days is always a separate filing. On Sundays and listed holidays the ENTIRE rendered time counts as overtime. The Timestamp column is never used."), S("\ud83d\udcd0", "Worked examples", "\u2022 Report 6:30 PM, Departure 7:00 PM, Arrival 8:00 PM, Work started 9:00 PM \u2192 OT starts 6:30 PM (earliest recorded field). \u2022 Departure 5:30 PM, Arrival 7:00 PM \u2192 OT starts 6:30 PM (the gap is ignored; 6:30 PM is the floor). \u2022 Work started 6:00 PM only \u2192 OT starts 6:30 PM. \u2022 Work started 6:31 PM only \u2192 OT starts 6:31 PM. \u2022 Two ISRs at ONE laboratory, 6:30\u20138:00 PM and 9:00\u201310:00 PM \u2192 one span 6:30\u201310:00 PM. \u2022 Laboratory 1 6:30\u20139:30 PM then Laboratory 2 10:30 PM\u20132:30 AM \u2192 3h + 4h = 7h (the travel gap between laboratories is not overtime, and the past-midnight part rides the day it started). \u2022 Same laboratory on January 4 and again on January 6 \u2192 two SEPARATE filings, never added together. \u2022 Report 2:00 AM and Departure 5:00 AM (both before 8:00 AM), then evening work \u2192 2:00\u20138:00 AM counts as overtime PLUS the evening from 6:30 PM. \u2022 Report 3:00 AM but Departure 8:00 AM \u2192 the early Report is disregarded; only the evening from 6:30 PM counts. \u2022 Sunday or a listed holiday, 8:00 AM\u201311:00 PM \u2192 the whole 15 hours are overtime."), S("\u23f1", "Required time sequence", "Every visit's times must follow this order, each equal to or later than (=<) the one before it: Time & Date Reported =< Date & Time of Departure =< Date & Time of Arrival to Account =< Date & Time Work Started =< Date & Time Work Ended =< Date & Time of Arrival to Home. Equal times are valid; blank fields are simply skipped. A visit that breaks the order is flagged in the \u26a0 Time-sequence review panel on the Overtime screen \u2014 visible to the engineer and to the OT managers \u2014 so the service visit can be reviewed and corrected in LOGS. Flagged visits still compute from their recorded times until corrected."), S("🎌", "Holiday rules", "Holidays are maintained in ⚙ Office Hours, Holidays & Cutoff — the Philippine holidays come preloaded and managers can add or remove dates. Work on a listed holiday earns overtime for the whole worked span; the WPOA calendar tints those dates pink and auto-fills “Holiday”; and the Overtime Form leaves OFFICE Time blank on them."), S("🚫", "Exceptions — when NO overtime is credited", "Time finished within office hours plus the grace period; days without any logged service visit under your name; visits that do not list you as one of the engineers; and zero-hour days (shown as “—”), which cannot be filed. Also excluded: visits whose ISR number contains letters, and any single record spanning more than 20 hours (a data error to fix in LOGS). Times imported from Excel are stored to the nearest minute \u2014 exactly the minute Excel displays \u2014 and seconds are never counted. Filing is also capped: the Cash + Offset split can never exceed the overtime actually rendered on that day."), S("📄", "Filing", "To file, press \u270b Apply OT on the day and enter ONLY the CASH hours in hours.minutes notation \u2014 the whole part is hours, the digits after the point are minutes: 1 = 1 hour, 2.30 = 2 hr 30 min, 3.15 = 3 hr 15 min, .45 = 45 minutes (one minute is .01). Whatever remains of the day\u2019s OT applies to OFFSET automatically and both appear on the form\u2019s Note line. An entry larger than the day\u2019s OT (e.g. 3.20 against 3 hr 15 min) is flagged and the filing is not accepted. Every overtime must be documented on the OVERTIME FORM: the exact date and time of each OT \u2014 one form can hold several OTs and the TOTAL box sums them automatically \u2014 with the ISR number on every task line. OFFICE Time fills itself from the schedule. Filing sends the completed form together with the Cash / Offset split into the application."), S("✅", "Approval & payroll", "Only OT managers can approve or reject applications, deciding between Cash and Offset. The semi-monthly payroll cutoffs fall on the " + otSettings.cutoff1 + "th and the " + otSettings.cutoff2 + "th (adjustable in ⚙). Approved hours flow into the ledgers, and the 🖨 Form reprint stays available on every filed application.")));
   }
   return /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("div", {
     style: {
@@ -13230,7 +13319,7 @@ function OvertimeTab({
     }))), Array.from({ length: Math.max(0, 4 - fm.entries.length) }, (_, k3) => /*#__PURE__*/React.createElement("div", {
       key: "tl" + k3,
       style: { borderBottom: "1px solid #000", height: 22, margin: "5px 0" }
-    })), /*#__PURE__*/React.createElement("div", { style: { marginTop: 12 } }, pRow("Requested By:", "requestedBy"), pRow("Noted By:", "notedBy"), pRow("Approved By:", "approvedBy"))), /*#__PURE__*/React.createElement("div", {
+    })), /*#__PURE__*/React.createElement("div", { style: { marginTop: 12 } }, pRow("Note:", "note"), pRow("Requested By:", "requestedBy"), pRow("Noted By:", "notedBy"), pRow("Approved By:", "approvedBy"))), /*#__PURE__*/React.createElement("div", {
       style: { display: "flex", gap: 8, marginTop: 12, flexWrap: "wrap" }
     }, otForm.standalone ? /*#__PURE__*/React.createElement(React.Fragment, null, /*#__PURE__*/React.createElement("select", {
       style: { ...inputSt(), maxWidth: 250 },
@@ -13240,6 +13329,12 @@ function OvertimeTab({
         if (!sel) { setOtForm(x => ({ ...x, id: "", f: blankOtF() })); return; }
         const lf = { ...blankOtF(), ...sel.f };
         if (!Array.isArray(lf.entries) || !lf.entries.length) lf.entries = [{ reqFrom: otLegacyDT(lf.dateOfOt, lf.reqFrom), reqTo: otLegacyDT(lf.dateOfOt, lf.reqTo), isr: "", task: lf.tasks || "" }];
+        while (lf.entries.length < 4) lf.entries.push(blankOtEntry());
+        if (lf.note === undefined) {
+          const c2 = Number(lf.noteCash) || 0, o2 = Number(lf.noteOffset) || 0;
+          const hw2 = n => n + " hour" + (n === 1 ? "" : "s");
+          lf.note = c2 > 0 && o2 > 0 ? hw2(c2) + " for cash and " + hw2(o2) + " for offset." : c2 > 0 ? hw2(c2) + " for cash." : o2 > 0 ? hw2(o2) + " for offset." : "";
+        }
         setOtForm(x => ({ ...x, id: sel.id, f: lf }));
       }
     }, /*#__PURE__*/React.createElement("option", { value: "" }, "➕ New form (unsaved)"), (otFormsList || []).map(sh => /*#__PURE__*/React.createElement("option", {
@@ -13267,7 +13362,7 @@ function OvertimeTab({
       onClick: () => {
         applyFor(otForm.engName, otForm.date, otForm.cash, otForm.offset, otForm.f);
         setOtForm(null);
-        notify("Overtime filed with the form (" + otForm.cash + "h cash / " + otForm.offset + "h offset).", "ok");
+        notify("Overtime filed with the form (" + otMinShort(Math.round((Number(otForm.cash) || 0) * 60)) + " cash / " + otMinShort(Math.round((Number(otForm.offset) || 0) * 60)) + " offset).", "ok");
       }
     }, "📄 File OT application"), /*#__PURE__*/React.createElement("button", {
       style: btnSt("var(--c-border)", "var(--c-text2)"),
