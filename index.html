@@ -337,7 +337,7 @@
 (function () {
   var okLibs = (typeof firebase !== "undefined") && (typeof React !== "undefined") && (typeof ReactDOM !== "undefined") && (typeof XLSX !== "undefined");
   window.__IBASE_LIBS_OK = okLibs;
-  window.__IBASE_BUILD = "v237";
+  window.__IBASE_BUILD = "v238";
   if (!okLibs) {
     document.getElementById("root").innerHTML =
       "<div style='max-width:520px;margin:90px auto;padding:30px;background:#16181d;border:1px solid #f8717155;border-radius:16px;font-family:system-ui,sans-serif;color:#e5e7eb;text-align:center'>" +
@@ -3351,7 +3351,7 @@ function Login({
       letterSpacing: 2.5,
       textTransform: "uppercase"
     }
-  }, "Installed Base Management \u00b7 build v237"), !dept ? /*#__PURE__*/React.createElement("div", null,
+  }, "Installed Base Management \u00b7 build v238"), !dept ? /*#__PURE__*/React.createElement("div", null,
     /*#__PURE__*/React.createElement("div", { style: { fontSize: 12.5, color: "var(--c-text3)", textAlign: "center", marginBottom: 14 } }, "Select your department or module to continue"),
     /*#__PURE__*/React.createElement("div", { style: { display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 } },
       (depts || []).filter(d => !d.disabled).map((d, i) => /*#__PURE__*/React.createElement("button", { key: (d.id || d.name) + i, onClick: () => pickDept(d.name), style: { background: "var(--c-bg)", border: "1px solid var(--c-border)", borderRadius: 12, padding: "16px 10px", cursor: "pointer", display: "flex", flexDirection: "column", alignItems: "center", gap: 8, color: "var(--c-text2)" } },
@@ -13813,7 +13813,7 @@ const IMP_SYN = {
   status: ["status", "machinestatus", "statusafter", "unitstatus", "equipmentstatus", "condition", "instrumentstatus"],
   remarks: ["remarks", "workdescription", "description", "work", "findings", "actiontaken", "action", "notes", "comment", "comments", "details", "workdone", "workperformed", "jobdescription", "complaint", "resolution", "servicereport", "actiondone", "report", "observation", "descriptionofwork"],
   supportType: ["supporttype", "typeofsupport"],
-  dtReported: ["dateandtimereported", "datetimereported", "datereported", "timereported", "reported"],
+  dtReported: ["dateandtimereported", "datetimereported", "datereported", "timereported", "reported", "dateandtimeofreport", "datetimeofreport", "dateandtimereport", "datetimereport", "dateofreport", "timeofreport"],
   dtArrivalAccount: ["dateandtimeofarrivaltoaccount", "datetimeofarrivaltoaccount", "arrivaltoaccount", "datetimearrivalaccount", "arrivalaccount", "dateandtimearrivaltoaccount"],
   problemDesc: ["problemdescription", "problem", "problemreported"],
   systemCondition: ["systemcondition", "machinecondition"],
@@ -13901,8 +13901,12 @@ function impDT(v) {
   if (m12) {
     let h12 = +m12[4];
     const pm = /[Pp]/.test(m12[7]);
-    if (pm && h12 !== 12) h12 += 12;
-    if (!pm && h12 === 12) h12 = 0;
+    // Hours 13-23 (and 0) are ALREADY 24-hour: some exports write "17:30:00 PM".
+    // Applying the meridiem there rolled 17:30 into next-day 05:30 (ISR 15366).
+    if (h12 >= 1 && h12 <= 12) {
+      if (pm && h12 !== 12) h12 += 12;
+      if (!pm && h12 === 12) h12 = 0;
+    }
     const d12 = new Date(+m12[3], +m12[1] - 1, +m12[2], h12, +m12[5], +(m12[6] || 0));
     if (!isNaN(d12)) return impFmtLocal(d12);
   }
@@ -14098,6 +14102,7 @@ function impRowsFromGrid(grid, hi, map) {
   };
 }
 function impParseWorkbook(wb) {
+  const timeCheck = [];
   const rows = [];
   const sheetInfo = [];
   let skipped = 0;
@@ -14129,6 +14134,23 @@ function impParseWorkbook(wb) {
       return;
     }
     const built = impRowsFromGrid(grid, hi, map);
+    if (!timeCheck.length) {
+      const dtKeys = [["date","Date"],["srcTimestamp","Timestamp"],["dtReported","Reported"],["dtDeparture","Departure"],["dtArrivalAccount","Arrival to account"],["dtWorkStarted","Work started"],["dtWorkEnded","Work ended"],["dtArrivalHome","Arrival to home"]];
+      for (let ri = hi + 1; ri < Math.min(grid.length, hi + 7); ri++) {
+        const row = grid[ri] || [];
+        dtKeys.forEach(function (dk) {
+          const ci = map[dk[0]];
+          if (ci === undefined) return;
+          const cv = row[ci];
+          if (cv === "" || cv == null) return;
+          const raw = cv instanceof Date
+            ? "date cell \u2192 " + cv.getFullYear() + "-" + String(cv.getMonth() + 1).padStart(2, "0") + "-" + String(cv.getDate()).padStart(2, "0") + " " + String(cv.getHours()).padStart(2, "0") + ":" + String(cv.getMinutes()).padStart(2, "0") + ":" + String(cv.getSeconds()).padStart(2, "0")
+            : typeof cv === "number" ? "number " + cv
+            : "text \u201c" + String(cv).slice(0, 26) + "\u201d";
+          timeCheck.push({ col: dk[1] + " (row " + (ri + 1) + ")", raw: raw, stored: dk[0] === "date" ? impDate(cv) : impDT(cv) });
+        });
+      }
+    }
     built.rows.forEach(r => rows.push(r));
     skipped += built.skippedByRule || 0;
     sheetInfo.push({
@@ -14146,7 +14168,8 @@ function impParseWorkbook(wb) {
     sheetInfo,
     skipped,
     unmappedAll,
-    incomplete
+    incomplete,
+    timeCheck
   };
 }
 // Sebia machines default to a YEARLY (12-month) PM schedule. Next PM always
@@ -15213,7 +15236,7 @@ function ImportExcel({
       const p = impBuildPlan(rows, [], meEmail(profile), true);
       const reBatch = "imp_" + Date.now();
       const res = await applyOpsSafe(db, p.ops, () => false, notify, reBatch);
-      try { await db.collection("config").doc(rec.id).update({ batchId: reBatch, undone: false, parserVer: 3 }); } catch (e) {}
+      try { await db.collection("config").doc(rec.id).update({ batchId: reBatch, undone: false, parserVer: 4 }); } catch (e) {}
       logAudit(profile, "import.reimport", rec.name + " \u2192 " + res.done + " laborator" + (res.done === 1 ? "y" : "ies"));
       notify("\u267b Re-import of \u201C" + rec.name + "\u201D finished \u2014 duplicates were skipped, nothing was removed." + (res.created.length ? "\nCreated: " + res.created.join(", ") : ""), res.failed ? "error" : "ok");
     } catch (e) { notify("Re-import failed: " + e.message, "error"); }
@@ -15368,7 +15391,8 @@ function ImportExcel({
         skipped: parsed.skipped,
         sheets: parsed.sheetInfo,
         unmapped: parsed.unmappedAll,
-        incomplete: parsed.incomplete
+        incomplete: parsed.incomplete,
+        timeCheck: parsed.timeCheck || []
       });
       setPlan(p);
     } catch (err) {
@@ -15391,7 +15415,7 @@ function ImportExcel({
         by: scrubOwner(meEmail(profile)),
         dest: dest,
         batchId: batchId,
-        parserVer: 3,
+        parserVer: 4,
         rowCount: (rawRows || []).length,
         rows: rowsJson.length > 700000 ? null : rowsJson,
         note: rowsJson.length > 700000 ? "too large to keep a re-importable copy" : ""
@@ -15438,7 +15462,7 @@ function ImportExcel({
           by: scrubOwner(meEmail(profile)),
           dest: "inventory",
           batchId: batchId,
-          parserVer: 3,
+          parserVer: 4,
           rowCount: allRows.length,
           rows: rowsJson.length > 700000 ? null : rowsJson,
           note: rowsJson.length > 700000 ? "too large to keep a re-importable copy" : ""
@@ -15510,7 +15534,7 @@ function ImportExcel({
   }, /*#__PURE__*/React.createElement("div", { style: { fontSize: 11.5, fontWeight: 800, color: "var(--c-text4)", textTransform: "uppercase", marginBottom: 6 } }, "🗂 Imported files (", impFiles.length, ")"),
   impFiles.map(rec => /*#__PURE__*/React.createElement("div", { key: rec.id, style: { display: "flex", alignItems: "center", gap: 10, padding: "5px 0", borderTop: "1px solid var(--c-border)", fontSize: 12 } },
     /*#__PURE__*/React.createElement("span", { style: { flex: 1, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" } }, (rec.dest === "inventory" ? "📦 " : "📄 "), rec.name || "file", /*#__PURE__*/React.createElement("span", { style: { color: "var(--c-text5)", marginLeft: 8 } }, String(rec.at || "").replace("T", " ").slice(0, 16), " · ", rec.rowCount || 0, " row(s) · ", rec.dest === "inventory" ? "Machine Inventory" : rec.dest === "institutions" ? "Institutions" : "LOGS", rec.note ? " · " + rec.note : "")),
-    Number(rec.parserVer) >= 3 ? null : /*#__PURE__*/React.createElement("span", { title: "This file was imported before the time-parser fix \u2014 some times may be stored 1 minute low (e.g. a cell Excel shows as 21:08 saved as 21:07). \u21a9 Undo it, then \u267b Re-import the same file: every stored minute will then match exactly what Excel displays.", style: { background: "#3a2a1d", border: "1px solid #b45309", color: "#fbbf24", borderRadius: 6, padding: "2px 7px", fontSize: 10.5, fontWeight: 800, whiteSpace: "nowrap" } }, "\u23f1 old time parser"),
+    Number(rec.parserVer) >= 4 ? null : /*#__PURE__*/React.createElement("span", { title: "This file was imported before the time-parser fix \u2014 some times may be stored 1 minute low (e.g. a cell Excel shows as 21:08 saved as 21:07). \u21a9 Undo it, then \u267b Re-import the same file: every stored minute will then match exactly what Excel displays.", style: { background: "#3a2a1d", border: "1px solid #b45309", color: "#fbbf24", borderRadius: 6, padding: "2px 7px", fontSize: 10.5, fontWeight: 800, whiteSpace: "nowrap" } }, "\u23f1 old time parser"),
     /*#__PURE__*/React.createElement("button", { title: rec.rows ? "Re-import — safe to repeat: only ADDS, duplicates skipped" : "No re-importable copy was kept (file too large)", disabled: !rec.rows || reimportBusy === rec.id, style: { ...btnSt("var(--c-border)", rec.rows ? "#34d399" : "var(--c-text5)"), padding: "3px 9px", fontSize: 11 }, onClick: () => reimportFile(rec) }, reimportBusy === rec.id ? "…" : "♻ Re-import"),
     /*#__PURE__*/React.createElement("button", { title: rec.undone ? "This import was already undone" : "Undo this import — moves ONLY what it added to the Bin (recoverable)", disabled: rec.undone || undoBusy === rec.id, style: { ...btnSt("#2a1f3a", rec.undone ? "var(--c-text5)" : "#c4b5fd"), padding: "3px 9px", fontSize: 11 }, onClick: () => undoImport(rec) }, undoBusy === rec.id ? "…" : rec.undone ? "✓ Undone" : "↩ Undo import"),
     /*#__PURE__*/React.createElement("button", { title: "Move this stored file to the Bin (data it created stays)", style: { ...btnSt("#3a1d1d", "#fca5a5"), padding: "3px 9px", fontSize: 11 }, onClick: () => deleteImpFile(rec) }, "🗑 Delete")))) : null, /*#__PURE__*/React.createElement("div", {
@@ -15823,7 +15847,11 @@ function ImportExcel({
       fontWeight: 800,
       marginBottom: 6
     }
-  }, "Preview — ", meta.file), /*#__PURE__*/React.createElement("div", {
+  }, "Preview — ", meta.file), meta.timeCheck && meta.timeCheck.length ? /*#__PURE__*/React.createElement("details", { style: { margin: "4px 0 8px", fontSize: 11.5 } },
+    /*#__PURE__*/React.createElement("summary", { style: { cursor: "pointer", fontWeight: 800, color: "var(--c-text3)" } }, "\ud83d\udd2c Time check \u2014 exactly how the first rows\u2019 times were read (" + meta.timeCheck.length + " value(s))"),
+    /*#__PURE__*/React.createElement("div", { style: { display: "grid", gridTemplateColumns: "150px 1fr 140px", gap: "2px 10px", marginTop: 6, fontFamily: "monospace", fontSize: 11 } },
+      /*#__PURE__*/React.createElement("b", { key: "h1" }, "Column"), /*#__PURE__*/React.createElement("b", { key: "h2" }, "Raw cell (as the file stores it)"), /*#__PURE__*/React.createElement("b", { key: "h3" }, "System stores"),
+      meta.timeCheck.flatMap((r, i) => [/*#__PURE__*/React.createElement("span", { key: "a" + i, style: { color: "var(--c-text4)" } }, r.col), /*#__PURE__*/React.createElement("span", { key: "b" + i, style: { whiteSpace: "pre-wrap", wordBreak: "break-all" } }, r.raw), /*#__PURE__*/React.createElement("span", { key: "c" + i }, r.stored || "\u2014")]))) : null, /*#__PURE__*/React.createElement("div", {
     style: {
       fontSize: 12,
       color: "var(--c-text2)",
