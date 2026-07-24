@@ -337,7 +337,7 @@
 (function () {
   var okLibs = (typeof firebase !== "undefined") && (typeof React !== "undefined") && (typeof ReactDOM !== "undefined") && (typeof XLSX !== "undefined");
   window.__IBASE_LIBS_OK = okLibs;
-  window.__IBASE_BUILD = "v252";
+  window.__IBASE_BUILD = "v255";
   if (!okLibs) {
     document.getElementById("root").innerHTML =
       "<div style='max-width:520px;margin:90px auto;padding:30px;background:#16181d;border:1px solid #f8717155;border-radius:16px;font-family:system-ui,sans-serif;color:#e5e7eb;text-align:center'>" +
@@ -3400,7 +3400,7 @@ function Login({
       letterSpacing: 2,
       textTransform: "uppercase"
     }
-  }, "version: v252"), !dept ? /*#__PURE__*/React.createElement("div", null,
+  }, "version: v255"), !dept ? /*#__PURE__*/React.createElement("div", null,
     /*#__PURE__*/React.createElement("div", { style: { fontSize: 12.5, color: "var(--c-text3)", textAlign: "center", marginBottom: 14 } }, "Select your department or module to continue"),
     /*#__PURE__*/React.createElement("div", { style: { display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 } },
       (depts || []).filter(d => !d.disabled).map((d, i) => /*#__PURE__*/React.createElement("button", { key: (d.id || d.name) + i, onClick: () => pickDept(d.name), style: { background: "var(--c-bg)", border: "1px solid var(--c-border)", borderRadius: 12, padding: "16px 10px", cursor: "pointer", display: "flex", flexDirection: "column", alignItems: "center", gap: 8, color: "var(--c-text2)" } },
@@ -9367,7 +9367,9 @@ function AnalyticsTab({
     ...inputSt(),
     padding: "7px 10px",
     fontSize: 12,
-    minWidth: 128,
+    width: 172,
+    minWidth: 172,
+    boxSizing: "border-box",
     cursor: "pointer"
   };
   return /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("div", {
@@ -10223,8 +10225,7 @@ function VisitsTab({
     }
   }, /*#__PURE__*/React.createElement("div", {
     style: {
-      flex: "1 1 190px",
-      maxWidth: 250
+      flex: "0 0 auto"
     }
   }, /*#__PURE__*/React.createElement("label", {
     style: _lblS
@@ -10232,7 +10233,10 @@ function VisitsTab({
     style: {
       ...inputSt(),
       padding: "7px 10px",
-      fontSize: 12
+      fontSize: 12,
+      width: 172,
+      minWidth: 172,
+      boxSizing: "border-box"
     },
     value: q,
     onChange: e => setQ(e.target.value),
@@ -10306,7 +10310,8 @@ function VisitsTab({
     type: "date",
     style: {
       ..._inS,
-      minWidth: 132
+      width: 172,
+      minWidth: 172
     },
     value: from,
     max: to || undefined,
@@ -10319,12 +10324,13 @@ function VisitsTab({
     type: "date",
     style: {
       ..._inS,
-      minWidth: 132
+      width: 172,
+      minWidth: 172
     },
     value: to,
     min: from || undefined,
     onChange: e => setTo(e.target.value)
-  }))), anyFilter && /*#__PURE__*/React.createElement("button", {
+  }))), /*#__PURE__*/React.createElement("button", {
     style: btnSt("var(--c-border)", "var(--c-text2)"),
     onClick: () => {
       setQ("");
@@ -10336,21 +10342,30 @@ function VisitsTab({
       setFrom("");
       setTo("");
     }
-  }, "↺ Clear"), /*#__PURE__*/React.createElement("div", {
+  }, "↺ Clear filter")), /*#__PURE__*/React.createElement("div", {
+    style: {
+      ...cardSt,
+      padding: 14
+    }
+  }, /*#__PURE__*/React.createElement("div", {
     style: {
       position: "relative",
-      flexBasis: "100%",
       display: "flex",
       alignItems: "center",
+      justifyContent: "center",
       gap: 8,
       flexWrap: "wrap",
-      marginTop: 2
+      marginBottom: 8
     }
   }, canDL(profile, "logs", dl) && /*#__PURE__*/React.createElement("button", {
     title: "Export the CURRENT view — the rows and columns you see, after filters",
     style: {
       ...btnSt("var(--c-border)", "var(--c-text2)"),
-      marginRight: 6
+      padding: "5px 8px",
+      fontSize: 11,
+      width: 150,
+      textAlign: "center",
+      boxSizing: "border-box"
     },
     onClick: () => {
       try {
@@ -10373,13 +10388,23 @@ function VisitsTab({
     title: "Show / hide columns (your view only)",
     style: {
       ...btnSt(colMenu ? "var(--c-key)" : "var(--c-border)", colMenu ? "var(--c-bg)" : "var(--c-text2)"),
-      padding: "6px 10px",
-      fontSize: 11.5
+      padding: "5px 8px",
+      fontSize: 11,
+      width: 150,
+      textAlign: "center",
+      boxSizing: "border-box"
     },
     onClick: () => setColMenu(m => !m)
   }, "🧩 Columns", hiddenCols.length ? " (" + (VGRID_COLS.length - hiddenCols.length) + "/" + VGRID_COLS.length + ")" : ""), " ", /*#__PURE__*/React.createElement("button", {
-    title: "Restore the default column order, widths, visibility and row height (your view only)",
-    style: btnSt("var(--c-border)", "var(--c-text2)"),
+    title: "Restore the default view \u2014 column order, widths, visibility, sorting, row height, and clear every filter: search, laboratory, brand, machine, type, engineer, date range (your view only)",
+    style: {
+      ...btnSt("var(--c-border)", "var(--c-text2)"),
+      padding: "5px 8px",
+      fontSize: 11,
+      width: 150,
+      textAlign: "center",
+      boxSizing: "border-box"
+    },
     onClick: () => {
       ["ibase_v_cols", "ibase_v_colw", "ibase_v_hidden", "ibase_v_rowh"].forEach(k => {
         try {
@@ -10391,13 +10416,23 @@ function VisitsTab({
       setHiddenCols([]);
       setRowH(40);
       setRowHeights({});
+      setSort({ col: "date", dir: -1 }); // sorting back to the default display order
+      // …and the entire filtering section back to blank
+      setQ("");
+      setLabF("");
+      setBrandF("");
+      setMachineF("");
+      setTypeF("");
+      setEngF("");
+      setFrom("");
+      setTo("");
       setColMenu(false);
     }
   }, "↺ Reset"), " ", canDeleteLogs ? (() => {
     const nSel = Object.values(selected).filter(Boolean).length;
     if (!delMode) return /*#__PURE__*/React.createElement("button", {
       title: "Start deleting: press this FIRST, then select the visit row(s) to delete — administrators only",
-      style: { ...btnSt("var(--c-border)", "#fca5a5"), padding: "6px 10px", fontSize: 11.5 },
+      style: { ...btnSt("var(--c-border)", "#fca5a5"), padding: "5px 8px", fontSize: 11, width: 150, textAlign: "center", boxSizing: "border-box" },
       onClick: () => { setSelected({}); setDelMode(true); }
     }, "🗑 Delete service visit");
     return /*#__PURE__*/React.createElement("div", { style: { display: "inline-flex", alignItems: "center", gap: 8, border: "1px solid #ef4444", background: "rgba(239,68,68,.10)", borderRadius: 10, padding: "4px 8px" } },
@@ -10458,10 +10493,12 @@ function VisitsTab({
     onClick: () => setHiddenCols([])
   }, "↺ Show all") : null)), /*#__PURE__*/React.createElement("div", {
     style: {
-      marginLeft: "auto"
+      display: "inline-flex",
+      alignItems: "center",
+      gap: 6
     }
   }, /*#__PURE__*/React.createElement("label", {
-    style: _lblS
+    style: { ..._lblS, marginBottom: 0 }
   }, "Row size"), /*#__PURE__*/React.createElement("div", {
     style: {
       display: "inline-flex",
@@ -10513,12 +10550,7 @@ function VisitsTab({
       color: "var(--c-text5)",
       paddingRight: 4
     }
-  }, "px")))), /*#__PURE__*/React.createElement("div", {
-    style: {
-      ...cardSt,
-      padding: 14
-    }
-  }, /*#__PURE__*/React.createElement("div", {
+  }, "px"))), /*#__PURE__*/React.createElement("div", {
     style: {
       display: "flex",
       alignItems: "center",
