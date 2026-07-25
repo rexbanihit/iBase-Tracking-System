@@ -337,7 +337,7 @@
 (function () {
   var okLibs = (typeof firebase !== "undefined") && (typeof React !== "undefined") && (typeof ReactDOM !== "undefined") && (typeof XLSX !== "undefined");
   window.__IBASE_LIBS_OK = okLibs;
-  window.__IBASE_BUILD = "v267";
+  window.__IBASE_BUILD = "v274";
   if (!okLibs) {
     document.getElementById("root").innerHTML =
       "<div style='max-width:520px;margin:90px auto;padding:30px;background:#16181d;border:1px solid #f8717155;border-radius:16px;font-family:system-ui,sans-serif;color:#e5e7eb;text-align:center'>" +
@@ -2156,6 +2156,7 @@ const labelSt = {
   textTransform: "uppercase",
   letterSpacing: .5,
   display: "block",
+  textAlign: "center",
   marginBottom: 4
 };
 const cardSt = {
@@ -3416,7 +3417,7 @@ function Login({
       letterSpacing: 2,
       textTransform: "uppercase"
     }
-  }, "version: v267"), !dept ? /*#__PURE__*/React.createElement("div", null,
+  }, "version: v274"), !dept ? /*#__PURE__*/React.createElement("div", null,
     /*#__PURE__*/React.createElement("div", { style: { fontSize: 12.5, color: "var(--c-text3)", textAlign: "center", marginBottom: 14 } }, "Select your department or module to continue"),
     /*#__PURE__*/React.createElement("div", { style: { display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 } },
       (depts || []).filter(d => !d.disabled).map((d, i) => /*#__PURE__*/React.createElement("button", { key: (d.id || d.name) + i, onClick: () => pickDept(d.name), style: { background: "var(--c-bg)", border: "1px solid var(--c-border)", borderRadius: 12, padding: "16px 10px", cursor: "pointer", display: "flex", flexDirection: "column", alignItems: "center", gap: 8, color: "var(--c-text2)" } },
@@ -3615,6 +3616,7 @@ function ITable({
   filter,
   filterPlaceholder,
   headerNode,
+  rightNode,
   colsAlign,
   empty
 }) {
@@ -3691,7 +3693,7 @@ function ITable({
   }, headerNode ? /*#__PURE__*/React.createElement("div", {
     style: { flexShrink: 0, whiteSpace: "nowrap" }
   }, headerNode) : null, /*#__PURE__*/React.createElement("div", {
-    style: { flex: 1, minWidth: 0, display: "flex", gap: 8, alignItems: "center", justifyContent: colsAlign === "right" ? "flex-start" : "center" }
+    style: { flex: 1, minWidth: 0, display: "flex", gap: 8, alignItems: "center", justifyContent: "flex-start" }
   }, filter !== false && /*#__PURE__*/React.createElement("input", {
     style: {
       ...inputSt(),
@@ -3702,11 +3704,13 @@ function ITable({
     value: q,
     onChange: e => setQ(e.target.value),
     placeholder: filterPlaceholder || "🔍 Filter…"
-  }), cols.length > 1 && /*#__PURE__*/React.createElement("button", {
+  }), rightNode ? /*#__PURE__*/React.createElement("div", {
+    style: { marginLeft: "auto", display: "flex", gap: 8, alignItems: "center", flexShrink: 0 }
+  }, rightNode) : null, cols.length > 1 && /*#__PURE__*/React.createElement("button", {
     title: "Show / hide columns (your view only)",
     style: {
       ...btnSt(colsOpen ? "var(--c-key)" : "var(--c-border)", colsOpen ? "var(--c-bg)" : "var(--c-text2)"),
-      marginLeft: colsAlign === "right" ? "auto" : 0,
+      marginLeft: rightNode ? 0 : "auto",
       padding: "5px 6px",
       fontSize: 10.5,
       width: 162,
@@ -3715,7 +3719,7 @@ function ITable({
       boxSizing: "border-box"
     },
     onClick: () => setColsOpen(o => !o)
-  }, "🧩 Show/Hide Columns", Object.keys(hidden).filter(k => hidden[k]).length ? " (" + visOrder.length + "/" + order.length + ")" : ""), laidOut ? /*#__PURE__*/React.createElement("button", {
+  }, "🧩 Show/Hide Columns", Object.keys(hidden).filter(k => hidden[k]).length ? " (" + visOrder.length + "/" + order.length + ")" : ""), /*#__PURE__*/React.createElement("button", {
     title: "Restore default column order, widths, visibility and sorting (your view only)",
     style: {
       ...btnSt("var(--c-border)", "var(--c-text2)"),
@@ -3732,7 +3736,7 @@ function ITable({
       } catch (e) {}
       setSt({});
     }
-  }, "↺ Reset") : null)), colsOpen && /*#__PURE__*/React.createElement("div", {
+  }, "↺ Reset"))), colsOpen && /*#__PURE__*/React.createElement("div", {
     style: {
       display: "flex",
       gap: 12,
@@ -4551,14 +4555,18 @@ function LabsTab({
   }, /*#__PURE__*/React.createElement("input", {
     style: {
       ...inputSt(),
+      height: 36,
+      boxSizing: "border-box",
       maxWidth: 300
     },
     value: q,
     onChange: e => setQ(e.target.value),
     placeholder: "🔍 Search lab, location, sub-location, serial, instrument…"
-  }), /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("label", { style: { fontSize: 10, color: "var(--c-text5)", display: "block" } }, "Brand"), /*#__PURE__*/React.createElement("select", {
+  }), /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("label", { style: { fontSize: 10, color: "var(--c-text5)", display: "block", textAlign: "center" } }, "Brand"), /*#__PURE__*/React.createElement("select", {
     style: {
       ...inputSt(),
+      height: 36,
+      boxSizing: "border-box",
       maxWidth: 150,
       cursor: "pointer"
     },
@@ -4572,9 +4580,11 @@ function LabsTab({
     value: ""
   }, "All brands"), brandOpts.map(x => /*#__PURE__*/React.createElement("option", {
     key: x
-  }, x)))), /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("label", { style: { fontSize: 10, color: "var(--c-text5)", display: "block" } }, "Instrument"), /*#__PURE__*/React.createElement("select", {
+  }, x)))), /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("label", { style: { fontSize: 10, color: "var(--c-text5)", display: "block", textAlign: "center" } }, "Instrument"), /*#__PURE__*/React.createElement("select", {
     style: {
       ...inputSt(),
+      height: 36,
+      boxSizing: "border-box",
       maxWidth: 230,
       cursor: "pointer"
     },
@@ -4585,9 +4595,11 @@ function LabsTab({
     value: ""
   }, "All instruments (all institutions)"), (brandF ? instrumentOpts.filter(x => brandFromModel(x, "") === brandF) : instrumentOpts).map(x => /*#__PURE__*/React.createElement("option", {
     key: x
-  }, x)))), /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("label", { style: { fontSize: 10, color: "var(--c-text5)", display: "block" } }, "PM Flag"), /*#__PURE__*/React.createElement("select", {
+  }, x)))), /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("label", { style: { fontSize: 10, color: "var(--c-text5)", display: "block", textAlign: "center" } }, "PM Flag"), /*#__PURE__*/React.createElement("select", {
     style: {
       ...inputSt(),
+      height: 36,
+      boxSizing: "border-box",
       maxWidth: 160,
       cursor: "pointer"
     },
@@ -4601,12 +4613,15 @@ function LabsTab({
     style: {
       fontSize: 10,
       color: "var(--c-text5)",
-      display: "block"
+      display: "block",
+      textAlign: "center"
     }
   }, "Next PM from"), /*#__PURE__*/React.createElement("input", {
     type: "date",
     style: {
       ...inputSt(),
+      height: 36,
+      boxSizing: "border-box",
       padding: "6px 8px",
       fontSize: 12
     },
@@ -4616,12 +4631,15 @@ function LabsTab({
     style: {
       fontSize: 10,
       color: "var(--c-text5)",
-      display: "block"
+      display: "block",
+      textAlign: "center"
     }
   }, "to"), /*#__PURE__*/React.createElement("input", {
     type: "date",
     style: {
       ...inputSt(),
+      height: 36,
+      boxSizing: "border-box",
       padding: "6px 8px",
       fontSize: 12
     },
@@ -4631,11 +4649,14 @@ function LabsTab({
     style: {
       fontSize: 10,
       color: "var(--c-text5)",
-      display: "block"
+      display: "block",
+      textAlign: "center"
     }
   }, "Quarter"), /*#__PURE__*/React.createElement("select", {
     style: {
       ...inputSt(),
+      height: 36,
+      boxSizing: "border-box",
       padding: "6px 8px",
       fontSize: 12,
       cursor: "pointer"
@@ -4659,12 +4680,15 @@ function LabsTab({
     style: {
       fontSize: 10,
       color: "var(--c-text5)",
-      display: "block"
+      display: "block",
+      textAlign: "center"
     }
   }, "Year"), /*#__PURE__*/React.createElement("input", {
     type: "number",
     style: {
       ...inputSt(),
+      height: 36,
+      boxSizing: "border-box",
       padding: "6px 8px",
       fontSize: 12,
       width: 78
@@ -4674,6 +4698,8 @@ function LabsTab({
   })), (pmFrom || pmTo) && /*#__PURE__*/React.createElement("button", {
     style: {
       ...btnSt("var(--c-border)", "var(--c-text3)"),
+      height: 36,
+      boxSizing: "border-box",
       padding: "6px 10px",
       fontSize: 11,
       alignSelf: "flex-end"
@@ -4684,7 +4710,7 @@ function LabsTab({
       setQSel("");
     }
   }, "✕ Clear range"), (q || instF || brandF || flagF || pmFrom || pmTo) && /*#__PURE__*/React.createElement("button", {
-    style: btnSt("var(--c-border)", "var(--c-text2)"),
+    style: { ...btnSt("var(--c-border)", "var(--c-text2)"), height: 36, boxSizing: "border-box" },
     onClick: () => {
       setQ("");
       setInstF("");
@@ -4697,6 +4723,9 @@ function LabsTab({
   }, "↺"), /*#__PURE__*/React.createElement("div", {
     style: {
       display: "inline-flex",
+      alignItems: "center",
+      height: 36,
+      boxSizing: "border-box",
       gap: 2,
       background: "var(--c-bg)",
       border: "1px solid var(--c-border)",
@@ -4719,6 +4748,8 @@ function LabsTab({
   }, lbl))), canEdit && /*#__PURE__*/React.createElement("button", {
     style: {
       ...btnSt("var(--c-key)", "var(--c-bg)"),
+      height: 36,
+      boxSizing: "border-box",
       marginLeft: "auto"
     },
     onClick: () => setAdding(true)
@@ -6836,7 +6867,63 @@ function VisitModal({
       gridTemplateColumns: "1fr 1fr",
       gap: 12
     }
+  }, /*#__PURE__*/React.createElement("div", {
+    style: { gridColumn: "1 / -1", border: "1px solid var(--c-border)", borderRadius: 10, padding: "10px 12px" }
+  }, /*#__PURE__*/React.createElement("div", {
+    style: { fontSize: 11, fontWeight: 800, color: "var(--c-text4)", textTransform: "uppercase", marginBottom: 8 }
+  }, "\ud83d\udc64 Contact person (endorsed to) \u2014 signs the report"), /*#__PURE__*/React.createElement("div", {
+    style: { display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(170px, 1fr))", gap: 10 }
   }, /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("label", {
+    style: labelSt
+  }, "Name ", /*#__PURE__*/React.createElement("span", {
+    style: {
+      color: "#f87171"
+    }
+  }, "*")), /*#__PURE__*/React.createElement("input", {
+    style: inputSt(),
+    value: f.endorsedTo,
+    list: "ibVisitContactNames",
+    onChange: e => {
+      const nm = e.target.value;
+      const hit = contacts && contacts[String(nm).trim().toLowerCase()];
+      if (hit) setF(x => ({ ...x, endorsedTo: nm, contactEmail: hit.email || x.contactEmail, contactNo: hit.phone || x.contactNo }));
+      else set("endorsedTo", nm);
+    },
+    placeholder: "New name, or pick a previous contact of this laboratory \u25be"
+  })), /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("label", {
+    style: labelSt
+  }, "E-mail address"), /*#__PURE__*/React.createElement("input", {
+    type: "email",
+    style: inputSt(),
+    value: f.contactEmail,
+    list: "ibVisitContactEmails",
+    onChange: e => {
+      const em = e.target.value;
+      const key = String(em).trim().toLowerCase();
+      let hit = null;
+      if (contacts && key) for (const kk in contacts) { if (String(contacts[kk].email || "").toLowerCase() === key) { hit = contacts[kk]; break; } }
+      if (hit) setF(x => ({ ...x, contactEmail: em, endorsedTo: x.endorsedTo || hit.name, contactNo: hit.phone || x.contactNo }));
+      else set("contactEmail", em);
+    },
+    placeholder: "name@example.com \u2014 auto-fills for known contacts"
+  })), /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("label", {
+    style: labelSt
+  }, "Contact number"), /*#__PURE__*/React.createElement("input", {
+    style: inputSt(),
+    value: f.contactNo,
+    onChange: e => set("contactNo", e.target.value),
+    placeholder: "e.g. 0917 123 4567"
+  }))), /*#__PURE__*/React.createElement("datalist", {
+    id: "ibVisitContactNames"
+  }, Object.keys(contacts || {}).sort().map(k2 => /*#__PURE__*/React.createElement("option", {
+    key: k2,
+    value: contacts[k2].name
+  }))), /*#__PURE__*/React.createElement("datalist", {
+    id: "ibVisitContactEmails"
+  }, Object.keys(contacts || {}).sort().filter(k2 => contacts[k2].email).map(k2 => /*#__PURE__*/React.createElement("option", {
+    key: k2,
+    value: contacts[k2].email
+  })))), /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("label", {
     style: labelSt
   }, "Signature"), f.signature ? /*#__PURE__*/React.createElement("img", {
     src: f.signature,
@@ -6866,71 +6953,7 @@ function VisitModal({
     type: "button",
     style: btnSt("var(--c-key)", "var(--c-bg)"),
     onClick: () => setSigOpen(false)
-  }, "✓ Done")))), /*#__PURE__*/React.createElement("div", {
-    style: { border: "1px solid var(--c-border)", borderRadius: 10, padding: "10px 12px", marginBottom: 12 }
-  }, /*#__PURE__*/React.createElement("div", {
-    style: { fontSize: 11, fontWeight: 800, color: "var(--c-text4)", textTransform: "uppercase", marginBottom: 8 }
-  }, "\ud83d\udc64 Contact person (endorsed to)"), /*#__PURE__*/React.createElement("label", {
-    style: labelSt
-  }, "Name ", /*#__PURE__*/React.createElement("span", {
-    style: {
-      color: "#f87171"
-    }
-  }, "*")), /*#__PURE__*/React.createElement("input", {
-    style: { ...inputSt(), marginBottom: 10 },
-    value: f.endorsedTo,
-    list: "ibVisitContactNames",
-    onChange: e => {
-      const nm = e.target.value;
-      const hit = contacts && contacts[String(nm).trim().toLowerCase()];
-      if (hit) setF(x => ({ ...x, endorsedTo: nm, contactEmail: hit.email || x.contactEmail, contactNo: hit.phone || x.contactNo }));
-      else set("endorsedTo", nm);
-    },
-    placeholder: "Type a NEW name, or pick a previous contact of this laboratory \u25be"
-  }), /*#__PURE__*/React.createElement("datalist", {
-    id: "ibVisitContactNames"
-  }, Object.keys(contacts || {}).sort().map(k2 => /*#__PURE__*/React.createElement("option", {
-    key: k2,
-    value: contacts[k2].name
-  }))), /*#__PURE__*/React.createElement("label", {
-    style: labelSt
-  }, "E-mail address"), /*#__PURE__*/React.createElement("input", {
-    type: "email",
-    style: { ...inputSt(), marginBottom: 10 },
-    value: f.contactEmail,
-    list: "ibVisitContactEmails",
-    onChange: e => {
-      const em = e.target.value;
-      const key = String(em).trim().toLowerCase();
-      let hit = null;
-      if (contacts && key) for (const kk in contacts) { if (String(contacts[kk].email || "").toLowerCase() === key) { hit = contacts[kk]; break; } }
-      if (hit) setF(x => ({ ...x, contactEmail: em, endorsedTo: x.endorsedTo || hit.name, contactNo: hit.phone || x.contactNo }));
-      else set("contactEmail", em);
-    },
-    placeholder: "name@example.com \u2014 auto-fills for known contacts"
-  }), /*#__PURE__*/React.createElement("datalist", {
-    id: "ibVisitContactEmails"
-  }, Object.keys(contacts || {}).sort().filter(k2 => contacts[k2].email).map(k2 => /*#__PURE__*/React.createElement("option", {
-    key: k2,
-    value: contacts[k2].email
-  }))), /*#__PURE__*/React.createElement("label", {
-    style: labelSt
-  }, "Contact number"), /*#__PURE__*/React.createElement("input", {
-    style: inputSt(),
-    value: f.contactNo,
-    onChange: e => set("contactNo", e.target.value),
-    placeholder: "e.g. 0917 123 4567"
-  })), /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("label", {
-    style: labelSt
-  }, "Name of signatory"), /*#__PURE__*/React.createElement("input", {
-    style: {
-      ...inputSt(),
-      marginBottom: 12
-    },
-    value: f.signedByName,
-    onChange: e => set("signedByName", e.target.value),
-    placeholder: "Printed name of the person signing"
-  }), /*#__PURE__*/React.createElement("label", {
+  }, "✓ Done")))), /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("label", {
     style: labelSt
   }, "Attachments — file / photo"), /*#__PURE__*/React.createElement("div", {
     style: {
@@ -7054,6 +7077,7 @@ function VisitModal({
         id: initial ? initial.id : uid(),
         ...f,
         endorsedTo: f.endorsedTo || f.signedByName || "",
+        signedByName: f.endorsedTo || f.signedByName || "",
         date: dISO || f.date || today(),
         ...pmKitFields(f.type, f.pmType, f.pmKitReplaced),
         machineStatus: f.machineStatus || "Not Applicable",
@@ -7209,14 +7233,10 @@ function MachineInv({
   }
   return /*#__PURE__*/React.createElement("div", {
     style: cardSt
-  }, /*#__PURE__*/React.createElement("div", {
-    style: {
-      display: "flex",
-      gap: 10,
-      marginBottom: 12,
-      flexWrap: "wrap"
-    }
-  }, /*#__PURE__*/React.createElement("input", {
+  }, /*#__PURE__*/React.createElement(ITable, {
+    headerNode: /*#__PURE__*/React.createElement("div", {
+      style: { display: "flex", gap: 10, alignItems: "center" }
+    }, /*#__PURE__*/React.createElement("input", {
     style: {
       ...inputSt(),
       maxWidth: 320
@@ -7261,9 +7281,8 @@ function MachineInv({
   }, "↺"), canEdit && /*#__PURE__*/React.createElement("button", {
     style: btnSt("var(--c-key)", "var(--c-bg)"),
     onClick: () => setEditing("new")
-  }, "+ New Record")), /*#__PURE__*/React.createElement(ITable, {
+  }, "+ New Record")),
     id: "inv-machines",
-    colsAlign: "right",
     maxH: "calc(100vh - 340px)",
     filter: false,
     initSort: {
@@ -7972,14 +7991,13 @@ function SpareParts({
   }];
   return /*#__PURE__*/React.createElement("div", {
     style: cardSt
-  }, /*#__PURE__*/React.createElement("div", {
-    style: {
-      display: "flex",
-      gap: 10,
-      marginBottom: 12,
-      flexWrap: "wrap"
-    }
-  }, /*#__PURE__*/React.createElement("input", {
+  }, /*#__PURE__*/(lowParts.length ? /*#__PURE__*/React.createElement("div", {
+    style: { display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap", border: "1px solid #f9731655", background: "#f9731614", borderRadius: 10, padding: "8px 12px", marginBottom: 10, fontSize: 12.5 }
+  }, /*#__PURE__*/React.createElement("span", { style: { fontWeight: 800, color: "#f97316" } }, "⚠ ", lowParts.length, " spare part(s) at or below minimum stock — place an order."),
+     /*#__PURE__*/React.createElement("button", { style: { ...btnSt(lowOnly ? "#f97316" : "var(--c-border)", lowOnly ? "#1a1a1a" : "var(--c-text2)"), padding: "3px 10px", fontSize: 11.5 }, onClick: () => setLowOnly(v => !v) }, lowOnly ? "Showing low stock — show all" : "Show low stock only")) : null), React.createElement(ITable, {
+    headerNode: /*#__PURE__*/React.createElement("div", {
+      style: { display: "flex", gap: 10, alignItems: "center" }
+    }, /*#__PURE__*/React.createElement("input", {
     style: {
       ...inputSt(),
       maxWidth: 320
@@ -7990,10 +8008,7 @@ function SpareParts({
   }), canEdit && /*#__PURE__*/React.createElement("button", {
     style: btnSt("var(--c-key)", "var(--c-bg)"),
     onClick: () => setEditing("new")
-  }, "+ New Spare Part")), /*#__PURE__*/(lowParts.length ? /*#__PURE__*/React.createElement("div", {
-    style: { display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap", border: "1px solid #f9731655", background: "#f9731614", borderRadius: 10, padding: "8px 12px", marginBottom: 10, fontSize: 12.5 }
-  }, /*#__PURE__*/React.createElement("span", { style: { fontWeight: 800, color: "#f97316" } }, "⚠ ", lowParts.length, " spare part(s) at or below minimum stock — place an order."),
-     /*#__PURE__*/React.createElement("button", { style: { ...btnSt(lowOnly ? "#f97316" : "var(--c-border)", lowOnly ? "#1a1a1a" : "var(--c-text2)"), padding: "3px 10px", fontSize: 11.5 }, onClick: () => setLowOnly(v => !v) }, lowOnly ? "Showing low stock — show all" : "Show low stock only")) : null), React.createElement(ITable, {
+  }, "+ New Spare Part")),
     id: "spares",
     cols: SCOLS,
     rows: shownFinal,
@@ -9509,6 +9524,7 @@ function AnalyticsTab({
     color: "var(--c-text4)",
     textTransform: "uppercase",
     letterSpacing: 0.5,
+    textAlign: "center",
     marginBottom: 3
   };
   const _inS = {
@@ -10297,6 +10313,7 @@ function VisitsTab({
     color: "var(--c-text4)",
     textTransform: "uppercase",
     letterSpacing: 0.5,
+    textAlign: "center",
     marginBottom: 3
   };
   const _inS = {
@@ -10497,14 +10514,11 @@ function VisitsTab({
     }
   }, /*#__PURE__*/React.createElement("div", {
     style: {
-      position: "relative",
       display: "flex",
       alignItems: "center",
-      justifyContent: "center",
-      gap: 8,
-      flexWrap: "nowrap",
-      overflowX: "auto",
-      marginBottom: 8
+      gap: 10,
+      marginBottom: 8,
+      flexWrap: "wrap"
     }
   }, /*#__PURE__*/React.createElement("div", {
     style: {
@@ -10593,7 +10607,45 @@ function VisitsTab({
         notify("Export failed: " + e.message, "error");
       }
     }
-  }, "⬇ Export"), /*#__PURE__*/React.createElement("button", {
+  }, "⬇ Export"), canDeleteLogs ? (() => {
+    const nSel = Object.values(selected).filter(Boolean).length;
+    if (!delMode) return /*#__PURE__*/React.createElement("button", {
+      title: "Start deleting: press this FIRST, then select the visit row(s) to delete — administrators only",
+      style: { ...btnSt("var(--c-border)", "#fca5a5"), padding: "5px 6px", fontSize: 10.5, width: 162, whiteSpace: "nowrap", textAlign: "center", boxSizing: "border-box" },
+      onClick: () => { setSelected({}); setDelMode(true); }
+    }, "🗑 Delete service visit");
+    return /*#__PURE__*/React.createElement("div", { style: { display: "inline-flex", alignItems: "center", gap: 8, border: "1px solid #ef4444", background: "rgba(239,68,68,.10)", borderRadius: 10, padding: "4px 8px" } },
+      /*#__PURE__*/React.createElement("span", { style: { fontSize: 11.5, fontWeight: 800, color: "#f87171" } }, "Delete mode — click the row(s) to remove", nSel ? " (" + nSel + " selected)" : ""),
+      /*#__PURE__*/React.createElement("button", {
+        title: nSel ? "Move the selected visit(s) to the 🗑 Bin — asks to confirm first" : "Select at least one row",
+        disabled: !nSel,
+        style: { ...btnSt(nSel ? "#3a1d1d" : "var(--c-border)", nSel ? "#fca5a5" : "var(--c-text5)"), padding: "6px 10px", fontSize: 11.5, cursor: nSel ? "pointer" : "not-allowed" },
+        onClick: delSelectedVisits
+      }, "✓ Delete selected", nSel ? " (" + nSel + ")" : ""),
+      /*#__PURE__*/React.createElement("button", {
+        style: { ...btnSt("var(--c-border)", "var(--c-text2)"), padding: "6px 10px", fontSize: 11.5 },
+        onClick: () => { setDelMode(false); setSelected({}); }
+      }, "✕ Cancel"));
+  })() : null, /*#__PURE__*/React.createElement("div", {
+    style: { marginLeft: "auto", display: "flex", justifyContent: "flex-end", alignItems: "center", gap: 8, flexShrink: 0 }
+  }, /*#__PURE__*/React.createElement("div", {
+    style: {
+      fontSize: 11.5,
+      color: "var(--c-text4)"
+    }
+  }, shown.length, " of ", all.length, " visit(s) · ", labs.reduce((s, l) => s + (l.machines || []).length, 0), " machine(s) across ", labs.length, " laborator", labs.length === 1 ? "y" : "ies", selCount ? " · " + selCount + " highlighted" : ""), /*#__PURE__*/React.createElement("button", {
+    title: "Show / hide columns (your view only)",
+    style: {
+      ...btnSt(colMenu ? "var(--c-key)" : "var(--c-border)", colMenu ? "var(--c-bg)" : "var(--c-text2)"),
+      padding: "5px 6px",
+      fontSize: 10.5,
+      width: 162,
+      whiteSpace: "nowrap",
+      textAlign: "center",
+      boxSizing: "border-box"
+    },
+    onClick: () => setColMenu(m => !m)
+  }, "🧩 Show/Hide Columns", hiddenCols.length ? " (" + (VGRID_COLS.length - hiddenCols.length) + "/" + VGRID_COLS.length + ")" : ""), /*#__PURE__*/React.createElement("button", {
     title: "Restore the default view \u2014 column order, widths, visibility, sorting, row height, and clear every filter: search, laboratory, brand, machine, type, engineer, date range (your view only)",
     style: {
       ...btnSt("var(--c-border)", "var(--c-text2)"),
@@ -10627,53 +10679,7 @@ function VisitsTab({
       setTo("");
       setColMenu(false);
     }
-  }, "↺ Reset"), " ", canDeleteLogs ? (() => {
-    const nSel = Object.values(selected).filter(Boolean).length;
-    if (!delMode) return /*#__PURE__*/React.createElement("button", {
-      title: "Start deleting: press this FIRST, then select the visit row(s) to delete — administrators only",
-      style: { ...btnSt("var(--c-border)", "#fca5a5"), padding: "5px 6px", fontSize: 10.5, width: 162, whiteSpace: "nowrap", textAlign: "center", boxSizing: "border-box" },
-      onClick: () => { setSelected({}); setDelMode(true); }
-    }, "🗑 Delete service visit");
-    return /*#__PURE__*/React.createElement("div", { style: { display: "inline-flex", alignItems: "center", gap: 8, border: "1px solid #ef4444", background: "rgba(239,68,68,.10)", borderRadius: 10, padding: "4px 8px" } },
-      /*#__PURE__*/React.createElement("span", { style: { fontSize: 11.5, fontWeight: 800, color: "#f87171" } }, "Delete mode — click the row(s) to remove", nSel ? " (" + nSel + " selected)" : ""),
-      /*#__PURE__*/React.createElement("button", {
-        title: nSel ? "Move the selected visit(s) to the 🗑 Bin — asks to confirm first" : "Select at least one row",
-        disabled: !nSel,
-        style: { ...btnSt(nSel ? "#3a1d1d" : "var(--c-border)", nSel ? "#fca5a5" : "var(--c-text5)"), padding: "6px 10px", fontSize: 11.5, cursor: nSel ? "pointer" : "not-allowed" },
-        onClick: delSelectedVisits
-      }, "✓ Delete selected", nSel ? " (" + nSel + ")" : ""),
-      /*#__PURE__*/React.createElement("button", {
-        style: { ...btnSt("var(--c-border)", "var(--c-text2)"), padding: "6px 10px", fontSize: 11.5 },
-        onClick: () => { setDelMode(false); setSelected({}); }
-      }, "✕ Cancel"));
-  })() : null), /*#__PURE__*/React.createElement("div", {
-    style: {
-      display: "flex",
-      alignItems: "center",
-      gap: 10,
-      marginBottom: 8,
-      flexWrap: "wrap"
-    }
-  }, /*#__PURE__*/React.createElement("div", {
-    style: {
-      fontSize: 11.5,
-      color: "var(--c-text4)"
-    }
-  }, shown.length, " of ", all.length, " visit(s) · ", labs.reduce((s, l) => s + (l.machines || []).length, 0), " machine(s) across ", labs.length, " laborator", labs.length === 1 ? "y" : "ies", selCount ? " · " + selCount + " highlighted" : ""), /*#__PURE__*/React.createElement("div", {
-    style: { flex: 1, display: "flex", justifyContent: "center" }
-  }, /*#__PURE__*/React.createElement("button", {
-    title: "Show / hide columns (your view only)",
-    style: {
-      ...btnSt(colMenu ? "var(--c-key)" : "var(--c-border)", colMenu ? "var(--c-bg)" : "var(--c-text2)"),
-      padding: "5px 6px",
-      fontSize: 10.5,
-      width: 162,
-      whiteSpace: "nowrap",
-      textAlign: "center",
-      boxSizing: "border-box"
-    },
-    onClick: () => setColMenu(m => !m)
-  }, "🧩 Show/Hide Columns", hiddenCols.length ? " (" + (VGRID_COLS.length - hiddenCols.length) + "/" + VGRID_COLS.length + ")" : "")), colMenu && /*#__PURE__*/React.createElement("div", {
+  }, "↺ Reset")), colMenu && /*#__PURE__*/React.createElement("div", {
     style: {
       flexBasis: "100%",
       minWidth: "100%",
@@ -11062,30 +11068,31 @@ function AuditTab({
   });
   return /*#__PURE__*/React.createElement("div", {
     style: cardSt
-  }, /*#__PURE__*/React.createElement("div", {
-    style: {
-      fontSize: 12,
-      fontWeight: 800,
-      color: "var(--c-text4)",
-      textTransform: "uppercase",
-      marginBottom: 4
-    }
-  }, "🧾 Audit Trail (", sorted.length, ")"), /*#__PURE__*/React.createElement("div", {
-    style: {
-      fontSize: 11.5,
-      color: "var(--c-text5)",
-      marginBottom: 12
-    }
-  }, "Every security-relevant action, permanently recorded. The server forbids editing or deleting entries — for everyone, including administrators."), /*#__PURE__*/React.createElement("input", {
+  }, /*#__PURE__*/React.createElement(ITable, {
+    headerNode: /*#__PURE__*/React.createElement("div", {
+      style: { whiteSpace: "normal", maxWidth: 520 }
+    }, /*#__PURE__*/React.createElement("div", {
+      style: {
+        fontSize: 12,
+        fontWeight: 800,
+        color: "var(--c-text4)",
+        textTransform: "uppercase"
+      }
+    }, "🧾 Audit Trail (", sorted.length, ")"), /*#__PURE__*/React.createElement("div", {
+      style: {
+        fontSize: 11.5,
+        color: "var(--c-text5)"
+      }
+    }, "Every security-relevant action, permanently recorded. The server forbids editing or deleting entries — for everyone, including administrators.")),
+    rightNode: /*#__PURE__*/React.createElement("input", {
     style: {
       ...inputSt(),
-      maxWidth: 320,
-      marginBottom: 12
+      maxWidth: 320
     },
     value: q,
     onChange: e => setQ(e.target.value),
     placeholder: "🔍 Filter by action, detail, or person…"
-  }), /*#__PURE__*/React.createElement(ITable, {
+  }),
     id: "audit",
     maxH: 560,
     filter: false,
