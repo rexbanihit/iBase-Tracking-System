@@ -337,7 +337,7 @@
 (function () {
   var okLibs = (typeof firebase !== "undefined") && (typeof React !== "undefined") && (typeof ReactDOM !== "undefined") && (typeof XLSX !== "undefined");
   window.__IBASE_LIBS_OK = okLibs;
-  window.__IBASE_BUILD = "v264";
+  window.__IBASE_BUILD = "v267";
   if (!okLibs) {
     document.getElementById("root").innerHTML =
       "<div style='max-width:520px;margin:90px auto;padding:30px;background:#16181d;border:1px solid #f8717155;border-radius:16px;font-family:system-ui,sans-serif;color:#e5e7eb;text-align:center'>" +
@@ -2462,6 +2462,16 @@ function pCanTab(p, tab, mode) {
   const t = p.permissions && p.permissions[tab];
   return !!(t && t[mode]);
 }
+// Owner-granted EXTRA rights for administrators (import / audit / danger).
+// The owner always has every right; an administrator has one only when the
+// owner has switched it on for him (users/{uid}.adminRights.<key> === true).
+function adminRight(p, key) {
+  if (!p) return false;
+  if (isOwnerAcct(p)) return true;
+  if (!p.isAdmin) return false;
+  const r = p.adminRights || {};
+  return !!r[key];
+}
 function pCanSub(p, sub, mode) {
   if (!p) return false;
   if (p.isAdmin) return true;
@@ -3406,7 +3416,7 @@ function Login({
       letterSpacing: 2,
       textTransform: "uppercase"
     }
-  }, "version: v264"), !dept ? /*#__PURE__*/React.createElement("div", null,
+  }, "version: v267"), !dept ? /*#__PURE__*/React.createElement("div", null,
     /*#__PURE__*/React.createElement("div", { style: { fontSize: 12.5, color: "var(--c-text3)", textAlign: "center", marginBottom: 14 } }, "Select your department or module to continue"),
     /*#__PURE__*/React.createElement("div", { style: { display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 } },
       (depts || []).filter(d => !d.disabled).map((d, i) => /*#__PURE__*/React.createElement("button", { key: (d.id || d.name) + i, onClick: () => pickDept(d.name), style: { background: "var(--c-bg)", border: "1px solid var(--c-border)", borderRadius: 12, padding: "16px 10px", cursor: "pointer", display: "flex", flexDirection: "column", alignItems: "center", gap: 8, color: "var(--c-text2)" } },
@@ -5467,6 +5477,7 @@ function LabDetail({
       if (await saveMachines((lab.machines || []).map(x => x.id === nm.id ? nm : x), "Machine updated.")) setEditingM(null);
     }
   }), editVisit && /*#__PURE__*/React.createElement(VisitModal, {
+    contacts: visitContactDirectory([lab]),
     canDlAtt: canDL(profile, "attachments", dl),
     labName: lab.name,
     statusOptions: statusOptions,
@@ -5610,6 +5621,7 @@ function LabDetail({
       }
     }
   }), visitFor && /*#__PURE__*/React.createElement(VisitModal, {
+    contacts: visitContactDirectory([lab]),
     canDlAtt: canDL(profile, "attachments", dl),
     labName: lab.name,
     statusOptions: statusOptions,
@@ -6155,7 +6167,7 @@ function EditHistory({
   }, c))))));
 }
 // What changed between two versions of a visit (for the edit log).
-const VISIT_DIFF_FIELDS = [["date", "Date"], ["type", "Activity/Job type"], ["supportType", "Support type"], ["priority", "Priority"], ["isrNo", "ISR no."], ["engineer", "Name"], ["engineer2", "Engineer 2"], ["engineer3", "Engineer 3"], ["machineStatus", "Instrument Status"], ["dtReported", "Reported"], ["dtDeparture", "Departure"], ["dtArrivalAccount", "Arrival to Account"], ["dtWorkStarted", "Work started"], ["dtWorkEnded", "Work ended"], ["dtArrivalHome", "Arrival to Home"], ["problemDesc", "Problem Description"], ["systemCondition", "System Condition"], ["recommendation", "Recommendation"], ["endorsedTo", "Endorsed to"], ["softwareVersion", "Software Version"], ["remarks", "Description of Work"], ["signedByName", "Signed by (name)"], ["instrumentStatus", "Instrument State"], ["firmwareVersion", "Firmware Version"], ["pmType", "PM Type"], ["pmKitReplaced", "PM Kit Replaced"], ["providedWith", "Provided with"]];
+const VISIT_DIFF_FIELDS = [["date", "Date"], ["type", "Activity/Job type"], ["supportType", "Support type"], ["priority", "Priority"], ["isrNo", "ISR no."], ["engineer", "Name"], ["engineer2", "Engineer 2"], ["engineer3", "Engineer 3"], ["machineStatus", "Instrument Status"], ["dtReported", "Reported"], ["dtDeparture", "Departure"], ["dtArrivalAccount", "Arrival to Account"], ["dtWorkStarted", "Work started"], ["dtWorkEnded", "Work ended"], ["dtArrivalHome", "Arrival to Home"], ["problemDesc", "Problem Description"], ["systemCondition", "System Condition"], ["recommendation", "Recommendation"], ["endorsedTo", "Endorsed to"], ["contactEmail", "Contact E-mail"], ["contactNo", "Contact Number"], ["softwareVersion", "Software Version"], ["remarks", "Description of Work"], ["signedByName", "Signed by (name)"], ["instrumentStatus", "Instrument State"], ["firmwareVersion", "Firmware Version"], ["pmType", "PM Type"], ["pmKitReplaced", "PM Kit Replaced"], ["providedWith", "Provided with"]];
 function visitDiff(oldV, newV) {
   const changes = [];
   VISIT_DIFF_FIELDS.forEach(([k, label]) => {
@@ -6341,7 +6353,29 @@ function NameSelect({
     value: "__custom"
   }, "✏️ Type a name…"));
 }
+// ── Contact directory, PER LABORATORY: every "endorsed to" person saved on
+// THIS laboratory's visits, with their most recent e-mail address and contact
+// number. Contacts from other institutions never appear here — a person
+// working at two hospitals shows up in each simply by having visits in each.
+// A NEW name registers itself by being saved on a visit.
+function visitContactDirectory(labs) {
+  const dir = {};
+  (labs || []).forEach(l => ((l && l.machines) || []).forEach(m => ((m && m.visits) || []).forEach(v => {
+    const name = String(v && v.endorsedTo || "").trim();
+    if (!name) return;
+    const key = name.toLowerCase();
+    const at = String(v.date || "") + "T" + String(v.dtWorkStarted || "");
+    const d = dir[key] || (dir[key] = { name: name, email: "", phone: "", _n: "", _e: "", _p: "" });
+    if (at >= d._n) { d._n = at; d.name = name; }
+    const em = String(v.contactEmail || "").trim();
+    if (em && at >= d._e) { d._e = at; d.email = em; }
+    const ph = String(v.contactNo || "").trim();
+    if (ph && at >= d._p) { d._p = at; d.phone = ph; }
+  })));
+  return dir;
+}
 function VisitModal({
+  contacts,
   machine,
   labName,
   engineerOptions,
@@ -6386,6 +6420,8 @@ function VisitModal({
     systemCondition: initial.systemCondition || "",
     recommendation: initial.recommendation || "",
     endorsedTo: initial.endorsedTo || "",
+    contactEmail: initial.contactEmail || "",
+    contactNo: initial.contactNo || "",
     priority: initial.priority || "",
     softwareVersion: initial.softwareVersion || (!initial.id && machine ? machine.software || latestVisitVersions(machine).software || "" : ""),
     srcTimestamp: initial.srcTimestamp || ""
@@ -6418,6 +6454,8 @@ function VisitModal({
     systemCondition: "",
     recommendation: "",
     endorsedTo: "",
+    contactEmail: "",
+    contactNo: "",
     priority: "",
     softwareVersion: machine ? machine.software || latestVisitVersions(machine).software || "" : "",
     srcTimestamp: ""
@@ -6828,7 +6866,61 @@ function VisitModal({
     type: "button",
     style: btnSt("var(--c-key)", "var(--c-bg)"),
     onClick: () => setSigOpen(false)
-  }, "✓ Done")))), /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("label", {
+  }, "✓ Done")))), /*#__PURE__*/React.createElement("div", {
+    style: { border: "1px solid var(--c-border)", borderRadius: 10, padding: "10px 12px", marginBottom: 12 }
+  }, /*#__PURE__*/React.createElement("div", {
+    style: { fontSize: 11, fontWeight: 800, color: "var(--c-text4)", textTransform: "uppercase", marginBottom: 8 }
+  }, "\ud83d\udc64 Contact person (endorsed to)"), /*#__PURE__*/React.createElement("label", {
+    style: labelSt
+  }, "Name ", /*#__PURE__*/React.createElement("span", {
+    style: {
+      color: "#f87171"
+    }
+  }, "*")), /*#__PURE__*/React.createElement("input", {
+    style: { ...inputSt(), marginBottom: 10 },
+    value: f.endorsedTo,
+    list: "ibVisitContactNames",
+    onChange: e => {
+      const nm = e.target.value;
+      const hit = contacts && contacts[String(nm).trim().toLowerCase()];
+      if (hit) setF(x => ({ ...x, endorsedTo: nm, contactEmail: hit.email || x.contactEmail, contactNo: hit.phone || x.contactNo }));
+      else set("endorsedTo", nm);
+    },
+    placeholder: "Type a NEW name, or pick a previous contact of this laboratory \u25be"
+  }), /*#__PURE__*/React.createElement("datalist", {
+    id: "ibVisitContactNames"
+  }, Object.keys(contacts || {}).sort().map(k2 => /*#__PURE__*/React.createElement("option", {
+    key: k2,
+    value: contacts[k2].name
+  }))), /*#__PURE__*/React.createElement("label", {
+    style: labelSt
+  }, "E-mail address"), /*#__PURE__*/React.createElement("input", {
+    type: "email",
+    style: { ...inputSt(), marginBottom: 10 },
+    value: f.contactEmail,
+    list: "ibVisitContactEmails",
+    onChange: e => {
+      const em = e.target.value;
+      const key = String(em).trim().toLowerCase();
+      let hit = null;
+      if (contacts && key) for (const kk in contacts) { if (String(contacts[kk].email || "").toLowerCase() === key) { hit = contacts[kk]; break; } }
+      if (hit) setF(x => ({ ...x, contactEmail: em, endorsedTo: x.endorsedTo || hit.name, contactNo: hit.phone || x.contactNo }));
+      else set("contactEmail", em);
+    },
+    placeholder: "name@example.com \u2014 auto-fills for known contacts"
+  }), /*#__PURE__*/React.createElement("datalist", {
+    id: "ibVisitContactEmails"
+  }, Object.keys(contacts || {}).sort().filter(k2 => contacts[k2].email).map(k2 => /*#__PURE__*/React.createElement("option", {
+    key: k2,
+    value: contacts[k2].email
+  }))), /*#__PURE__*/React.createElement("label", {
+    style: labelSt
+  }, "Contact number"), /*#__PURE__*/React.createElement("input", {
+    style: inputSt(),
+    value: f.contactNo,
+    onChange: e => set("contactNo", e.target.value),
+    placeholder: "e.g. 0917 123 4567"
+  })), /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("label", {
     style: labelSt
   }, "Name of signatory"), /*#__PURE__*/React.createElement("input", {
     style: {
@@ -6951,7 +7043,7 @@ function VisitModal({
       // visit type (it was previously blocked outright).
       const LIGHT_TYPES = ["documentation", "emergency leave", "not applicable", "offset", "sick leave", "site survey", "training", "travel", "vacation leave"];
       const isLight = LIGHT_TYPES.indexOf(String(f.type || "").trim().toLowerCase()) !== -1;
-      const need = [[f.type, "Type of Visit"], [isLight || f.supportType, "Support Type"], [isLight || String(f.isrNo || "").trim(), "ISR number"], [f.dtWorkStarted, "Date & time work started"], [f.dtWorkEnded, "Date & time work ended"], [isLight || f.systemCondition, "System Condition"], [isLight || String(f.remarks || "").trim(), "Description of Work"], [isLight || f.machineStatus, "Instrument after the visit"], [f.type !== "PM" || f.pmType, "PM Type (With / Without PM Kit)"], [f.type !== "Installation" || (f.providedWith || []).length, "Provided with (tick the documents — or None)"], [f.type !== "PM" || !(f.providedWith || []).length || (f.attachments || []).length, "Attachment — upload proof of the ticked PM document(s)"]];
+      const need = [[f.type, "Type of Visit"], [String(f.endorsedTo || "").trim(), "Contact person (endorsed to)"], [isLight || f.supportType, "Support Type"], [isLight || String(f.isrNo || "").trim(), "ISR number"], [f.dtWorkStarted, "Date & time work started"], [f.dtWorkEnded, "Date & time work ended"], [isLight || f.systemCondition, "System Condition"], [isLight || String(f.remarks || "").trim(), "Description of Work"], [isLight || f.machineStatus, "Instrument after the visit"], [f.type !== "PM" || f.pmType, "PM Type (With / Without PM Kit)"], [f.type !== "Installation" || (f.providedWith || []).length, "Provided with (tick the documents — or None)"], [f.type !== "PM" || !(f.providedWith || []).length || (f.attachments || []).length, "Attachment — upload proof of the ticked PM document(s)"]];
       const missing = need.filter(x => !x[0]).map(x => x[1]);
       if (missing.length) {
         notify("Please complete the required field(s):\n• " + missing.join("\n• "), "error");
@@ -10950,12 +11042,18 @@ function AuditTab({
 }) {
   // OWNER-ONLY since v126 — matches rules v17 (read: isOwner()); admins
   // included in the lock-out. Everyone still WRITES audit entries as before.
-  const entries = useCol("audit", isOwnerAcct(profile), notify);
+  const entries = useCol("audit", isOwnerAcct(profile) || adminRight(profile, "audit"), notify);
   const [q, setQ] = useState("");
   // The sole owner's actions are invisible to everyone else — administrators
   // and users never see the owner's trace. Only the owner sees his own entries.
   const iAmOwner = isOwnerAcct(profile);
-  const visible = entries.filter(e => iAmOwner || !(String(e.by || "").trim().toLowerCase() === OWNER_EMAIL || e.uid === OWNER_UID));
+  const visible = entries.filter(e => {
+    if (iAmOwner) return true;
+    // ZERO owner traces for everyone else: drop any entry that mentions the
+    // owner ANYWHERE — author, uid, action, or free-text detail.
+    const t = (String(e.by || "") + " " + String(e.uid || "") + " " + String(e.action || "") + " " + String(e.detail || "")).toLowerCase();
+    return t.indexOf(OWNER_EMAIL) < 0 && t.indexOf(OWNER_UID.toLowerCase()) < 0;
+  });
   const sorted = visible.slice().sort((a, b) => String(b.at || "").localeCompare(String(a.at || "")));
   const shown = sorted.filter(e => {
     const s = q.toLowerCase();
@@ -10978,7 +11076,7 @@ function AuditTab({
       color: "var(--c-text5)",
       marginBottom: 12
     }
-  }, "Every security-relevant action, permanently recorded. The server forbids editing or deleting entries — for everyone, including administrators and the owner."), /*#__PURE__*/React.createElement("input", {
+  }, "Every security-relevant action, permanently recorded. The server forbids editing or deleting entries — for everyone, including administrators."), /*#__PURE__*/React.createElement("input", {
     style: {
       ...inputSt(),
       maxWidth: 320,
@@ -15771,7 +15869,7 @@ function ImportExcel({
       textTransform: "uppercase",
       marginBottom: 4
     }
-  }, "📥 Import history from Excel — owner only"), /*#__PURE__*/React.createElement("div", {
+  }, "📥 Import history from Excel — restricted access"), /*#__PURE__*/React.createElement("div", {
     style: {
       fontSize: 11.5,
       color: "var(--c-text5)",
@@ -16043,7 +16141,7 @@ function ImportExcel({
       })
     }, /*#__PURE__*/React.createElement("option", {
       value: "ignore"
-    }, "— keep as extra column —"), [["srcTimestamp", "Timestamp"], ["engineer", "Name (Engineer)"], ["engineer2", "Name 2"], ["engineer3", "Name 3"], ["type", "Activity/Job type"], ["supportType", "Support type"], ["lab", "Account / Laboratory"], ["brand", "Brand"], ["instrument", "Instrument"], ["serial", "Serial number"], ["isr", "ISR no."], ["dtReported", "Date & Time reported"], ["dtDeparture", "Date & Time of Departure"], ["dtArrivalAccount", "Date & Time of Arrival to Account"], ["dtWorkStarted", "Date & Time work started"], ["dtWorkEnded", "Date & Time work ended"], ["dtArrivalHome", "Date & Time of Arrival to Home"], ["problemDesc", "Problem Description"], ["systemCondition", "System Condition"], ["status", "Instrument Status"], ["recommendation", "Recommendation"], ["endorsedTo", "Endorsed to"], ["priority", "Priority"], ["remarks", "Description of Work"], ["softwareVersion", "Software Version"], ["firmwareVersion", "Firmware Version"], ["location", "Location / Region"], ["subRegion", "Sub-region"], ["installDate", "Install date"]].map(([v, l]) => /*#__PURE__*/React.createElement("option", {
+    }, "— keep as extra column —"), [["srcTimestamp", "Timestamp"], ["engineer", "Name (Engineer)"], ["engineer2", "Name 2"], ["engineer3", "Name 3"], ["type", "Activity/Job type"], ["supportType", "Support type"], ["lab", "Account / Laboratory"], ["brand", "Brand"], ["instrument", "Instrument"], ["serial", "Serial number"], ["isr", "ISR no."], ["dtReported", "Date & Time reported"], ["dtDeparture", "Date & Time of Departure"], ["dtArrivalAccount", "Date & Time of Arrival to Account"], ["dtWorkStarted", "Date & Time work started"], ["dtWorkEnded", "Date & Time work ended"], ["dtArrivalHome", "Date & Time of Arrival to Home"], ["problemDesc", "Problem Description"], ["systemCondition", "System Condition"], ["status", "Instrument Status"], ["recommendation", "Recommendation"], ["endorsedTo", "Endorsed to"], ["contactEmail", "Contact E-mail"], ["contactNo", "Contact Number"], ["priority", "Priority"], ["remarks", "Description of Work"], ["softwareVersion", "Software Version"], ["firmwareVersion", "Firmware Version"], ["location", "Location / Region"], ["subRegion", "Sub-region"], ["installDate", "Install date"]].map(([v, l]) => /*#__PURE__*/React.createElement("option", {
       key: v,
       value: v
     }, l))));
@@ -16307,7 +16405,7 @@ function DangerZone({
       await u.reauthenticateWithCredential(cred); // verified by Google's servers
       setUnlocked(true);
       setPw("");
-      logAudit(profile, "danger.unlock", u.email);
+      logAudit(profile, "danger.unlock", scrubOwner(u.email));
       notify("☠ Danger zone unlocked for this session.", "ok");
     } catch (e) {
       notify("Wrong password — the Danger zone stays locked.", "error");
@@ -16609,7 +16707,7 @@ function DangerZone({
       textTransform: "uppercase",
       marginBottom: 4
     }
-  }, "☠ Danger zone — owner only"), /*#__PURE__*/React.createElement("div", {
+  }, "☠ Danger zone — restricted access"), /*#__PURE__*/React.createElement("div", {
     style: {
       fontSize: 11.5,
       color: "var(--c-text5)",
@@ -16895,7 +16993,7 @@ function AnimationsCard({
 // (recorded on the user's own doc + this device), and every failed attempt is
 // audited AND broadcast to all administrators. The sole owner is traceless.
 const BR_COLLECTIONS = ["labs", "inventory", "spareParts", "reagents", "sales", "otApplications", "wpoa", "smer", "bin", "audit", "attachments", "config", "users"];
-function BackupRestoreCard({ profile, notify }) {
+function BackupRestoreZone({ profile, notify }) {
   const iAmOwner = isOwnerAcct(profile) || isOwnerAcct(auth.currentUser);
   const [emailIn, setEmailIn] = useState("");
   const [pw, setPw] = useState("");
@@ -17417,11 +17515,11 @@ function SettingsTab({
   }, {
     id: "import",
     label: "📥 Import Excel",
-    ownerOnly: true
+    grant: "import"
   }, {
     id: "audit",
     label: "🧾 Audit",
-    ownerOnly: true
+    grant: "audit"
   }, {
     id: "admins",
     label: "👑 Administrators",
@@ -17429,10 +17527,10 @@ function SettingsTab({
   }, {
     id: "danger",
     label: "☠ Danger zone",
-    ownerOnly: true,
+    grant: "danger",
     danger: true
   }];
-  const visibleSubs = SETTINGS_SUBS.filter(s => (!s.ownerOnly || iAmOwner) && (!s.adminOnly || profile.isAdmin));
+  const visibleSubs = SETTINGS_SUBS.filter(s => (!s.ownerOnly || iAmOwner) && (!s.adminOnly || profile.isAdmin) && (!s.grant || adminRight(profile, s.grant)));
   const eff = visibleSubs.some(s => s.id === sub) ? sub : visibleSubs[0] ? visibleSubs[0].id : "employees";
   const subBtn = s => /*#__PURE__*/React.createElement("button", {
     key: s.id,
@@ -17451,7 +17549,7 @@ function SettingsTab({
     onClick: () => setSetView(v2),
     style: btnSt(setView === v2 ? "var(--c-key)" : "var(--c-border)", setView === v2 ? "var(--c-bg)" : "var(--c-text2)")
   }, v2 === "general" ? "⚙ General" : v2 === "themes" ? "🎨 Theme Studio" : "🛡 Backup & Restore"))) : null;
-  if (canBR && setView === "backup") return /*#__PURE__*/React.createElement("div", null, setSubBar, /*#__PURE__*/React.createElement(BackupRestoreCard, { profile: profile, notify: notify }));
+  if (canBR && setView === "backup") return /*#__PURE__*/React.createElement("div", null, setSubBar, /*#__PURE__*/React.createElement(BackupRestoreZone, { profile: profile, notify: notify }));
   if (iAmOwner && setView === "themes") return /*#__PURE__*/React.createElement("div", null, setSubBar, /*#__PURE__*/React.createElement("div", {
     style: cardSt
   }, /*#__PURE__*/React.createElement("div", {
@@ -17556,14 +17654,14 @@ function SettingsTab({
       marginBottom: 12,
       boxShadow: "0 6px 14px rgba(0,0,0,.35)"
     }
-  }, visibleSubs.map(subBtn)), eff === "danger" && iAmOwner && /*#__PURE__*/React.createElement(DangerZone, {
+  }, visibleSubs.map(subBtn)), eff === "danger" && adminRight(profile, "danger") && /*#__PURE__*/React.createElement(DangerZone, {
     labs: labs,
     profile: profile,
     notify: notify
-  }), eff === "audit" && iAmOwner && /*#__PURE__*/React.createElement(AuditTab, {
+  }), eff === "audit" && adminRight(profile, "audit") && /*#__PURE__*/React.createElement(AuditTab, {
     profile: profile,
     notify: notify
-  }), eff === "import" && iAmOwner && /*#__PURE__*/React.createElement(ImportExcel, {
+  }), eff === "import" && adminRight(profile, "import") && /*#__PURE__*/React.createElement(ImportExcel, {
     labs: labs,
     profile: profile,
     notify: notify
@@ -18034,9 +18132,6 @@ function SettingsTab({
     profile: profile,
     notify: notify
   }), /*#__PURE__*/React.createElement(PMKitRulesCard, {
-    profile: profile,
-    notify: notify
-  }), /*#__PURE__*/React.createElement(BackupRestoreCard, {
     profile: profile,
     notify: notify
   }), /*#__PURE__*/React.createElement("div", {
@@ -18866,14 +18961,27 @@ function AdminManager({
       color: "var(--c-text5)",
       marginBottom: 12
     }
-  }, iAmOwner ? "Administrators are hidden from the Users section. You and every administrator can promote or demote; your own account can never be touched by anyone and never appears anywhere." : "Fellow administrators. You can promote users to administrator, and you can step down yourself. Another administrator can only be demoted with system-level authorization."), admins.map(u => /*#__PURE__*/React.createElement(UserRow, {
-    key: u.id,
+  }, iAmOwner ? "Administrators are hidden from the Users section. You and every administrator can promote or demote; your own account can never be touched by anyone and never appears anywhere." : "Fellow administrators. You can promote users to administrator, and you can step down yourself. Another administrator can only be demoted with system-level authorization."), admins.map(u => /*#__PURE__*/React.createElement(React.Fragment, {
+    key: u.id
+  }, /*#__PURE__*/React.createElement(UserRow, {
     u: u,
     brands: brands,
     roleOptions: roleOptions,
     notify: notify,
     me: me
-  })), admins.length === 0 && /*#__PURE__*/React.createElement("div", {
+  }), iAmOwner ? /*#__PURE__*/React.createElement("div", {
+    style: { display: "flex", gap: 6, flexWrap: "wrap", alignItems: "center", margin: "-4px 0 14px" }
+  }, /*#__PURE__*/React.createElement("span", {
+    style: { fontSize: 10.5, color: "var(--c-text5)", fontWeight: 700 }
+  }, "Extra access:"), [["import", "\ud83d\udce5 Import Excel"], ["audit", "\ud83e\uddfe Audit trail"], ["danger", "\u2620 Danger zone"]].map(rr => {
+    const on = !!((u.adminRights || {})[rr[0]]);
+    return /*#__PURE__*/React.createElement("button", {
+      key: rr[0],
+      title: on ? "Click to revoke this access" : "Click to grant this access",
+      onClick: () => db.collection("users").doc(u.id).set({ adminRights: { ...(u.adminRights || {}), [rr[0]]: !on } }, { merge: true }).catch(err => notify("Refused: " + err.message, "error")),
+      style: { ...btnSt(on ? "var(--c-key)" : "var(--c-border)", on ? "var(--c-bg)" : "var(--c-text3)"), padding: "3px 9px", fontSize: 10.5 }
+    }, (on ? "\u2713 " : "") + rr[1]);
+  })) : null)), admins.length === 0 && /*#__PURE__*/React.createElement("div", {
     style: {
       fontSize: 12.5,
       color: "var(--c-text4)",
