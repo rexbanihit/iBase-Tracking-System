@@ -286,6 +286,37 @@
     .ib-dash-pie { animation: ib-pie-in .55s cubic-bezier(.2,.8,.25,1); transform-origin: 50% 50%; }
     @keyframes ib-pie-in { from { opacity:0; transform: rotate(-70deg) scale(.85); } to { opacity:1; transform: none; } }
     .ib-nav-fx   { display: inline-block; }
+
+    /* ═══ 📱 SMARTPHONES (≤ 700px) — layout adaptations ONLY.
+       Everything lives inside this media query, so the laptop/desktop
+       view keeps its exact style. ═══ */
+    @media (max-width: 700px) {
+      /* The left icon rail becomes a bottom tab bar (thumb-reachable) */
+      .ib-siderail {
+        top: auto !important; bottom: 0 !important; left: 0 !important; right: 0 !important;
+        width: 100% !important; height: 62px !important;
+        flex-direction: row !important; align-items: center !important;
+        padding: 4px 6px !important; border-right: none !important;
+        border-top: 1px solid var(--c-border) !important;
+        overflow-x: auto !important; overflow-y: hidden !important;
+        -webkit-overflow-scrolling: touch;
+      }
+      .ib-siderail > div:first-child { display: none !important; }
+      .ib-siderail button { flex: 0 0 auto !important; padding: 5px 10px !important; }
+      /* Content spans the full width and stays clear of the bottom bar */
+      .ib-mainarea { margin-left: 0 !important; padding-bottom: 76px !important; }
+      /* The sticky header packs tighter on a small screen */
+      .ib-topbar > div { padding: 8px 10px !important; gap: 8px !important; }
+      /* Every popup opens full-screen; the drag offset is neutralised */
+      .ib-modal-ov { padding: 0 !important; align-items: stretch !important; }
+      .ib-modal-card {
+        width: 100vw !important; max-width: 100vw !important;
+        min-height: 100dvh; border-radius: 0 !important;
+        transform: none !important; padding: 14px !important;
+      }
+      /* Comfortable touch scrolling for the one-row toolbars and grids */
+      * { -webkit-tap-highlight-color: transparent; }
+    }
     @keyframes ibase-anim-spin    { from { opacity:0; transform: rotate(-90deg) scale(.7); } to { opacity:1; transform: none; } }
     @keyframes ibase-anim-elastic { 0% { opacity:0; transform: scale(.7,1.25); } 40% { opacity:1; transform: scale(1.12,.88); } 65% { transform: scale(.95,1.05); } 85% { transform: scale(1.03,.98); } 100% { transform: none; } }
     @keyframes ibase-anim-rise    { from { opacity:0; transform: translateY(22px); } to { opacity:1; transform: none; } }
@@ -337,7 +368,7 @@
 (function () {
   var okLibs = (typeof firebase !== "undefined") && (typeof React !== "undefined") && (typeof ReactDOM !== "undefined") && (typeof XLSX !== "undefined");
   window.__IBASE_LIBS_OK = okLibs;
-  window.__IBASE_BUILD = "v274";
+  window.__IBASE_BUILD = "v275";
   if (!okLibs) {
     document.getElementById("root").innerHTML =
       "<div style='max-width:520px;margin:90px auto;padding:30px;background:#16181d;border:1px solid #f8717155;border-radius:16px;font-family:system-ui,sans-serif;color:#e5e7eb;text-align:center'>" +
@@ -3417,7 +3448,7 @@ function Login({
       letterSpacing: 2,
       textTransform: "uppercase"
     }
-  }, "version: v274"), !dept ? /*#__PURE__*/React.createElement("div", null,
+  }, "version: v275"), !dept ? /*#__PURE__*/React.createElement("div", null,
     /*#__PURE__*/React.createElement("div", { style: { fontSize: 12.5, color: "var(--c-text3)", textAlign: "center", marginBottom: 14 } }, "Select your department or module to continue"),
     /*#__PURE__*/React.createElement("div", { style: { display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 } },
       (depts || []).filter(d => !d.disabled).map((d, i) => /*#__PURE__*/React.createElement("button", { key: (d.id || d.name) + i, onClick: () => pickDept(d.name), style: { background: "var(--c-bg)", border: "1px solid var(--c-border)", borderRadius: 12, padding: "16px 10px", cursor: "pointer", display: "flex", flexDirection: "column", alignItems: "center", gap: 8, color: "var(--c-text2)" } },
@@ -5052,6 +5083,7 @@ function Modal({
     return () => window.removeEventListener("keydown", onKey);
   }, [onClose]);
   return /*#__PURE__*/React.createElement("div", {
+    className: "ib-modal-ov",
     style: {
       position: "fixed",
       inset: 0,
@@ -5065,6 +5097,7 @@ function Modal({
     }
   }, /*#__PURE__*/React.createElement("div", {
     onClick: e => e.stopPropagation(),
+    className: "ib-modal-card",
     style: {
       background: "var(--c-card)",
       border: "1px solid var(--c-border)",
@@ -20055,6 +20088,7 @@ function App() {
     onClose: () => setToast(null)
   }));
   return /*#__PURE__*/React.createElement(React.Fragment, null, /*#__PURE__*/React.createElement("div", {
+    className: "ib-siderail",
     style: {
       position: "fixed",
       top: 0,
@@ -20145,10 +20179,12 @@ function App() {
       }
     }, name));
   })), /*#__PURE__*/React.createElement("div", {
+    className: "ib-mainarea",
     style: {
       marginLeft: 96
     }
   }, /*#__PURE__*/React.createElement("div", {
+    className: "ib-topbar",
     style: {
       borderBottom: "1px solid var(--c-border)",
       background: "var(--c-bg2)",
