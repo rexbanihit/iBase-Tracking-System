@@ -316,6 +316,22 @@
       }
       /* Comfortable touch scrolling for the one-row toolbars and grids */
       * { -webkit-tap-highlight-color: transparent; }
+      /* Multi-column layouts collapse to ONE column on a phone —
+         dashboard stat/chart cards, the maintenance alerts pane, the
+         institution detail, form grids, theme cards, all of it. */
+      .ib-mainarea div[style*="grid-template-columns"]:not(.ib-keepgrid) {
+        grid-template-columns: 1fr !important;
+      }
+      .ib-keepgrid { overflow-x: auto !important; -webkit-overflow-scrolling: touch; }
+      /* One-row toolbars wrap on a phone instead of squeezing/overlapping */
+      .ib-mainarea div[style*="flex-wrap: nowrap"],
+      .ib-mainarea div[style*="flex-wrap:nowrap"] {
+        flex-wrap: wrap !important;
+        overflow-x: visible !important;
+      }
+      /* Nothing may run past the phone's edge */
+      .ib-mainarea input, .ib-mainarea select, .ib-mainarea textarea { max-width: 100% !important; }
+      .ib-mainarea svg, .ib-mainarea canvas, .ib-mainarea img { max-width: 100% !important; }
     }
     @keyframes ibase-anim-spin    { from { opacity:0; transform: rotate(-90deg) scale(.7); } to { opacity:1; transform: none; } }
     @keyframes ibase-anim-elastic { 0% { opacity:0; transform: scale(.7,1.25); } 40% { opacity:1; transform: scale(1.12,.88); } 65% { transform: scale(.95,1.05); } 85% { transform: scale(1.03,.98); } 100% { transform: none; } }
@@ -368,7 +384,7 @@
 (function () {
   var okLibs = (typeof firebase !== "undefined") && (typeof React !== "undefined") && (typeof ReactDOM !== "undefined") && (typeof XLSX !== "undefined");
   window.__IBASE_LIBS_OK = okLibs;
-  window.__IBASE_BUILD = "v275";
+  window.__IBASE_BUILD = "v276";
   if (!okLibs) {
     document.getElementById("root").innerHTML =
       "<div style='max-width:520px;margin:90px auto;padding:30px;background:#16181d;border:1px solid #f8717155;border-radius:16px;font-family:system-ui,sans-serif;color:#e5e7eb;text-align:center'>" +
@@ -3448,7 +3464,7 @@ function Login({
       letterSpacing: 2,
       textTransform: "uppercase"
     }
-  }, "version: v275"), !dept ? /*#__PURE__*/React.createElement("div", null,
+  }, "version: v276"), !dept ? /*#__PURE__*/React.createElement("div", null,
     /*#__PURE__*/React.createElement("div", { style: { fontSize: 12.5, color: "var(--c-text3)", textAlign: "center", marginBottom: 14 } }, "Select your department or module to continue"),
     /*#__PURE__*/React.createElement("div", { style: { display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 } },
       (depts || []).filter(d => !d.disabled).map((d, i) => /*#__PURE__*/React.createElement("button", { key: (d.id || d.name) + i, onClick: () => pickDept(d.name), style: { background: "var(--c-bg)", border: "1px solid var(--c-border)", borderRadius: 12, padding: "16px 10px", cursor: "pointer", display: "flex", flexDirection: "column", alignItems: "center", gap: 8, color: "var(--c-text2)" } },
@@ -18084,6 +18100,7 @@ function SettingsTab({
       marginBottom: 12
     }
   }, "Who may ", /*#__PURE__*/React.createElement("b", null, "extract/download"), " from iBase. Default: ", /*#__PURE__*/React.createElement("b", null, "nobody"), " by default. Tick a box to grant that user the surface; untick to revoke. Applies to administrators too."), /*#__PURE__*/React.createElement("div", {
+    className: "ib-keepgrid",
     style: {
       display: "grid",
       gridTemplateColumns: "minmax(180px,1.4fr) repeat(" + DL_SURFACES.length + ", 1fr)",
