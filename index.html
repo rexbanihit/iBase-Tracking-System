@@ -471,7 +471,7 @@
 (function () {
   var okLibs = (typeof firebase !== "undefined") && (typeof React !== "undefined") && (typeof ReactDOM !== "undefined") && (typeof XLSX !== "undefined");
   window.__IBASE_LIBS_OK = okLibs;
-  window.__IBASE_BUILD = "v289";
+  window.__IBASE_BUILD = "v291";
   if (!okLibs) {
     document.getElementById("root").innerHTML =
       "<div style='max-width:520px;margin:90px auto;padding:30px;background:#16181d;border:1px solid #f8717155;border-radius:16px;font-family:system-ui,sans-serif;color:#e5e7eb;text-align:center'>" +
@@ -3551,7 +3551,7 @@ function Login({
       letterSpacing: 2,
       textTransform: "uppercase"
     }
-  }, "version: v289"), !dept ? /*#__PURE__*/React.createElement("div", null,
+  }, "version: v291"), !dept ? /*#__PURE__*/React.createElement("div", null,
     /*#__PURE__*/React.createElement("div", { style: { fontSize: 12.5, color: "var(--c-text3)", textAlign: "center", marginBottom: 14 } }, "Select your department or module to continue"),
     /*#__PURE__*/React.createElement("div", { style: { display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 } },
       (depts || []).filter(d => !d.disabled).map((d, i) => /*#__PURE__*/React.createElement("button", { key: (d.id || d.name) + i, onClick: () => pickDept(d.name), style: { background: "var(--c-bg)", border: "1px solid var(--c-border)", borderRadius: 12, padding: "16px 10px", cursor: "pointer", display: "flex", flexDirection: "column", alignItems: "center", gap: 8, color: "var(--c-text2)" } },
@@ -11892,16 +11892,24 @@ function SmerTab({ profile, labs, notify }) {
   // Format any date-or-datetime value: with a time it reads "MM/DD/YYYY hh:mmAP",
   // a plain date reads "MM/DD/YYYY", anything unparseable is returned as-is.
   // DCR shows TIME ONLY (24-hour, HH:MM) — the date lives in its own column.
+  // 12-hour display: "HH:MM" (24h) -> "hh:MMam"/"hh:MMpm". Midnight->12:MMam,
+  // noon->12:MMpm; the two-digit hour is kept (08:00am) to match the DCR column.
+  const to12 = (h, mm) => {
+    const ap = h < 12 ? "am" : "pm";
+    let hh = h % 12;
+    if (hh === 0) hh = 12;
+    return String(hh).padStart(2, "0") + ":" + mm + ap;
+  };
   const timeOnly = v => {
     const raw = String(v || "").trim();
     if (!raw) return "";
     // Prefer the literal HH:MM inside a "…THH:MM" or "… HH:MM" value (no timezone shifting).
     const m = raw.match(/[T ](\d{1,2}):(\d{2})/);
-    if (m) return String(m[1]).padStart(2, "0") + ":" + m[2];
+    if (m) return to12(parseInt(m[1], 10), m[2]);
     const t = Date.parse(raw);
     if (isNaN(t)) return "";
     const d2 = new Date(t), p2 = n => String(n).padStart(2, "0");
-    return p2(d2.getHours()) + ":" + p2(d2.getMinutes());
+    return to12(d2.getHours(), p2(d2.getMinutes()));
   };
   // START time — earliest available: reported → departure → arrival-to-account → work-started.
   const dcrStart = v => v.dtReported || v.dtDeparture || v.dtArrivalAccount || v.dtWorkStarted || "";
@@ -11923,9 +11931,9 @@ function SmerTab({ profile, labs, notify }) {
         if (!mine) return;
         const ds = String(v.dtWorkStarted || "").slice(0, 10) || String(v.date || "").slice(0, 10);
         if (!ds || ds < lo || ds > hi) return;
-        rows.push({ _key: v.id || (l.id + m.id + ds), ds: ds, date: ds, travel: l.name || "", instrument: m.instrument || "", isr: v.isrNo || "", kmFrom: "", kmTo: "", totalKm: "", dcr: dcrOf(v), meals: "", parking: "" });
+        rows.push({ _key: v.id || (l.id + m.id + ds), ds: ds, _first: dcrStart(v) || (ds + "T99:99"), date: ds, travel: l.name || "", instrument: m.instrument || "", isr: v.isrNo || "", kmFrom: "", kmTo: "", totalKm: "", dcr: dcrOf(v), meals: "", parking: "" });
       })));
-      rows.sort((a, b) => a.ds.localeCompare(b.ds) || String(a.instrument).localeCompare(String(b.instrument)));
+      rows.sort((a, b) => String(a._first).localeCompare(String(b._first)) || String(a.instrument).localeCompare(String(b.instrument)));
       return rows;
     };
   }, [labs, myName]);
