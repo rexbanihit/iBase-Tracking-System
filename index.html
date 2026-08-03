@@ -277,6 +277,8 @@
     @keyframes ibase-anim-tumble { from { opacity:0; transform: translateY(-26px) rotate(-160deg) scale(.6); } to { opacity:1; transform: none; } }
     .anim-pop     { animation: ibase-anim-pop .38s cubic-bezier(.34,1.56,.64,1); }
     @keyframes ibase-anim-pop { 0% { opacity:0; transform: scale(.55); } 70% { opacity:1; transform: scale(1.08); } 100% { transform: scale(1); } }
+    .anim-default { animation: ibase-anim-default .45s ease-out; }
+    @keyframes ibase-anim-default { from { opacity: 0; transform: scale(.985); } to { opacity: 1; transform: none; } }
     .anim-drift   { animation: ibase-anim-drift .7s ease-out; }
     @keyframes ibase-anim-drift { from { opacity:0; transform: translate(-18px,14px); } to { opacity:1; transform: none; } }
     .anim-wave    { animation: ibase-anim-wave .6s ease-out; }
@@ -286,6 +288,91 @@
     .ib-dash-pie { animation: ib-pie-in .55s cubic-bezier(.2,.8,.25,1); transform-origin: 50% 50%; }
     @keyframes ib-pie-in { from { opacity:0; transform: rotate(-70deg) scale(.85); } to { opacity:1; transform: none; } }
     .ib-nav-fx   { display: inline-block; }
+
+    /* ═══ 🎬 The "Default" ANIMATION STYLE: colored highlight + slight zoom
+       on hover — tabs, buttons, cards, table headers, everywhere. Gated by
+       the body classes the Animations choice sets, pointer devices only.
+       No will-change anywhere: layers re-rasterise at the zoomed size, so
+       text stays crisp. ═══ */
+    @media (hover: hover) and (pointer: fine) {
+      :root { --ib-hl: color-mix(in srgb, var(--c-key) 15%, transparent); }
+
+      /* ── Tab buttons (the rail / bottom bar) ── */
+      body.ib-anim-tabs-default .ib-nav-btn {
+        transition: transform .16s ease, background .16s ease, color .16s ease,
+                    border-color .16s ease, box-shadow .16s ease;
+      }
+      body.ib-anim-tabs-default .ib-nav-btn:hover {
+        transform: scale(1.08);
+        background: var(--c-card) !important;
+        border-left-color: var(--c-key) !important;
+        color: var(--c-key) !important;
+        box-shadow: 0 4px 12px rgba(0, 0, 0, .22);
+        position: relative;
+        z-index: 1;
+      }
+      body.ib-anim-tabs-default .ib-nav-btn:active { transform: scale(1.02); }
+
+      /* ── Every button in the content: sub-tab headers, + New Laboratory,
+            Show/Hide Columns, Reset, the Cards/Table toggle, all of them ── */
+      body.ib-anim-content-default .ib-mainarea button {
+        transition: transform .15s ease, box-shadow .15s ease, background-image .15s ease;
+      }
+      body.ib-anim-content-default .ib-mainarea button:hover {
+        background-image: linear-gradient(0deg, var(--ib-hl), var(--ib-hl));
+        transform: scale(1.06);
+        box-shadow: 0 0 0 1px var(--c-key), 0 6px 14px rgba(0, 0, 0, .18);
+        position: relative;
+        z-index: 1;
+      }
+      body.ib-anim-content-default .ib-mainarea button:active { transform: scale(1.02); }
+
+      /* ── Table header cells (Institutions, inventories, audit, …) ── */
+      body.ib-anim-content-default .ib-mainarea th {
+        transition: transform .15s ease, background-image .15s ease;
+      }
+      body.ib-anim-content-default .ib-mainarea th:hover {
+        background-image: linear-gradient(0deg, var(--ib-hl), var(--ib-hl));
+        transform: scale(1.05);
+        position: relative;
+        z-index: 1;
+      }
+
+      /* ── Clickable tiles & header cells built as divs: dashboard stat
+            tiles, the LOGS grid headers, heat-map headers, chips ── */
+      body.ib-anim-content-default .ib-mainarea div[style*="cursor: pointer"] {
+        transition: transform .16s ease, box-shadow .16s ease,
+                    background-image .16s ease, border-color .16s ease;
+      }
+      body.ib-anim-content-default .ib-mainarea div[style*="cursor: pointer"]:hover {
+        background-image: linear-gradient(0deg, var(--ib-hl), var(--ib-hl));
+        transform: scale(1.015);
+        box-shadow: 0 0 0 1px var(--c-key), 0 8px 18px rgba(0, 0, 0, .16);
+        position: relative;
+        z-index: 1;
+      }
+
+      /* ── Leaf cards (chart cards, analytics cards, PM status/compliance):
+            a calm colored ring + tint, no zoom, so large table cards stay
+            steady. :has() keeps container cards out. ── */
+      body.ib-anim-content-default .ib-mainarea div[style*="background: var(--c-card)"]:not(.ib-modal-card):not(:has(div[style*="background: var(--c-card)"])):hover {
+        background-image: linear-gradient(0deg, var(--ib-hl), var(--ib-hl));
+        box-shadow: 0 0 0 1px var(--c-key);
+      }
+
+      /* ── Institution cards keep the full treatment ── */
+      body.ib-anim-content-default .ib-labcard {
+        transition: transform .18s ease, box-shadow .18s ease, border-color .18s ease;
+        backface-visibility: hidden;
+      }
+      body.ib-anim-content-default .ib-labcard:hover {
+        transform: scale(1.02);
+        border-color: var(--c-key) !important;
+        box-shadow: 0 12px 28px rgba(0, 0, 0, .25), 0 0 0 2px var(--c-key);
+        z-index: 1;
+      }
+      body.ib-anim-content-default .ib-labcard:active { transform: scale(1.008); }
+    }
 
     /* ═══ 📱 SMARTPHONES (≤ 700px) — layout adaptations ONLY.
        Everything lives inside this media query, so the laptop/desktop
@@ -384,7 +471,7 @@
 (function () {
   var okLibs = (typeof firebase !== "undefined") && (typeof React !== "undefined") && (typeof ReactDOM !== "undefined") && (typeof XLSX !== "undefined");
   window.__IBASE_LIBS_OK = okLibs;
-  window.__IBASE_BUILD = "v276";
+  window.__IBASE_BUILD = "v289";
   if (!okLibs) {
     document.getElementById("root").innerHTML =
       "<div style='max-width:520px;margin:90px auto;padding:30px;background:#16181d;border:1px solid #f8717155;border-radius:16px;font-family:system-ui,sans-serif;color:#e5e7eb;text-align:center'>" +
@@ -3464,7 +3551,7 @@ function Login({
       letterSpacing: 2,
       textTransform: "uppercase"
     }
-  }, "version: v276"), !dept ? /*#__PURE__*/React.createElement("div", null,
+  }, "version: v289"), !dept ? /*#__PURE__*/React.createElement("div", null,
     /*#__PURE__*/React.createElement("div", { style: { fontSize: 12.5, color: "var(--c-text3)", textAlign: "center", marginBottom: 14 } }, "Select your department or module to continue"),
     /*#__PURE__*/React.createElement("div", { style: { display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 } },
       (depts || []).filter(d => !d.disabled).map((d, i) => /*#__PURE__*/React.createElement("button", { key: (d.id || d.name) + i, onClick: () => pickDept(d.name), style: { background: "var(--c-bg)", border: "1px solid var(--c-border)", borderRadius: 12, padding: "16px 10px", cursor: "pointer", display: "flex", flexDirection: "column", alignItems: "center", gap: 8, color: "var(--c-text2)" } },
@@ -4863,6 +4950,7 @@ function LabsTab({
     const accent = FLAG_COLORS[worst];
     return /*#__PURE__*/React.createElement("div", {
       key: lab.id,
+      className: "ib-labcard",
       onClick: () => setOpenLab(lab.id),
       style: {
         background: "var(--c-card)",
@@ -5563,8 +5651,6 @@ function LabDetail({
     statusOptions: statusOptions,
     machine: editVisit.machine,
     engineerOptions: engineerOptions,
-    customFields: catalog && catalog.visitFields || [],
-    canEditFields: !!profile.isAdmin,
     notify: notify,
     initial: editVisit.visit,
     onClose: () => setEditVisit(null),
@@ -5707,8 +5793,6 @@ function LabDetail({
     statusOptions: statusOptions,
     machine: visitFor,
     engineerOptions: engineerOptions,
-    customFields: catalog && catalog.visitFields || [],
-    canEditFields: !!profile.isAdmin,
     notify: notify,
     onClose: () => setVisitFor(null),
     onSave: async (v, newStatus, pending) => {
@@ -6460,8 +6544,6 @@ function VisitModal({
   labName,
   engineerOptions,
   statusOptions,
-  customFields,
-  canEditFields,
   canDlAtt,
   notify,
   initial,
@@ -6545,6 +6627,28 @@ function VisitModal({
     ...x,
     [k]: v
   }));
+  // ⏱ Chronology guard — same concept as OVERTIME: each timestamped step of
+  // the visit must not be EARLIER than the step before it. Empty fields are
+  // simply skipped; "Date of arrival to home" is date-only, so pairs that
+  // include it compare calendar dates. Equal times are fine.
+  const IB_VISIT_SEQ = [["dtReported", "Time & date reported"], ["dtDeparture", "Date & time of departure"], ["dtArrivalAccount", "Date & time of arrival to account"], ["dtWorkStarted", "Date & time work started"], ["dtWorkEnded", "Date & time work ended"], ["dtArrivalHome", "Date of arrival to home"]];
+  const timeIssues = [];
+  const timeBad = {};
+  {
+    const filled = IB_VISIT_SEQ.map(x => [x[0], x[1], String(f[x[0]] || "").trim()]).filter(x => x[2]);
+    for (let i2 = 1; i2 < filled.length; i2++) {
+      const a = filled[i2 - 1],
+        b = filled[i2];
+      const dateOnly = a[0] === "dtArrivalHome" || b[0] === "dtArrivalHome";
+      const av = dateOnly ? a[2].slice(0, 10) : a[2];
+      const bv = dateOnly ? b[2].slice(0, 10) : b[2];
+      if (bv < av) {
+        timeIssues.push(b[1] + " is EARLIER than " + a[1]);
+        timeBad[a[0]] = 1;
+        timeBad[b[0]] = 1;
+      }
+    }
+  }
   const [pending, setPending] = useState([]); // new files chosen now (uploaded on save)
   const fileRef = useRef(null);
   const camRef = useRef(null);
@@ -6734,21 +6838,21 @@ function VisitModal({
     style: labelSt
   }, "Time & date reported"), /*#__PURE__*/React.createElement("input", {
     type: "datetime-local",
-    style: inputSt(),
+    style: { ...inputSt(), ...(timeBad.dtReported ? { borderColor: "#f87171" } : {}) },
     value: f.dtReported,
     onChange: e => set("dtReported", e.target.value)
   })), /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("label", {
     style: labelSt
   }, "Date & time of departure"), /*#__PURE__*/React.createElement("input", {
     type: "datetime-local",
-    style: inputSt(),
+    style: { ...inputSt(), ...(timeBad.dtDeparture ? { borderColor: "#f87171" } : {}) },
     value: f.dtDeparture,
     onChange: e => set("dtDeparture", e.target.value)
   })), /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("label", {
     style: labelSt
   }, "Date & time of arrival to account"), /*#__PURE__*/React.createElement("input", {
     type: "datetime-local",
-    style: inputSt(),
+    style: { ...inputSt(), ...(timeBad.dtArrivalAccount ? { borderColor: "#f87171" } : {}) },
     value: f.dtArrivalAccount,
     onChange: e => set("dtArrivalAccount", e.target.value)
   })), /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("label", {
@@ -6759,7 +6863,7 @@ function VisitModal({
     }
   }, "*")), /*#__PURE__*/React.createElement("input", {
     type: "datetime-local",
-    style: inputSt(),
+    style: { ...inputSt(), ...(timeBad.dtWorkStarted ? { borderColor: "#f87171" } : {}) },
     value: f.dtWorkStarted,
     onChange: e => set("dtWorkStarted", e.target.value)
   })), /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("label", {
@@ -6770,10 +6874,14 @@ function VisitModal({
     }
   }, "*")), /*#__PURE__*/React.createElement("input", {
     type: "datetime-local",
-    style: inputSt(),
+    style: { ...inputSt(), ...(timeBad.dtWorkEnded ? { borderColor: "#f87171" } : {}) },
     value: f.dtWorkEnded,
     onChange: e => set("dtWorkEnded", e.target.value)
-  })), /*#__PURE__*/React.createElement("div", {
+  })), timeIssues.length ? /*#__PURE__*/React.createElement("div", {
+    style: { gridColumn: "1 / -1", border: "1px solid #f87171", background: "rgba(248,113,113,.08)", color: "#f87171", borderRadius: 8, padding: "8px 10px", fontSize: 11.5, fontWeight: 600 }
+  }, timeIssues.map((w, i2) => /*#__PURE__*/React.createElement("div", {
+    key: i2
+  }, "\u26a0 ", w))) : null, /*#__PURE__*/React.createElement("div", {
     style: {
       gridColumn: "1 / -1"
     }
@@ -6881,7 +6989,7 @@ function VisitModal({
     style: labelSt
   }, "Date of arrival to home"), /*#__PURE__*/React.createElement("input", {
     type: "datetime-local",
-    style: inputSt(),
+    style: { ...inputSt(), ...(timeBad.dtArrivalHome ? { borderColor: "#f87171" } : {}) },
     value: f.dtArrivalHome,
     onChange: e => set("dtArrivalHome", e.target.value)
   }))), initial && ((initial.editLog || []).filter(e9 => scrubOwner(e9.by))).length > 0 && /*#__PURE__*/React.createElement("div", {
@@ -7119,6 +7227,10 @@ function VisitModal({
       const missing = need.filter(x => !x[0]).map(x => x[1]);
       if (missing.length) {
         notify("Please complete the required field(s):\n• " + missing.join("\n• "), "error");
+        return;
+      }
+      if (timeIssues.length) {
+        notify("\u26a0 Invalid time sequence \u2014 a later step of the visit is EARLIER than the one before it:\n• " + timeIssues.join("\n• ") + "\n\nCorrect the highlighted date/time fields and save again.", "error");
         return;
       }
       const dISO = String(f.dtWorkStarted || f.dtWorkEnded || f.dtArrivalAccount || f.dtDeparture || f.dtReported || f.dtArrivalHome || "").slice(0, 10);
@@ -10395,8 +10507,6 @@ function VisitsTab({
       serialNo: editV._sn
     },
     engineerOptions: engineerOptionsV,
-    customFields: catalog && catalog.visitFields || [],
-    canEditFields: !!profile.isAdmin,
     notify: notify,
     initial: ((labs.find(l => l.id === editV._labId) || {}).machines || []).flatMap(m => m.id === editV._mId ? m.visits || [] : []).find(x => x.id === editV.id) || editV,
     onClose: () => setEditV(null),
@@ -12111,14 +12221,27 @@ function SmerTab({ profile, labs, notify }) {
     onClick: () => saveSheet(true)
   }, "📑 Save as new copy") : null, /*#__PURE__*/React.createElement("button", {
     style: btnSt("var(--c-border)", "var(--c-text2)"),
-    title: "Insert a blank row right below the row your cursor is in (or at the end)",
+    title: rowFocus >= 0 ? "Insert a blank row ABOVE row " + (rowFocus + 1) + " (the row your cursor is in)" : "Click into a row first \u2014 with no cursor the new row goes to the top",
+    onClick: () => setF(x => {
+      const at = rowFocus >= 0 && rowFocus < x.rows.length ? rowFocus : 0;
+      const rows = x.rows.slice();
+      rows.splice(at, 0, emptyRow());
+      setRowFocus(at);
+      return { ...x, rows: rows };
+    })
+  }, "⬆ Insert row above"), /*#__PURE__*/React.createElement("button", {
+    style: btnSt("var(--c-border)", "var(--c-text2)"),
+    title: rowFocus >= 0 ? "Insert a blank row BELOW row " + (rowFocus + 1) + " (the row your cursor is in)" : "Click into a row first \u2014 with no cursor the new row goes to the end",
     onClick: () => setF(x => {
       const at = rowFocus >= 0 && rowFocus < x.rows.length ? rowFocus + 1 : x.rows.length;
       const rows = x.rows.slice();
       rows.splice(at, 0, emptyRow());
+      setRowFocus(at);
       return { ...x, rows: rows };
     })
-  }, "➕ Insert row"), /*#__PURE__*/React.createElement("button", {
+  }, "⬇ Insert row below"), /*#__PURE__*/React.createElement("span", {
+    style: { fontSize: 10.5, color: "var(--c-text5)", alignSelf: "center" }
+  }, rowFocus >= 0 ? "cursor: row " + (rowFocus + 1) : "click a row to place the cursor"), /*#__PURE__*/React.createElement("button", {
     style: btnSt("var(--c-border)", "var(--c-text2)"),
     title: "Reset every column back to its default width (your view only)",
     onClick: resetAllCols
@@ -14307,14 +14430,118 @@ function impDT(v) {
 function impNormHeader(h) {
   return String(h || "").toLowerCase().replace(/[^a-z0-9]/g, "");
 }
-function impMapHeaders(headerRow) {
+// ── KNOWN FILE LAYOUTS ────────────────────────────────────────────────
+// Some export files carry the SAME word twice (a form's own "Name"/"Account"
+// block plus the service block's "Name 2"/"Account 2"). Generic matching
+// would take the first one it meets, so these files get an EXACT, named
+// mapping instead. A layout wins only when every header in its signature is
+// present; otherwise the generic exact+fuzzy recognition runs as before.
+const IMP_LAYOUTS = [{
+  id: "fas-logs-v2",
+  label: "FAS service logs \u2014 new version (35 columns)",
+  signature: ["name2", "account2", "isrno"],
+  map: {
+    srcTimestamp: "timestamp",
+    engineer: "name2",
+    type: "activityjobtype",
+    supportType: "supporttype",
+    lab: "account2",
+    brand: "brand",
+    instrument: "instrument",
+    serial: "instrumentserialnumber",
+    isr: "isrno",
+    dtReported: "dateandtimereported",
+    dtDeparture: "dateandtimeofdeparture",
+    dtArrivalAccount: "dateandtimeofarrivaltoaccount",
+    dtWorkStarted: "dateandtimeworkstarted",
+    dtWorkEnded: "dateandtimeworkended",
+    dtArrivalHome: "dateandtimeofarrivaltohome",
+    problemDesc: "problemdescription",
+    systemCondition: "systemcondition",
+    status: "instrumentstatus",
+    recommendation: "recommendation",
+    endorsedTo: "endorsedto",
+    priority: "priority",
+    remarks: "descriptionofwork",
+    softwareVersion: "softwareversion"
+    // Firmware Version, Location and Sub-location are not in this file —
+    // they stay blank and are filled in later inside the system.
+  },
+  // Side columns of the same sheet that are NOT part of a service visit:
+  // deliberately ignored (never reported as unrecognized).
+  ignore: ["selectactivity", "name", "account", "timein", "timeout", "leave", "offset", "travel", "activitylogsheet", "ticketlogsheet", "ticketlog", "taslogsrow1"]
+}
+// ── Older version: add its block here (same shape) once its exact
+//    header list is known; the newest layout should stay first.
+];
+function impLayoutFor(headerRow) {
+  const idx = {};
+  (headerRow || []).forEach((h, i) => {
+    const n = impNormHeader(h);
+    if (n && idx[n] === undefined) idx[n] = i;
+  });
+  for (let L = 0; L < IMP_LAYOUTS.length; L++) {
+    const lay = IMP_LAYOUTS[L];
+    if (!lay.signature.every(sg => idx[sg] !== undefined)) continue;
+    const map = {};
+    for (const field in lay.map) {
+      const c = idx[lay.map[field]];
+      if (c !== undefined) map[field] = c;
+    }
+    const ignoreSet = {};
+    (lay.ignore || []).forEach(n => ignoreSet[n] = 1);
+    return {
+      id: lay.id,
+      label: lay.label,
+      map: map,
+      ignoreSet: ignoreSet
+    };
+  }
+  return null;
+}
+function impMapHeaders(headerRow, exactOnly) {
   const map = {};
+  const used = {};
+  // A recognized layout is authoritative — no guessing on these files.
+  const lay0 = impLayoutFor(headerRow);
+  if (lay0) return lay0.map;
+  // Pass 1 — EXACT: the normalized header equals a known synonym.
   headerRow.forEach((h, i) => {
     const n = impNormHeader(h);
     if (!n) return;
     for (const key in IMP_SYN) if (map[key] === undefined && IMP_SYN[key].indexOf(n) !== -1) {
       map[key] = i;
+      used[i] = 1;
       return;
+    }
+  });
+  // exactOnly: used to JUDGE whether a row IS a header line. Fuzzy containment
+  // must never vote here — a DATA row (names, hospitals, free-text remarks
+  // that happen to contain "serial number" or "hospital") would pass by
+  // accident and get consumed as a header.
+  if (exactOnly) return map;
+  // Pass 2 — FUZZY: decorated headers still match by CONTAINMENT
+  // ("Date & Time Work Started (Actual)" ⊇ workstarted). Longest synonym
+  // first, so the most specific column always wins (sublocationname →
+  // Sub-location, never Location). Works identically whether the data
+  // sits in an Excel Table or a plain range — cell values are the same.
+  const pool = [];
+  for (const key in IMP_SYN) IMP_SYN[key].forEach(sy => {
+    if (sy.length >= 5) pool.push([key, sy]);
+  });
+  pool.sort((a, b) => b[1].length - a[1].length);
+  headerRow.forEach((h, i) => {
+    if (used[i]) return;
+    const n = impNormHeader(h);
+    if (!n || n.length < 5) return;
+    for (let p = 0; p < pool.length; p++) {
+      const key = pool[p][0];
+      if (map[key] !== undefined) continue;
+      if (n.indexOf(pool[p][1]) !== -1) {
+        map[key] = i;
+        used[i] = 1;
+        break;
+      }
     }
   });
   return map;
@@ -14372,6 +14599,12 @@ const IMP_SKIP_ACCOUNTS = {
 function impRowsFromGrid(grid, hi, map) {
   const rows = [];
   let skippedByRule = 0;
+  // WHY each row was excluded — surfaced verbatim when nothing imports.
+  const reasons = {
+    serial: 0,
+    account: 0,
+    isr: 0
+  };
   const ignoreIdx = {};
   Object.keys(map).forEach(k => {
     if (k.indexOf("_ignore") === 0) {
@@ -14385,10 +14618,11 @@ function impRowsFromGrid(grid, hi, map) {
   });
   Object.keys(ignoreIdx).forEach(i => mappedIdx[i] = true); // system columns: recognized, not imported, not flagged as extras
   const header = grid[hi] || [];
+  const layI = impLayoutFor(header);
   const unmapped = header.map((h, i) => ({
     h: String(h || "").trim(),
     i
-  })).filter(x => x.h && !mappedIdx[x.i]);
+  })).filter(x => x.h && !mappedIdx[x.i] && !(layI && layI.ignoreSet[impNormHeader(x.h)]));
   for (let i = hi + 1; i < grid.length; i++) {
     const r = grid[i] || [];
     if (!r.some(x => String(x == null ? "" : x).trim())) continue;
@@ -14402,29 +14636,25 @@ function impRowsFromGrid(grid, hi, map) {
     const date = impDate(map.date !== undefined ? r[map.date] : "");
     const lab = g("lab") || "(Unassigned imports)";
     const serial = g("serial");
-    if (IMP_JUNK_SERIALS[serial.trim().toLowerCase().replace(/\s+/g, " ")]) {
+    // A rule only applies when its COLUMN is actually mapped — a sheet with
+    // no Serial or no Location column at all imports fine (placeholder
+    // machine / blank location) instead of silently losing every row.
+    if (map.serial !== undefined && IMP_JUNK_SERIALS[serial.trim().toLowerCase().replace(/\s+/g, " ")]) {
       skippedByRule++;
+      reasons.serial++;
       continue;
     }
     if (IMP_SKIP_ACCOUNTS[labNameNorm(g("lab"))]) {
       skippedByRule++;
+      reasons.account++;
       continue;
     }
     if (impIsrExcluded(g("isr"))) {
       skippedByRule++;
+      reasons.isr++;
       continue;
     } // non-service ISR markers (leave / offset / travel / TF / …) never import
-    if (!g("location").trim()) {
-      skippedByRule++;
-      continue;
-    } // Location must not be empty (Sub-location may be)
     const instrument = g("instrument") || (serial ? "" : "(Unspecified machine)");
-    const extra = {};
-    unmapped.forEach(u => {
-      const v = r[u.i];
-      const sv = String(v == null ? "" : v).trim();
-      if (sv) extra[u.h] = sv.slice(0, 300);
-    });
     const gdt = k => map[k] === undefined ? "" : impDT(r[map[k]]);
     // no Date column? derive the visit date from the Timestamp or Departure
     const dateF = date || (gdt("srcTimestamp") || "").slice(0, 10) || (gdt("dtDeparture") || "").slice(0, 10);
@@ -14462,7 +14692,6 @@ function impRowsFromGrid(grid, hi, map) {
       dtArrivalHome: gdt("dtArrivalHome") || "",
       srcTimestamp: gdt("srcTimestamp"),
       installDate: g("installDate") ? impDate(r[map.installDate]) : "",
-      extra,
       missingBits: function () {
         // Required VALUES on every LOGS row. These 10 may be blank:
         //   Sub-location, Support type, Date&Time reported, …Departure,
@@ -14501,7 +14730,8 @@ function impRowsFromGrid(grid, hi, map) {
   return {
     rows,
     unmapped: unmapped.map(u => u.h),
-    skippedByRule
+    skippedByRule,
+    reasons
   };
 }
 function impParseWorkbook(wb) {
@@ -14517,16 +14747,50 @@ function impParseWorkbook(wb) {
     });
     let hi = -1,
       map = null;
-    for (let i = 0; i < Math.min(grid.length, 25); i++) {
-      // scan deeper (title rows are common)
-      const m = impMapHeaders(grid[i] || []);
+    const impRowOk = m => {
       const core = ["date", "lab", "serial", "instrument"].filter(k => m[k] !== undefined).length;
       const any = Object.keys(m).length;
       // relaxed: any 2 core columns, or 1 core (serial/instrument/lab) + 2 other recognized headers
-      if (core >= 2 || (m.serial !== undefined || m.instrument !== undefined || m.lab !== undefined) && any >= 3) {
+      return core >= 2 || (m.serial !== undefined || m.instrument !== undefined || m.lab !== undefined) && any >= 3;
+    };
+    for (let i = 0; i < Math.min(grid.length, 40); i++) {
+      // scan deep — headers are recognized WHEREVER they sit (title rows,
+      // Excel Tables, plain ranges: all read the same). File names never matter.
+      const m = impMapHeaders(grid[i] || []);
+      if (impRowOk(m)) {
         hi = i;
         map = m;
         break;
+      }
+      // split TWO-ROW headers (a merged banner above the real labels):
+      if (i > 0) {
+        const prev = grid[i - 1] || [],
+          cur = grid[i] || [];
+        const combo = cur.map((c, j) => String(prev[j] == null ? "" : prev[j]) + " " + String(c == null ? "" : c));
+        const m2 = impMapHeaders(combo);
+        if (impRowOk(impMapHeaders(combo, true)) && impRowOk(m2)) {
+          hi = i;
+          map = m2;
+          break;
+        }
+      }
+    }
+    // If the row right AFTER the detected header ALSO looks like a header row,
+    // the sheet uses a split two-row header whose upper halves happened to
+    // self-match ("Date &" / "Serial"). Promote to the combined pair so the
+    // second label row is never imported as data.
+    if (hi !== -1) {
+      const nxt = impMapHeaders(grid[hi + 1] || []);
+      // Promotion requires EXACT header names on that next row. A data row
+      // fuzzy-matching by accident must never be promoted/consumed — that
+      // turned a person's name into a "column" and blanked the engineers.
+      if (impRowOk(impMapHeaders(grid[hi + 1] || [], true)) && impRowOk(nxt)) {
+        const prev2 = grid[hi] || [],
+          cur2 = grid[hi + 1] || [];
+        const combo2 = cur2.map((c, j) => String(prev2[j] == null ? "" : prev2[j]) + " " + String(c == null ? "" : c));
+        const mc = impMapHeaders(combo2);
+        hi = hi + 1;
+        map = impRowOk(mc) && Object.keys(mc).length >= Object.keys(nxt).length ? mc : nxt;
       }
     }
     if (hi === -1) {
@@ -14735,7 +14999,7 @@ function impNormProvided(v, type) {
 function impVisitKey(v) {
   return [v.date, String(v.type || "").toLowerCase(), String(v.isr || v.isrNo || "").toLowerCase(), String(v.engineer || "").toLowerCase(), String(v.srcTimestamp || v.dtDeparture || v.dtWorkStarted || "").toLowerCase()].join("|");
 }
-function impBuildPlan(rows, labs, importerEmail, includeExtras) {
+function impBuildPlan(rows, labs, importerEmail) {
   const nowIso = auditNow ? auditNow() : new Date().toISOString();
   // Redundancy removal: a serial that ALREADY EXISTS anywhere in the system
   // routes its rows to that machine's current laboratory — even if the file
@@ -14863,9 +15127,6 @@ function impBuildPlan(rows, labs, importerEmail, includeExtras) {
         ...pmKitFields(r.type, impNormPmType(r.pmType, r.type), impNormYesNo(r.pmKitReplaced)),
         providedWith: impNormProvided(r.providedWith, r.type),
         attachments: [],
-        ...(includeExtras && r.extra && Object.keys(r.extra).length ? {
-          extra: r.extra
-        } : {}),
         loggedBy: "excel",
         loggedAt: nowIso,
         imported: true
@@ -15211,7 +15472,7 @@ function ImportRulesGuide({
       color: "var(--c-text4)",
       lineHeight: 1.7
     }
-  }, "Sub-location · Support type · Date & Time reported · Date & Time of Departure · Date & Time of Arrival to Account · Date & Time of Arrival to Home · Software Version · Firmware Version · Logged by · Attachment"))), /*#__PURE__*/React.createElement(R, null, "The ", /*#__PURE__*/React.createElement(B, null, "Location"), " header must be present on every used sheet (a missing Location header blocks the import), and ", /*#__PURE__*/React.createElement(B, null, "Location values must not be empty"), ". ", /*#__PURE__*/React.createElement(B, null, "Sub-location is fully optional"), " — header and values."), /*#__PURE__*/React.createElement(R, null, "A row missing any ", /*#__PURE__*/React.createElement(B, null, "required"), " value is still imported, but the preview ", /*#__PURE__*/React.createElement(B, null, "counts and flags"), " it so you can review — nothing is silently dropped."), /*#__PURE__*/React.createElement(H, null, "LOGS — how rows are written"), /*#__PURE__*/React.createElement(R, null, "\"Preventive Maintenance\" in any spelling (\"Preventative Maintenance\", \"P.M.\", …) imports as ", /*#__PURE__*/React.createElement(B, null, "PM"), " and feeds the PM scheduler."), /*#__PURE__*/React.createElement(R, null, "No Date column needed — the visit date derives from Timestamp → Departure → Work started."), /*#__PURE__*/React.createElement(R, null, /*#__PURE__*/React.createElement(B, null, "Serial routing:"), " a serial already registered in the system routes its rows to that existing machine and laboratory, whatever the file's Account says — this prevents duplicate machines. Laboratory names merge only when the ", /*#__PURE__*/React.createElement(B, null, "entire name"), " is identical (ignoring case/punctuation) — similar names never merge."), /*#__PURE__*/React.createElement(R, null, "Each machine's ", /*#__PURE__*/React.createElement(B, null, "oldest visit becomes its installation date"), " (unless one exists); imported PM visits re-anchor the Last PM and Next PM."), /*#__PURE__*/React.createElement(R, null, /*#__PURE__*/React.createElement(B, null, "Duplicates skipped:"), " same date + type + ISR + engineer on the same machine; and — within the same machine — same ", /*#__PURE__*/React.createElement(B, null, "Timestamp + Name + ISR"), " (even if the type differs). Blank timestamps never collapse rows."), /*#__PURE__*/React.createElement(R, null, /*#__PURE__*/React.createElement(B, null, "Excluded rows:"), " placeholder serials (-, ., na, n/a, not applicable, tf, to follow, blank, empty) and Accounts \"Office\", \"FAS - Manila\", \"Not Applicable\" are never written. The preview reports the excluded count."), /*#__PURE__*/React.createElement(R, null, /*#__PURE__*/React.createElement(B, null, "New accounts are your choice:"), " the preview lists every account the file would create, each with a checkbox + Select all — unchecked accounts (and all their rows) are skipped. Existing accounts always merge."), /*#__PURE__*/React.createElement(R, null, /*#__PURE__*/React.createElement(B, null, "Unknown columns — 4 choices:"), " add them to the visits · add them as Visit-form fields · skip adding columns · skip adding form fields. Skipping simply imports without them."), /*#__PURE__*/React.createElement(R, null, "Imported visits are stamped ", /*#__PURE__*/React.createElement(B, null, "Logged by = \"excel\""), ". System columns from a LOGS export \u2014 \"Logged by\", \"Logged At\", \"Signed\", \"Signed by (name)\", \"Attachment\", \"Edit Log\" \u2014 are recognized and ignored, so re-importing an exported file raises no unknown-column flags."), /*#__PURE__*/React.createElement(R, null, /*#__PURE__*/React.createElement(B, null, "Date & time reading: "), "cells are read exactly as written \u2014 the wall-clock value, with no timezone shift; seconds are rounded to the NEAREST minute (\u226530s rounds up), so the stored minute is exactly the minute Excel displays \u2014 21:08:00 stays 21:08, and a hidden 21:07:34 stores as the 21:08 you see. Floating-point artifacts (18:00 arriving as 17:59:59.999) are absorbed the same way. Text-typed dates are read month-first (M/D/Y): 2/10/2025 = February 10. Rows whose ISR no. is a non-service marker \u2014 leave, offset, travel / travelling, late, not applicable / NA, to follow / TF, repair, office, demo, training \u2014 are excluded from the import automatically."), /*#__PURE__*/React.createElement(R, null, "Every import is kept under \u201CStored import files\u201D below \u2014 you can re-import (restore) it, undo it (\u21a9 removes only what that import added, to the Bin), or delete it later."), /*#__PURE__*/React.createElement(H, null, "LOGS — accepted headers (order does not matter)"), /*#__PURE__*/React.createElement("div", {
+  }, "Sub-location · Support type · Date & Time reported · Date & Time of Departure · Date & Time of Arrival to Account · Date & Time of Arrival to Home · Software Version · Firmware Version · Logged by · Attachment"))), /*#__PURE__*/React.createElement(R, null, "", /*#__PURE__*/React.createElement(B, null, "Location, Sub-location, Software Version and Firmware Version are fully optional"), " — header AND values. A sheet without them imports normally; the details can be entered later inside the system."), /*#__PURE__*/React.createElement(R, null, "A row missing any ", /*#__PURE__*/React.createElement(B, null, "required"), " value is still imported, but the preview ", /*#__PURE__*/React.createElement(B, null, "counts and flags"), " it so you can review — nothing is silently dropped."), /*#__PURE__*/React.createElement(H, null, "LOGS — how rows are written"), /*#__PURE__*/React.createElement(R, null, "\"Preventive Maintenance\" in any spelling (\"Preventative Maintenance\", \"P.M.\", …) imports as ", /*#__PURE__*/React.createElement(B, null, "PM"), " and feeds the PM scheduler."), /*#__PURE__*/React.createElement(R, null, "No Date column needed — the visit date derives from Timestamp → Departure → Work started."), /*#__PURE__*/React.createElement(R, null, /*#__PURE__*/React.createElement(B, null, "Serial routing:"), " a serial already registered in the system routes its rows to that existing machine and laboratory, whatever the file's Account says — this prevents duplicate machines. Laboratory names merge only when the ", /*#__PURE__*/React.createElement(B, null, "entire name"), " is identical (ignoring case/punctuation) — similar names never merge."), /*#__PURE__*/React.createElement(R, null, "Each machine's ", /*#__PURE__*/React.createElement(B, null, "oldest visit becomes its installation date"), " (unless one exists); imported PM visits re-anchor the Last PM and Next PM."), /*#__PURE__*/React.createElement(R, null, /*#__PURE__*/React.createElement(B, null, "Duplicates skipped:"), " same date + type + ISR + engineer on the same machine; and — within the same machine — same ", /*#__PURE__*/React.createElement(B, null, "Timestamp + Name + ISR"), " (even if the type differs). Blank timestamps never collapse rows."), /*#__PURE__*/React.createElement(R, null, /*#__PURE__*/React.createElement(B, null, "Excluded rows:"), " placeholder serials (-, ., na, n/a, not applicable, tf, to follow, blank, empty) and Accounts \"Office\", \"FAS - Manila\", \"Not Applicable\" are never written. The preview reports the excluded count."), /*#__PURE__*/React.createElement(R, null, /*#__PURE__*/React.createElement(B, null, "New accounts are your choice:"), " the preview lists every account the file would create, each with a checkbox + Select all — unchecked accounts (and all their rows) are skipped. Existing accounts always merge."), /*#__PURE__*/React.createElement(R, null, /*#__PURE__*/React.createElement(B, null, "Unknown columns — 4 choices:"), " add them to the visits · add them as Visit-form fields · skip adding columns · skip adding form fields. Skipping simply imports without them."), /*#__PURE__*/React.createElement(R, null, "Imported visits are stamped ", /*#__PURE__*/React.createElement(B, null, "Logged by = \"excel\""), ". System columns from a LOGS export \u2014 \"Logged by\", \"Logged At\", \"Signed\", \"Signed by (name)\", \"Attachment\", \"Edit Log\" \u2014 are recognized and ignored, so re-importing an exported file raises no unknown-column flags."), /*#__PURE__*/React.createElement(R, null, /*#__PURE__*/React.createElement(B, null, "Date & time reading: "), "cells are read exactly as written \u2014 the wall-clock value, with no timezone shift; seconds are rounded to the NEAREST minute (\u226530s rounds up), so the stored minute is exactly the minute Excel displays \u2014 21:08:00 stays 21:08, and a hidden 21:07:34 stores as the 21:08 you see. Floating-point artifacts (18:00 arriving as 17:59:59.999) are absorbed the same way. Text-typed dates are read month-first (M/D/Y): 2/10/2025 = February 10. Rows whose ISR no. is a non-service marker \u2014 leave, offset, travel / travelling, late, not applicable / NA, to follow / TF, repair, office, demo, training \u2014 are excluded from the import automatically."), /*#__PURE__*/React.createElement(R, null, "Every import is kept under \u201CStored import files\u201D below \u2014 you can re-import (restore) it, undo it (\u21a9 removes only what that import added, to the Bin), or delete it later."), /*#__PURE__*/React.createElement(H, null, "LOGS — accepted headers (order does not matter)"), /*#__PURE__*/React.createElement("div", {
     style: { background: "var(--c-bg2)", border: "1px solid var(--c-border)", borderRadius: 8, padding: "9px 11px", margin: "2px 0 10px" }
   }, /*#__PURE__*/React.createElement("div", {
     style: { fontSize: 11, fontWeight: 800, color: "var(--c-text3)", textTransform: "uppercase", marginBottom: 5 }
@@ -15346,7 +15607,7 @@ function ImportRulesGuide({
       color: "var(--c-text5)",
       marginBottom: 4
     }
-  }, "Paste into cell A1 in Excel (fills across). ", /*#__PURE__*/React.createElement(B, null, "Location"), " is required (header + values); ", /*#__PURE__*/React.createElement(B, null, "Sub-location"), " is optional."), /*#__PURE__*/React.createElement("div", {
+  }, "Paste into cell A1 in Excel (fills across). ", /*#__PURE__*/React.createElement(B, null, "Location"), " and ", /*#__PURE__*/React.createElement(B, null, "Sub-location"), " are optional (header and values) — add them later in Institutions if the file has none."), /*#__PURE__*/React.createElement("div", {
     style: {
       display: "flex",
       gap: 8,
@@ -15473,7 +15734,7 @@ function ImportRulesGuide({
       color: "#f59e0b",
       marginTop: 6
     }
-  }, "* Account, Location and Sub-location matter most. Location must not be empty. No visits are written here."))));
+  }, "* Account matters most. Location and Sub-location are optional — they can be filled in later inside Institutions. No visits are written here."))));
 }
 // ── Non-destructive import core ─────────────────────────────────────────────
 // labMergeSafe: union of the LIVE laboratory and the import payload. The
@@ -15636,7 +15897,7 @@ function ImportExcel({
         setReimportBusy("");
         return;
       }
-      const p = impBuildPlan(rows, [], meEmail(profile), true);
+      const p = impBuildPlan(rows, [], meEmail(profile));
       const reBatch = "imp_" + Date.now();
       const res = await applyOpsSafe(db, p.ops, () => false, notify, reBatch);
       try { await db.collection("config").doc(rec.id).update({ batchId: reBatch, undone: false, parserVer: 4 }); } catch (e) {}
@@ -15657,13 +15918,9 @@ function ImportExcel({
   const [plan, setPlan] = useState(null);
   const [meta, setMeta] = useState(null);
   const [rawRows, setRawRows] = useState(null);
-  const [withExtras, setWithExtras] = useState(false);
-  const [skipCols, setSkipCols] = useState(false);
-  const [skipFields, setSkipFields] = useState(false);
   const [instPick, setInstPick] = useState({}); // NEW accounts: checked unless explicitly false
   const [grids, setGrids] = useState(null); // { sheetName: grid } for manual mapping
   const [mapUI, setMapUI] = useState(null); // { sheet, headerRow, assigns:{colIdx:field} }
-  const [fieldsAdded, setFieldsAdded] = useState(false);
   const [busy, setBusy] = useState(false);
   const fileRef = useRef(null);
   async function onFile(e) {
@@ -15734,8 +15991,16 @@ function ImportExcel({
         // Auto-detection failed → open the MANUAL column mapper instead of giving up.
         const first = wb.SheetNames[0];
         const grid = g[first] || [];
-        let hr = 0;
-        for (let i = 0; i < Math.min(grid.length, 25); i++) {
+        let hr = 0,
+          hb = -1;
+        for (let i = 0; i < Math.min(grid.length, 40); i++) {
+          const sc = Object.keys(impMapHeaders(grid[i] || [])).length;
+          if (sc > hb) {
+            hb = sc;
+            hr = i;
+          }
+        }
+        if (hb < 1) for (let i = 0; i < Math.min(grid.length, 40); i++) {
           if ((grid[i] || []).filter(x => String(x == null ? "" : x).trim()).length >= 2) {
             hr = i;
             break;
@@ -15754,40 +16019,14 @@ function ImportExcel({
         setPlan(null);
         setMeta(null);
         setRawRows(null);
-        setWithExtras(false);
-        setFieldsAdded(false);
-        setSkipCols(false);
-        setSkipFields(false);
         setInstPick({});
         notify("I couldn't recognize the headers automatically — assign the columns below and press Apply.", "error");
         return;
       }
       setMapUI(null);
-      setFieldsAdded(false);
       setInvPlan(null);
       setRawRows(parsed.rows);
-      setWithExtras(false);
-      const p = dest === "institutions" ? impBuildInstPlan(parsed.rows, labs) : impBuildPlan(parsed.rows, labs, profile.email, false);
-      // Required headers: every used sheet must carry Location and Sub-location.
-      const hdrMissing = [];
-      (parsed.sheetInfo || []).filter(s2 => s2.used && s2.map).forEach(s2 => {
-        const miss = [s2.map.location === undefined && "Location"].filter(Boolean);
-        if (miss.length) hdrMissing.push(s2.name + ": " + miss.join(" + "));
-      });
-      if (hdrMissing.length) {
-        setMeta({
-          file: file.name,
-          rows: parsed.rows.length,
-          skipped: parsed.skipped,
-          sheets: parsed.sheetInfo,
-          unmapped: parsed.unmappedAll,
-          incomplete: parsed.incomplete,
-          hdrErr: hdrMissing
-        });
-        setPlan(null);
-        notify("Import blocked — required header(s) missing:\n" + hdrMissing.join("\n") + "\n\nAdd a Location column (its values must not be empty). Sub-location is optional.", "error");
-        return;
-      }
+      const p = dest === "institutions" ? impBuildInstPlan(parsed.rows, labs) : impBuildPlan(parsed.rows, labs, profile.email);
       setMeta({
         file: file.name,
         rows: parsed.rows.length,
@@ -15824,7 +16063,7 @@ function ImportExcel({
         note: rowsJson.length > 700000 ? "too large to keep a re-importable copy" : ""
       });
     } catch (e) {}
-    logAudit(profile, "import." + dest, (meta ? meta.file : "") + " → " + plan.tNewVisits + " visit(s), " + plan.tNewMachines + " machine(s), " + plan.tNewLabs + " lab(s)" + (withExtras ? " (incl. extra columns)" : ""));
+    logAudit(profile, "import." + dest, (meta ? meta.file : "") + " → " + plan.tNewVisits + " visit(s), " + plan.tNewMachines + " machine(s), " + plan.tNewLabs + " lab(s)");
     notify((failed ? "Import finished with " + failed + " failure(s) — " + done + " laborator" + (done === 1 ? "y" : "ies") + " written." : "✅ Import complete — " + plan.tNewVisits + " visit(s), " + plan.tNewMachines + " machine(s), " + plan.tNewLabs + " new lab(s). Existing records were only ADDED TO — nothing was removed or replaced.") + (res.created.length ? "\nCreated: " + res.created.join(", ") : ""), failed ? "error" : "ok");
     setBusy(false);
     setPlan(null);
@@ -15832,7 +16071,6 @@ function ImportExcel({
     setRawRows(null);
     setGrids(null);
     setMapUI(null);
-    setFieldsAdded(false);
   }
   async function runInventory() {
     if (!invPlan || !invPlan.fresh.length) return;
@@ -15890,12 +16128,20 @@ function ImportExcel({
     }
     const built = impRowsFromGrid(grid, mapUI.headerRow, map);
     if (!built.rows.length) {
-      notify("No data rows found under that header row.", "error");
+      const rsn = built.reasons || {};
+      if (built.skippedByRule > 0) {
+        const parts = [];
+        if (rsn.serial) parts.push(rsn.serial + " had a blank / placeholder Serial (-, NA, TF, \u2026)");
+        if (rsn.account) parts.push(rsn.account + " were Office / FAS-Manila / Not-Applicable accounts");
+        if (rsn.isr) parts.push(rsn.isr + " carried non-service ISR markers (leave / offset / travel / TF \u2026)");
+        notify("\u26a0 All " + built.skippedByRule + " row(s) under that header were excluded by rule \u2014 " + parts.join("; ") + ".", "error");
+      } else {
+        notify("No data rows found under that header row \u2014 check the Sheet and the Header row # (the data must start on the very next row).", "error");
+      }
       return;
     }
-    const p = dest === "institutions" ? impBuildInstPlan(built.rows, labs) : impBuildPlan(built.rows, labs, profile.email, false);
+    const p = dest === "institutions" ? impBuildInstPlan(built.rows, labs) : impBuildPlan(built.rows, labs, profile.email);
     setRawRows(built.rows);
-    setWithExtras(false);
     setMeta({
       file: grids.file,
       rows: built.rows.length,
@@ -16099,8 +16345,16 @@ function ImportExcel({
     onChange: e => {
       const s = e.target.value;
       const grid = grids.sheets[s] || [];
-      let hr = 0;
-      for (let i = 0; i < Math.min(grid.length, 25); i++) {
+      let hr = 0,
+        hb = -1;
+      for (let i = 0; i < Math.min(grid.length, 40); i++) {
+        const sc = Object.keys(impMapHeaders(grid[i] || [])).length;
+        if (sc > hb) {
+          hb = sc;
+          hr = i;
+        }
+      }
+      if (hb < 1) for (let i = 0; i < Math.min(grid.length, 40); i++) {
         if ((grid[i] || []).filter(x => String(x == null ? "" : x).trim()).length >= 2) {
           hr = i;
           break;
@@ -16155,7 +16409,8 @@ function ImportExcel({
     return /*#__PURE__*/React.createElement("div", {
       key: ci,
       style: {
-        display: "flex",
+        display: "grid",
+        gridTemplateColumns: "minmax(150px, 1.3fr) minmax(100px, 1fr) 210px",
         alignItems: "center",
         gap: 8,
         padding: "3px 0",
@@ -16163,7 +16418,6 @@ function ImportExcel({
       }
     }, /*#__PURE__*/React.createElement("span", {
       style: {
-        minWidth: 170,
         fontWeight: 700,
         overflow: "hidden",
         textOverflow: "ellipsis",
@@ -16174,7 +16428,6 @@ function ImportExcel({
       style: {
         color: "var(--c-text5)",
         fontSize: 11,
-        minWidth: 110,
         overflow: "hidden",
         textOverflow: "ellipsis",
         whiteSpace: "nowrap"
@@ -16185,7 +16438,8 @@ function ImportExcel({
         ...inputSt(),
         padding: "4px 8px",
         fontSize: 12,
-        maxWidth: 190
+        width: "100%",
+        boxSizing: "border-box"
       },
       value: mapUI.assigns[ci] || "ignore",
       onChange: e => setMapUI({
@@ -16197,7 +16451,7 @@ function ImportExcel({
       })
     }, /*#__PURE__*/React.createElement("option", {
       value: "ignore"
-    }, "— keep as extra column —"), [["srcTimestamp", "Timestamp"], ["engineer", "Name (Engineer)"], ["engineer2", "Name 2"], ["engineer3", "Name 3"], ["type", "Activity/Job type"], ["supportType", "Support type"], ["lab", "Account / Laboratory"], ["brand", "Brand"], ["instrument", "Instrument"], ["serial", "Serial number"], ["isr", "ISR no."], ["dtReported", "Date & Time reported"], ["dtDeparture", "Date & Time of Departure"], ["dtArrivalAccount", "Date & Time of Arrival to Account"], ["dtWorkStarted", "Date & Time work started"], ["dtWorkEnded", "Date & Time work ended"], ["dtArrivalHome", "Date & Time of Arrival to Home"], ["problemDesc", "Problem Description"], ["systemCondition", "System Condition"], ["status", "Instrument Status"], ["recommendation", "Recommendation"], ["endorsedTo", "Endorsed to"], ["contactEmail", "Contact E-mail"], ["contactNo", "Contact Number"], ["priority", "Priority"], ["remarks", "Description of Work"], ["softwareVersion", "Software Version"], ["firmwareVersion", "Firmware Version"], ["location", "Location / Region"], ["subRegion", "Sub-region"], ["installDate", "Install date"]].map(([v, l]) => /*#__PURE__*/React.createElement("option", {
+    }, "— ignore this column —"), [["srcTimestamp", "Timestamp"], ["engineer", "Name (Engineer)"], ["engineer2", "Name 2"], ["engineer3", "Name 3"], ["type", "Activity/Job type"], ["supportType", "Support type"], ["lab", "Account / Laboratory"], ["brand", "Brand"], ["instrument", "Instrument"], ["serial", "Serial number"], ["isr", "ISR no."], ["dtReported", "Date & Time reported"], ["dtDeparture", "Date & Time of Departure"], ["dtArrivalAccount", "Date & Time of Arrival to Account"], ["dtWorkStarted", "Date & Time work started"], ["dtWorkEnded", "Date & Time work ended"], ["dtArrivalHome", "Date & Time of Arrival to Home"], ["problemDesc", "Problem Description"], ["systemCondition", "System Condition"], ["status", "Instrument Status"], ["recommendation", "Recommendation"], ["endorsedTo", "Endorsed to"], ["contactEmail", "Contact E-mail"], ["contactNo", "Contact Number"], ["priority", "Priority"], ["remarks", "Description of Work"], ["softwareVersion", "Software Version"], ["firmwareVersion", "Firmware Version"], ["location", "Location / Region"], ["subRegion", "Sub-region"], ["installDate", "Install date"]].map(([v, l]) => /*#__PURE__*/React.createElement("option", {
       key: v,
       value: v
     }, l))));
@@ -16216,27 +16470,7 @@ function ImportExcel({
       setMapUI(null);
       setGrids(null);
     }
-  }, "Cancel"))), meta && meta.hdrErr && /*#__PURE__*/React.createElement("div", {
-    style: {
-      marginTop: 10,
-      padding: "10px 12px",
-      borderRadius: 8,
-      border: "1px solid #f87171",
-      color: "#fca5a5",
-      fontSize: 12
-    }
-  }, /*#__PURE__*/React.createElement("b", null, "⛔ Import blocked — required header(s) missing:"), /*#__PURE__*/React.createElement("div", {
-    style: {
-      marginTop: 4
-    }
-  }, meta.hdrErr.map((h, i2) => /*#__PURE__*/React.createElement("div", {
-    key: i2
-  }, "• ", h))), /*#__PURE__*/React.createElement("div", {
-    style: {
-      marginTop: 6,
-      color: "var(--c-text4)"
-    }
-  }, "Every sheet needs a ", /*#__PURE__*/React.createElement("b", null, "Location"), " and a ", /*#__PURE__*/React.createElement("b", null, "Sub-location"), " column. Location values must not be empty; Sub-location may be. Fix the file and choose it again.")), plan && meta && /*#__PURE__*/React.createElement("div", {
+  }, "Cancel"))), plan && meta && /*#__PURE__*/React.createElement("div", {
     style: {
       marginTop: 12,
       padding: 12,
@@ -16268,94 +16502,7 @@ function ImportExcel({
     style: {
       color: "#f59e0b"
     }
-  }, meta.skipped), " row(s) excluded by rule (placeholder serial, blank Location, or Office / FAS - Manila / Not Applicable account)") : null, " — ", /*#__PURE__*/React.createElement("b", null, plan.tNewVisits, " + ", plan.tDupes, " = ", plan.tNewVisits + plan.tDupes), plan.tNewVisits + plan.tDupes === meta.rows ? " ✓ every row accounted for" : " (rows routed by serial to existing machines are counted where they land)", plan.tHealed ? /*#__PURE__*/React.createElement(React.Fragment, null, /*#__PURE__*/React.createElement("br", null), "🩹 ", /*#__PURE__*/React.createElement("b", null, plan.tHealed), " previously-imported visit(s) will be repaired — their dates filled from their Timestamps, so installation dates appear.") : null), (meta.unmapped || []).length > 0 && /*#__PURE__*/React.createElement("div", {
-    style: {
-      marginTop: 8,
-      padding: "8px 10px",
-      borderRadius: 8,
-      border: "1px dashed " + (withExtras ? "#10b981" : "#f59e0b"),
-      fontSize: 11.5
-    }
-  }, /*#__PURE__*/React.createElement("div", {
-    style: {
-      color: withExtras ? "#10b981" : skipCols ? "#94a3b8" : "#f59e0b",
-      fontWeight: 800,
-      marginBottom: 4
-    }
-  }, withExtras ? "✅ Extra columns will be imported" : skipCols ? "⏭ Extra columns will be SKIPPED — the import proceeds without them" : "⚠️ Your file has " + meta.unmapped.length + " column(s) the system doesn't have fields for:"), /*#__PURE__*/React.createElement("div", {
-    style: {
-      color: "var(--c-text3)",
-      marginBottom: 6
-    }
-  }, meta.unmapped.join(" · ")), /*#__PURE__*/React.createElement("div", {
-    style: {
-      display: "flex",
-      gap: 8,
-      flexWrap: "wrap"
-    }
-  }, !withExtras ? /*#__PURE__*/React.createElement("button", {
-    style: btnSt("#f59e0b", "#1a1a1a"),
-    onClick: () => {
-      const p = impBuildPlan(rawRows, labs, profile.email, true);
-      setWithExtras(true);
-      setSkipCols(false);
-      setPlan(p);
-    }
-  }, "➕ Add these missing columns to the visits") : /*#__PURE__*/React.createElement("button", {
-    style: btnSt("var(--c-border)", "var(--c-text2)"),
-    onClick: () => {
-      const p = impBuildPlan(rawRows, labs, profile.email, false);
-      setWithExtras(false);
-      setPlan(p);
-    }
-  }, "↩ Undo — don't add the columns"), !withExtras && !skipCols && /*#__PURE__*/React.createElement("button", {
-    title: "Import WITHOUT these columns — their values are simply left out",
-    style: btnSt("var(--c-border)", "var(--c-text2)"),
-    onClick: () => {
-      const p = impBuildPlan(rawRows, labs, profile.email, false);
-      setSkipCols(true);
-      setWithExtras(false);
-      setPlan(p);
-    }
-  }, "⏭ Skip adding columns to visits"), !fieldsAdded ? /*#__PURE__*/React.createElement("button", {
-    title: "Adds these as permanent input fields on the + Visit form, so future manual visits can fill them too",
-    style: btnSt("var(--c-border)", "#38bdf8"),
-    onClick: async () => {
-      if (!confirm("Add " + meta.unmapped.length + " new input field(s) to the Visit form for everyone?\n\n" + meta.unmapped.join(", ") + "\n\nYou can hide them later by editing config/catalog in the console.")) return;
-      try {
-        await db.doc("config/catalog").set({
-          visitFields: firebase.firestore.FieldValue.arrayUnion(...meta.unmapped)
-        }, {
-          merge: true
-        });
-        setFieldsAdded(true);
-        notify("🧩 The Visit form now has these fields — every future manual visit can fill them in.", "ok");
-      } catch (e) {
-        notify("Could not save the fields: " + e.message, "error");
-      }
-    }
-  }, "🧩 Also add them as input fields on the Visit form") : /*#__PURE__*/React.createElement("span", {
-    style: {
-      color: "#10b981",
-      fontWeight: 700,
-      alignSelf: "center"
-    }
-  }, "🧩 Added to the Visit form ✓"), !fieldsAdded && !skipFields && /*#__PURE__*/React.createElement("button", {
-    title: "Do NOT add these as Visit-form input fields",
-    style: btnSt("var(--c-border)", "var(--c-text2)"),
-    onClick: () => setSkipFields(true)
-  }, "⏭ Skip adding as Visit-form fields"), skipFields && !fieldsAdded && /*#__PURE__*/React.createElement("span", {
-    style: {
-      color: "#94a3b8",
-      fontWeight: 700,
-      alignSelf: "center"
-    }
-  }, "⏭ Form fields skipped")), /*#__PURE__*/React.createElement("div", {
-    style: {
-      color: "var(--c-text5)",
-      marginTop: 6
-    }
-  }, "Values are saved on each visit and appear with the remarks everywhere (Visits tab, laboratory log, ⬇ Download).")), /*#__PURE__*/React.createElement("div", {
+  }, meta.skipped), " row(s) excluded by rule (placeholder serial, blank Location, or Office / FAS - Manila / Not Applicable account)") : null, " — ", /*#__PURE__*/React.createElement("b", null, plan.tNewVisits, " + ", plan.tDupes, " = ", plan.tNewVisits + plan.tDupes), plan.tNewVisits + plan.tDupes === meta.rows ? " ✓ every row accounted for" : " (rows routed by serial to existing machines are counted where they land)", plan.tHealed ? /*#__PURE__*/React.createElement(React.Fragment, null, /*#__PURE__*/React.createElement("br", null), "🩹 ", /*#__PURE__*/React.createElement("b", null, plan.tHealed), " previously-imported visit(s) will be repaired — their dates filled from their Timestamps, so installation dates appear.") : null), /*#__PURE__*/React.createElement("div", {
     style: {
       maxHeight: 150,
       overflowY: "auto",
@@ -16944,7 +17091,7 @@ function DangerZone({
     }
   }, "Inventory, spare parts and overtime land in the Bin as one restorable entry each. The audit trail is different: security rules make audit entries immutable, so deleting them is ", /*#__PURE__*/React.createElement("b", null, "permanent"), " — and the deletion itself is recorded as a fresh audit entry.")));
 }
-const TAB_ANIMS = [["default", "Default", "the system default (Drift for content, Elastic for tabs)"], ["none", "None", "no animation at all"], ["bounce", "Bounce", "springs up with a playful overshoot"], ["bubble", "Bubble", "inflates softly like a bubble"], ["zoom", "Zoom", "zooms in and settles"], ["slide", "Slide", "glides in from the left"], ["fade", "Fade", "a clean, calm cross-fade"], ["flip", "Flip", "flips forward in 3-D"], ["drop", "Drop", "falls from above and lands with a bounce"], ["swing", "Swing", "swings in from the top corner"], ["blur", "Blur", "sharpens into focus"], ["wipe", "Wipe", "reveals left-to-right like a curtain"], ["spin", "Spin", "twists in with a quick quarter-turn"], ["elastic", "Elastic", "stretches like jelly and snaps into shape"], ["rise", "Rise", "rises smoothly from below"], ["skew", "Skew", "slants in and straightens up"], ["glow", "Glow", "fades in with a bright flash"], ["curtain", "Curtain", "unrolls from the top like a curtain"], ["sweep", "Sweep", "sweeps in with a diagonal wipe"], ["spiral", "Spiral", "spins inward and settles"], ["newspaper", "Newspaper", "whirls in like a spinning headline"], ["stretch", "Stretch", "expands out from a horizontal line"], ["glitch", "Glitch", "snaps in with a digital jitter"], ["fold", "Fold", "folds down like a sheet of paper"], ["iris", "Iris", "opens from the center like a camera iris"], ["shutter", "Shutter", "opens like horizontal shutters"], ["tumble", "Tumble", "tumbles in with a rolling spin"], ["pop", "Pop", "pops in with a snappy overshoot"], ["drift", "Drift", "drifts in gently from the corner"], ["wave", "Wave", "sways in and settles like a wave"]];
+const TAB_ANIMS = [["default", "Default", "colored highlight + slight zoom when hovering tabs, buttons, cards and table headers; a soft zoom-in on switch"], ["none", "None", "no animation at all"], ["bounce", "Bounce", "springs up with a playful overshoot"], ["bubble", "Bubble", "inflates softly like a bubble"], ["zoom", "Zoom", "zooms in and settles"], ["slide", "Slide", "glides in from the left"], ["fade", "Fade", "a clean, calm cross-fade"], ["flip", "Flip", "flips forward in 3-D"], ["drop", "Drop", "falls from above and lands with a bounce"], ["swing", "Swing", "swings in from the top corner"], ["blur", "Blur", "sharpens into focus"], ["wipe", "Wipe", "reveals left-to-right like a curtain"], ["spin", "Spin", "twists in with a quick quarter-turn"], ["elastic", "Elastic", "stretches like jelly and snaps into shape"], ["rise", "Rise", "rises smoothly from below"], ["skew", "Skew", "slants in and straightens up"], ["glow", "Glow", "fades in with a bright flash"], ["curtain", "Curtain", "unrolls from the top like a curtain"], ["sweep", "Sweep", "sweeps in with a diagonal wipe"], ["spiral", "Spiral", "spins inward and settles"], ["newspaper", "Newspaper", "whirls in like a spinning headline"], ["stretch", "Stretch", "expands out from a horizontal line"], ["glitch", "Glitch", "snaps in with a digital jitter"], ["fold", "Fold", "folds down like a sheet of paper"], ["iris", "Iris", "opens from the center like a camera iris"], ["shutter", "Shutter", "opens like horizontal shutters"], ["tumble", "Tumble", "tumbles in with a rolling spin"], ["pop", "Pop", "pops in with a snappy overshoot"], ["drift", "Drift", "drifts in gently from the corner"], ["wave", "Wave", "sways in and settles like a wave"]];
 // "default" resolves to the system default style.
 // PER-USER: reads the local ui preference object — never the shared catalog.
 // PER-TARGET animations: the tab CONTENT and the tab BUTTONS each keep their
@@ -16956,8 +17103,8 @@ function tabAnimPrefs(ui) {
   var t = ui && ui.tabs || "";
   if (!c || !t) {
     // Only a REAL earlier style choice is carried over. An old "Default" + scope
-    // pair is NOT a choice, so those users get the current rule: Elastic on the
-    // tab buttons, Drift on the tab content.
+    // pair is NOT a choice, so those users get the current rule: the "Default"
+    // style (hover highlight + zoom) on both targets.
     var st = ui && ui.style && ui.style !== "default" ? ui.style : "";
     var sc = ui && ui.scope || "";
     if (st) {
@@ -16965,7 +17112,7 @@ function tabAnimPrefs(ui) {
       if (!t) t = sc === "content" ? "none" : st;
     }
   }
-  return { content: c || "drift", tabs: t || "elastic" };
+  return { content: c || "default", tabs: t || "default" };
 }
 function tabAnimStyle(ui, target) {
   var p = tabAnimPrefs(ui);
@@ -16979,7 +17126,7 @@ function AnimationsCard({
   // the server, nothing is audited, and no account details are involved.
   // EACH TARGET KEEPS ITS OWN ANIMATION. Choose "Apply to" first: the ✓ on the
   // style row always sits on the animation that target is actually using, so a
-  // glance tells you what is set (defaults: Drift content · Elastic buttons).
+  // glance tells you what is set (default: the "Default" hover style on both).
   const applied = tabAnimPrefs(uiAnim);
   const [target, setTarget] = useState("content");
   const [pendC, setPendC] = useState(null);
@@ -16995,7 +17142,7 @@ function AnimationsCard({
   const animDesc = id => (TAB_ANIMS.find(a => a[0] === id) || TAB_ANIMS[0])[2];
   const pair = (c, t) => "\ud83d\uddd4 Tab content: " + animLabel(c) + " \u00b7 \ud83d\udcd1 Tab buttons: " + animLabel(t);
   const pick = id => {
-    const resolve = tt => id === "default" ? tt === "tabs" ? "elastic" : "drift" : id;
+    const resolve = tt => id;
     if (target !== "tabs") setPendC(resolve("content"));
     if (target !== "content") setPendT(resolve("tabs"));
     setNonce(n => n + 1);
@@ -19777,6 +19924,16 @@ function App() {
     } catch (e) {}
     return next;
   });
+  // The "Default" animation style = hover highlight + zoom. Its CSS activates
+  // through these body classes, so the Animations choice truly governs it.
+  useEffect(() => {
+    const b = document.body;
+    Array.from(b.classList).forEach(c => {
+      if (c.indexOf("ib-anim-tabs-") === 0 || c.indexOf("ib-anim-content-") === 0) b.classList.remove(c);
+    });
+    b.classList.add("ib-anim-tabs-" + tabAnimStyle(uiAnim, "tabs"));
+    b.classList.add("ib-anim-content-" + tabAnimStyle(uiAnim, "content"));
+  }, [uiAnim]);
   const [toast, setToast] = useState(null);
   const [theme, setTheme] = useState(() => {
     try {
