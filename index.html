@@ -295,7 +295,10 @@
        No will-change anywhere: layers re-rasterise at the zoomed size, so
        text stays crisp. ═══ */
     @media (hover: hover) and (pointer: fine) {
-      :root { --ib-hl: color-mix(in srgb, var(--c-key) 15%, transparent); }
+      :root {
+        --ib-hl: color-mix(in srgb, var(--c-key) 15%, transparent);
+        --ib-hlc: color-mix(in srgb, var(--c-key) 24%, transparent);
+      }
 
       /* ── Tab buttons (the rail / bottom bar) ── */
       body.ib-anim-tabs-default .ib-nav-btn {
@@ -319,7 +322,7 @@
         transition: transform .15s ease, box-shadow .15s ease, background-image .15s ease;
       }
       body.ib-anim-content-default .ib-mainarea button:hover {
-        background-image: linear-gradient(0deg, var(--ib-hl), var(--ib-hl));
+        background-image: linear-gradient(0deg, var(--ib-hl), var(--ib-hl)) !important;
         transform: scale(1.06);
         box-shadow: 0 0 0 1px var(--c-key), 0 6px 14px rgba(0, 0, 0, .18);
         position: relative;
@@ -332,7 +335,7 @@
         transition: transform .15s ease, background-image .15s ease;
       }
       body.ib-anim-content-default .ib-mainarea th:hover {
-        background-image: linear-gradient(0deg, var(--ib-hl), var(--ib-hl));
+        background-image: linear-gradient(0deg, var(--ib-hl), var(--ib-hl)) !important;
         transform: scale(1.05);
         position: relative;
         z-index: 1;
@@ -344,8 +347,8 @@
         transition: transform .16s ease, box-shadow .16s ease,
                     background-image .16s ease, border-color .16s ease;
       }
-      body.ib-anim-content-default .ib-mainarea div[style*="cursor: pointer"]:hover {
-        background-image: linear-gradient(0deg, var(--ib-hl), var(--ib-hl));
+      body.ib-anim-content-default .ib-mainarea div[style*="cursor: pointer"]:not(.ib-tab-settings *):hover {
+        background-image: linear-gradient(0deg, var(--ib-hl), var(--ib-hl)) !important;
         transform: scale(1.015);
         box-shadow: 0 0 0 1px var(--c-key), 0 8px 18px rgba(0, 0, 0, .16);
         position: relative;
@@ -355,20 +358,35 @@
       /* ── Leaf cards (chart cards, analytics cards, PM status/compliance):
             a calm colored ring + tint, no zoom, so large table cards stay
             steady. :has() keeps container cards out. ── */
-      body.ib-anim-content-default .ib-mainarea div[style*="background: var(--c-card)"]:not(.ib-modal-card):not(:has(div[style*="background: var(--c-card)"])):hover {
-        background-image: linear-gradient(0deg, var(--ib-hl), var(--ib-hl));
+      body.ib-anim-content-default .ib-mainarea div[style*="background: var(--c-card)"]:not(.ib-modal-card):not(.ib-labcard):not(.ib-tab-settings *):not(:has(table)):not(:has(div[style*="background: var(--c-card)"])):hover {
+        background-image: linear-gradient(0deg, var(--ib-hl), var(--ib-hl)) !important;
         box-shadow: 0 0 0 1px var(--c-key);
+      }
+
+      /* ── Overtime table rows ── */
+      body.ib-anim-content-default .ib-otrow:hover > td {
+        background-image: linear-gradient(0deg, var(--ib-hl), var(--ib-hl)) !important;
+      }
+
+      /* ── SETTINGS sub-tabs: no whole-area glow. Clickable list rows
+            (Employees, Users, Administrators, …) get the calm LOGS-style
+            ROW tint only — no zoom, no ring, no card wash. ── */
+      body.ib-anim-content-default .ib-tab-settings div[style*="cursor: pointer"]:hover {
+        background-image: linear-gradient(0deg, var(--ib-hl), var(--ib-hl)) !important;
       }
 
       /* ── Institution cards keep the full treatment ── */
       body.ib-anim-content-default .ib-labcard {
-        transition: transform .18s ease, box-shadow .18s ease, border-color .18s ease;
+        transition: transform .18s ease, box-shadow .18s ease,
+                    background-image .18s ease, border-color .18s ease;
         backface-visibility: hidden;
       }
+      /* The WHOLE CARD lights up — a key-coloured wash over its own
+         background, not merely an outline. */
       body.ib-anim-content-default .ib-labcard:hover {
         transform: scale(1.02);
-        border-color: var(--c-key) !important;
-        box-shadow: 0 12px 28px rgba(0, 0, 0, .25), 0 0 0 2px var(--c-key);
+        background-image: linear-gradient(0deg, var(--ib-hlc), var(--ib-hlc)) !important;
+        box-shadow: 0 12px 28px rgba(0, 0, 0, .25);
         z-index: 1;
       }
       body.ib-anim-content-default .ib-labcard:active { transform: scale(1.008); }
@@ -471,7 +489,7 @@
 (function () {
   var okLibs = (typeof firebase !== "undefined") && (typeof React !== "undefined") && (typeof ReactDOM !== "undefined") && (typeof XLSX !== "undefined");
   window.__IBASE_LIBS_OK = okLibs;
-  window.__IBASE_BUILD = "v291";
+  window.__IBASE_BUILD = "v297";
   if (!okLibs) {
     document.getElementById("root").innerHTML =
       "<div style='max-width:520px;margin:90px auto;padding:30px;background:#16181d;border:1px solid #f8717155;border-radius:16px;font-family:system-ui,sans-serif;color:#e5e7eb;text-align:center'>" +
@@ -3551,7 +3569,7 @@ function Login({
       letterSpacing: 2,
       textTransform: "uppercase"
     }
-  }, "version: v291"), !dept ? /*#__PURE__*/React.createElement("div", null,
+  }, "version: v297"), !dept ? /*#__PURE__*/React.createElement("div", null,
     /*#__PURE__*/React.createElement("div", { style: { fontSize: 12.5, color: "var(--c-text3)", textAlign: "center", marginBottom: 14 } }, "Select your department or module to continue"),
     /*#__PURE__*/React.createElement("div", { style: { display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 } },
       (depts || []).filter(d => !d.disabled).map((d, i) => /*#__PURE__*/React.createElement("button", { key: (d.id || d.name) + i, onClick: () => pickDept(d.name), style: { background: "var(--c-bg)", border: "1px solid var(--c-border)", borderRadius: 12, padding: "16px 10px", cursor: "pointer", display: "flex", flexDirection: "column", alignItems: "center", gap: 8, color: "var(--c-text2)" } },
@@ -12403,6 +12421,58 @@ function OvertimeTab({
   const [isrView, setIsrView] = useState(null); // ISR → full visit details (movable popup)
   const [otView, setOtView] = useState("main"); // "main" | "rules" — the General Rules sub-tab
   const [otSort, setOtSort] = useState({ col: "Date", dir: -1 }); // headers sortable; default = LATEST date first
+    // ── The manager's "All Employees" table: the very same mechanics
+    // (resize, drag-to-reorder, show/hide, per-user persistence) + click-sort.
+    const OTM_KEY = "ibase_tbl_otmgr";
+    const otmLoad = () => {
+      try {
+        return JSON.parse(localStorage.getItem(OTM_KEY) || "{}");
+      } catch (e) {
+        return {};
+      }
+    };
+    const [otmCol, setOtmCol] = useState(otmLoad);
+    const otmSave = up => setOtmCol(s2 => {
+      const n = typeof up === "function" ? up(s2) : up;
+      try {
+        localStorage.setItem(OTM_KEY, JSON.stringify(n));
+      } catch (e) {}
+      return n;
+    });
+    const otmDragCol = React.useRef(null);
+    const [otmColsOpen, setOtmColsOpen] = useState(false);
+    const [otmSort, setOtmSort] = useState(null);
+    const OTM_COLS = [{ id: "emp", label: "Employee", w: 180 }, { id: "days", label: "Days", w: 70 }, { id: "reg", label: "Regular Hrs", w: 110 }, { id: "ot", label: "OT Hrs", w: 100 }, { id: "cash", label: "\ud83d\udcb5 Approved Cash", w: 150 }, { id: "off", label: "\ud83d\udd01 Approved Offset", w: 155 }, { id: "pend", label: "\u23f3 Pending", w: 110 }, { id: "view", label: "View days", w: 110 }];
+    const otmDefIds = OTM_COLS.map(c => c.id);
+    const otmOrder = [...(otmCol.order || []).filter(x => otmDefIds.includes(x)), ...otmDefIds.filter(x => !(otmCol.order || []).includes(x))];
+    const otmHidden = otmCol.hidden || {};
+    const otmVis = otmOrder.filter(cid => !otmHidden[cid]);
+    const otmColDef = cid => OTM_COLS.find(c => c.id === cid);
+    const otmColW = cid => otmCol.w && otmCol.w[cid] || (otmColDef(cid) || {}).w || 120;
+    function otmStartResize(e, cid) {
+      e.preventDefault();
+      e.stopPropagation();
+      const startX = e.clientX,
+        startW = otmColW(cid);
+      const move = ev => otmSave(s2 => ({ ...s2, w: { ...(s2.w || {}), [cid]: Math.max(46, startW + (ev.clientX - startX)) } }));
+      const up = () => {
+        window.removeEventListener("mousemove", move);
+        window.removeEventListener("mouseup", up);
+      };
+      window.addEventListener("mousemove", move);
+      window.addEventListener("mouseup", up);
+    }
+    const otmVal = (cid, r) => cid === "emp" ? r.n : cid === "days" ? r.d : cid === "reg" ? r.t.regular : cid === "ot" ? r.t.ot : cid === "cash" ? r.t.apCash : cid === "off" ? r.t.apOffset : cid === "pend" ? r.t.pending : "";
+    const otmCell = (cid, r) => {
+      if (cid === "emp") return /*#__PURE__*/React.createElement("td", { key: cid, style: { ...tdSt, fontWeight: 700, color: "var(--c-key)" } }, r.n);
+      if (cid === "days") return /*#__PURE__*/React.createElement("td", { key: cid, style: tdSt }, r.d);
+      if (cid === "reg") return /*#__PURE__*/React.createElement("td", { key: cid, style: { ...tdSt, fontFamily: "monospace" } }, r.t.regular.toFixed(2));
+      if (cid === "ot") return /*#__PURE__*/React.createElement("td", { key: cid, style: { ...tdSt, fontFamily: "monospace", fontWeight: 800, color: r.t.ot > 0 ? "#fbbf24" : "var(--c-text5)" } }, r.t.ot.toFixed(2));
+      if (cid === "cash") return /*#__PURE__*/React.createElement("td", { key: cid, style: { ...tdSt, fontFamily: "monospace", color: r.t.apCash > 0 ? "#34d399" : "var(--c-text5)" } }, r.t.apCash.toFixed(2));
+      if (cid === "off") return /*#__PURE__*/React.createElement("td", { key: cid, style: { ...tdSt, fontFamily: "monospace", color: r.t.apOffset > 0 ? "#a78bfa" : "var(--c-text5)" } }, r.t.apOffset.toFixed(2));
+      if (cid === "pend") return /*#__PURE__*/React.createElement("td", { key: cid, style: { ...tdSt, fontFamily: "monospace", fontWeight: 700, color: r.t.pending > 0 ? "#fbbf24" : "var(--c-text5)" } }, r.t.pending);
+      return /*#__PURE__*/React.createElement("td", { key: cid, style: tdSt }, /*#__PURE__*/React.createElement("button", { style: { ...btnSt("var(--c-border)", "var(--c-text2)"), padding: "4px 10px", fontSize: 11 }, onClick: () => setSelectedEng(r.n) }, "View days"));
+    };
   const [otForm, setOtForm] = useState(null); // the OVERTIME FORM (standalone or pre-filing)
   const otHist = useHistory(() => (otForm ? otForm.f : null), snap => { if (snap != null) setOtForm(x => x ? { ...x, f: snap } : x); });
   const otOnFocusCapture = () => { if (otForm) otHist.record(); };
@@ -13329,6 +13399,76 @@ function OvertimeTab({
       return c2 !== 0 ? otSort.dir * c2 : String(b2.date || "").localeCompare(String(a2.date || ""));
     }), [days, otSort, appMap]);
     const [openDays, setOpenDays] = useState({});
+    // ── Column layout for the OT table: resizable, re-orderable, hideable —
+    // the same mechanics (and the same localStorage convention) as every
+    // other table in the app. Layout is per-user, per-browser.
+    const OT_KEY = "ibase_tbl_overtime";
+    const otLoad = () => {
+      try {
+        return JSON.parse(localStorage.getItem(OT_KEY) || "{}");
+      } catch (e) {
+        return {};
+      }
+    };
+    const [otCol, setOtCol] = useState(otLoad);
+    const otSave = up => setOtCol(s2 => {
+      const n = typeof up === "function" ? up(s2) : up;
+      try {
+        localStorage.setItem(OT_KEY, JSON.stringify(n));
+      } catch (e) {}
+      return n;
+    });
+    const otDragCol = React.useRef(null);
+    const [otColsOpen, setOtColsOpen] = useState(false);
+    const OT_COLS = [{ id: "Date", label: "Date", w: 150 }, { id: "Visits", label: "Visits", w: 70 }, { id: "ISR No.", label: "ISR No.", w: 130 }, { id: "Total Hrs", label: "Total Hrs", w: 90 }, { id: "Regular", label: "Regular", w: 90 }, { id: "OT Hrs", label: "OT Hrs", w: 90 }, { id: "OT Time", label: "OT Time", w: 150 }, { id: "OT Application (Cash / Offset)", label: "OT Application (Cash / Offset)", w: 220 }, { id: "Notes", label: "Notes", w: 200 }];
+    const otDefIds = OT_COLS.map(c => c.id);
+    const otOrder = [...(otCol.order || []).filter(x => otDefIds.includes(x)), ...otDefIds.filter(x => !(otCol.order || []).includes(x))];
+    const otHidden = otCol.hidden || {};
+    const otVis = otOrder.filter(cid => !otHidden[cid]);
+    const otColDef = cid => OT_COLS.find(c => c.id === cid);
+    const otColW = cid => otCol.w && otCol.w[cid] || (otColDef(cid) || {}).w || 120;
+    function otStartResize(e, cid) {
+      e.preventDefault();
+      e.stopPropagation();
+      const startX = e.clientX,
+        startW = otColW(cid);
+      const move = ev => otSave(s2 => ({ ...s2, w: { ...(s2.w || {}), [cid]: Math.max(46, startW + (ev.clientX - startX)) } }));
+      const up = () => {
+        window.removeEventListener("mousemove", move);
+        window.removeEventListener("mouseup", up);
+      };
+      window.addEventListener("mousemove", move);
+      window.addEventListener("mouseup", up);
+    }
+    // Each column renders its own cell — so hiding and re-ordering move the
+    // right content with the right header, always.
+    const otCell = (cid, d) => {
+      if (cid === "Date") return /*#__PURE__*/React.createElement("td", { key: cid, style: { ...tdSt, whiteSpace: "nowrap" } }, /*#__PURE__*/React.createElement("button", { title: "Show how this day's hours were computed", style: { background: "none", border: "none", cursor: "pointer", color: "var(--c-key)", padding: "0 6px 0 0", fontSize: 11 }, onClick: () => setOpenDays(s2 => ({ ...s2, [d.date]: !s2[d.date] })) }, openDays[d.date] ? "\u25be" : "\u25b8"), fmtDate(d.date));
+      if (cid === "Visits") return /*#__PURE__*/React.createElement("td", { key: cid, style: { ...tdSt, fontSize: 12, color: "var(--c-text3)" }, title: (d.sources || []).join(String.fromCharCode(10)) }, d.visitCount);
+      if (cid === "ISR No.") return /*#__PURE__*/React.createElement("td", { key: cid, style: { ...tdSt, fontSize: 11.5, fontFamily: "monospace", color: "var(--c-text3)" } }, d.isrNos && d.isrNos.length ? d.isrNos.map((isr2, ix2) => /*#__PURE__*/React.createElement(React.Fragment, { key: isr2 + "-" + ix2 }, ix2 ? ", " : null, /*#__PURE__*/React.createElement("button", { title: "Show everything logged under ISR " + isr2, style: { background: "none", border: "none", padding: 0, cursor: "pointer", color: "var(--c-key)", textDecoration: "underline", fontFamily: "monospace", fontSize: 11.5 }, onClick: () => setIsrView(isr2) }, isr2))) : "\u2014");
+      if (cid === "Total Hrs") return /*#__PURE__*/React.createElement("td", { key: cid, style: { ...tdSt, fontFamily: "monospace" } }, d.totalHours.toFixed(2));
+      if (cid === "Regular") return /*#__PURE__*/React.createElement("td", { key: cid, style: { ...tdSt, fontFamily: "monospace" } }, d.regularHours.toFixed(2));
+      if (cid === "OT Hrs") return /*#__PURE__*/React.createElement("td", { key: cid, style: { ...tdSt, fontFamily: "monospace", fontWeight: 800, color: d.otHours > 0 ? "#fbbf24" : "var(--c-text5)" } }, d.otHours > 0 ? otHM(d.otHours) : "\u2014");
+      if (cid === "OT Time") return /*#__PURE__*/React.createElement("td", { key: cid, style: { ...tdSt, fontSize: 11.5, whiteSpace: "nowrap", color: d.otHours > 0 ? "var(--c-text3)" : "var(--c-text5)" } }, (() => {
+        if (!(d.otHours > 0) || !d.dayEnd) return "\u2014";
+        // OT is the tail of the worked span: on ordinary weekdays it begins
+        // at 6:30 PM onwards (per the v127 rules; holidays/rest days count
+        // the whole span), so its start = end - OT hours.
+        const end = new Date(d.dayEnd);
+        const start = new Date(end.getTime() - d.otHours * 3600000);
+        const h12 = t => {
+          let h = t.getHours(),
+            m = String(t.getMinutes()).padStart(2, "0");
+          const ap = h >= 12 ? "PM" : "AM";
+          h = h % 12 || 12;
+          return h + ":" + m + " " + ap;
+        };
+        const nextDay = end.toDateString() !== start.toDateString();
+        return h12(start) + " \u2192 " + h12(end) + (nextDay ? " (+1d)" : "");
+      })());
+      if (cid === "OT Application (Cash / Offset)") return /*#__PURE__*/React.createElement("td", { key: cid, style: tdSt }, d.otHours > 0 ? /*#__PURE__*/React.createElement(OtAppCell, { engName: engName, d: d }) : /*#__PURE__*/React.createElement("span", { style: { color: "var(--c-text5)", fontSize: 11 } }, "\u2014"));
+      return /*#__PURE__*/React.createElement("td", { key: cid, style: { ...tdSt, fontSize: 11, color: "var(--c-text4)" } }, [d.holidayName, (d.sources || []).join("; ")].filter(Boolean).join(" \u00b7 ") || "");
+    };
     // the exact visits the engine used for one day — same involvement + same
     // time fields (departure||work-started → arrival-home||work-ended)
     const dayVisits = dateKey => allVisits.filter(v => {
@@ -13377,124 +13517,65 @@ function OvertimeTab({
         color: c,
         marginTop: 2
       }
-    }, v)))), /*#__PURE__*/React.createElement("table", {
+    }, v)))), /*#__PURE__*/React.createElement("div", {
+      style: { display: "flex", alignItems: "center", gap: 8, margin: "10px 0 6px", position: "relative", flexWrap: "wrap" }
+    }, /*#__PURE__*/React.createElement("div", {
+      style: { marginLeft: "auto", display: "flex", alignItems: "center", gap: 8, flexShrink: 0 }
+    }, /*#__PURE__*/React.createElement("button", {
+      title: "Show / hide columns (your view only)",
+      style: { ...btnSt(otColsOpen ? "var(--c-key)" : "var(--c-border)", otColsOpen ? "var(--c-bg)" : "var(--c-text2)"), padding: "5px 6px", fontSize: 10.5, width: 162, whiteSpace: "nowrap", textAlign: "center", boxSizing: "border-box" },
+      onClick: () => setOtColsOpen(o => !o)
+    }, "\ud83e\udde9 Show/Hide Columns" + (otOrder.some(cid => otHidden[cid]) ? " (" + otVis.length + "/" + otOrder.length + ")" : "")), /*#__PURE__*/React.createElement("button", {
+      title: "Restore default column order, widths, visibility and sorting (your view only)",
+      style: { ...btnSt("var(--c-border)", "var(--c-text2)"), padding: "5px 6px", fontSize: 10.5, width: 162, whiteSpace: "nowrap", textAlign: "center", boxSizing: "border-box" },
+      onClick: () => {
+        try {
+          localStorage.removeItem(OT_KEY);
+        } catch (e) {}
+        setOtCol({});
+        setOtColsOpen(false);
+        setOtSort({ col: "Date", dir: -1 });
+      }
+    }, "\u21ba Reset")), otColsOpen && /*#__PURE__*/React.createElement("div", {
+      style: { order: 99, flexBasis: "100%", display: "flex", flexWrap: "wrap", gap: 6, padding: "8px 10px", border: "1px solid var(--c-border)", borderRadius: 10, background: "var(--c-card)" }
+    }, otOrder.map(cid => /*#__PURE__*/React.createElement("button", {
+      key: cid,
+      onClick: () => otSave(s2 => ({ ...s2, hidden: { ...(s2.hidden || {}), [cid]: !(s2.hidden || {})[cid] } })),
+      style: { ...btnSt(otHidden[cid] ? "var(--c-border)" : "var(--c-key)", otHidden[cid] ? "var(--c-text3)" : "var(--c-bg)"), padding: "3px 9px", fontSize: 10.5 }
+    }, (otHidden[cid] ? "" : "\u2713 ") + (otColDef(cid) || {}).label)))), /*#__PURE__*/React.createElement("table", {
       style: {
         width: "100%",
         borderCollapse: "collapse"
       }
-    }, /*#__PURE__*/React.createElement("thead", null, /*#__PURE__*/React.createElement("tr", null, ["Date", "Visits", "ISR No.", "Total Hrs", "Regular", "OT Hrs", "OT Time", "OT Application (Cash / Offset)", "Notes"].map(h => /*#__PURE__*/React.createElement("th", {
-      key: h,
-      title: "Click to sort by " + h + " (click again to flip)",
-      style: { ...thSt, cursor: "pointer", userSelect: "none", whiteSpace: "nowrap" },
-      onClick: () => setOtSort(s2 => ({ col: h, dir: s2.col === h ? -s2.dir : h === "Date" ? -1 : 1 }))
-    }, h, otSort.col === h ? otSort.dir < 0 ? " ▼" : " ▲" : "")))), /*#__PURE__*/React.createElement("tbody", null, daysSorted.map(d => /*#__PURE__*/React.createElement(React.Fragment, {
+    }, /*#__PURE__*/React.createElement("thead", null, /*#__PURE__*/React.createElement("tr", null, otVis.map(cid => /*#__PURE__*/React.createElement("th", {
+      key: cid,
+      draggable: true,
+      onDragStart: () => { otDragCol.current = cid; },
+      onDragOver: e => e.preventDefault(),
+      onDrop: () => {
+        const dc = otDragCol.current;
+        otDragCol.current = null;
+        if (!dc || dc === cid) return;
+        otSave(s2 => {
+          const o = otOrder.filter(x => x !== dc);
+          o.splice(o.indexOf(cid), 0, dc);
+          return { ...s2, order: o };
+        });
+      },
+      title: "Click: sort \u00b7 Drag: move column \u00b7 Drag right edge: resize",
+      style: { ...thSt, width: otColW(cid), maxWidth: otColW(cid), minWidth: otColW(cid), cursor: "grab", userSelect: "none", whiteSpace: "nowrap", position: "relative" },
+      onClick: () => setOtSort(s2 => ({ col: cid, dir: s2.col === cid ? -s2.dir : cid === "Date" ? -1 : 1 }))
+    }, cid, otSort.col === cid ? otSort.dir < 0 ? " \u25bc" : " \u25b2" : "", /*#__PURE__*/React.createElement("span", {
+      onMouseDown: e => otStartResize(e, cid),
+      onClick: e => e.stopPropagation(),
+      draggable: false,
+      onDragStart: e => { e.preventDefault(); e.stopPropagation(); },
+      title: "Drag to resize this column",
+      style: { position: "absolute", top: 0, right: 0, width: 8, height: "100%", cursor: "col-resize", userSelect: "none" }
+    }))))), /*#__PURE__*/React.createElement("tbody", null, daysSorted.map(d => /*#__PURE__*/React.createElement(React.Fragment, {
       key: d.date
-    }, /*#__PURE__*/React.createElement("tr", null, /*#__PURE__*/React.createElement("td", {
-      style: {
-        ...tdSt,
-        whiteSpace: "nowrap"
-      }
-    }, /*#__PURE__*/React.createElement("button", {
-      title: "Show how this day's hours were computed",
-      style: {
-        background: "none",
-        border: "none",
-        cursor: "pointer",
-        color: "var(--c-key)",
-        padding: "0 6px 0 0",
-        fontSize: 11
-      },
-      onClick: () => setOpenDays(s => ({
-        ...s,
-        [d.date]: !s[d.date]
-      }))
-    }, openDays[d.date] ? "▾" : "▸"), fmtDate(d.date)), /*#__PURE__*/React.createElement("td", {
-      style: {
-        ...tdSt,
-        fontSize: 12,
-        color: "var(--c-text3)"
-      },
-      title: (d.sources || []).join(String.fromCharCode(10))
-    }, d.visitCount), /*#__PURE__*/React.createElement("td", {
-      style: {
-        ...tdSt,
-        fontSize: 11.5,
-        fontFamily: "monospace",
-        color: "var(--c-text3)"
-      }
-    }, d.isrNos && d.isrNos.length ? d.isrNos.map((isr2, ix2) => /*#__PURE__*/React.createElement(React.Fragment, {
-      key: isr2 + "-" + ix2
-    }, ix2 ? ", " : null, /*#__PURE__*/React.createElement("button", {
-      title: "Show everything logged under ISR " + isr2,
-      style: {
-        background: "none",
-        border: "none",
-        padding: 0,
-        cursor: "pointer",
-        color: "var(--c-key)",
-        textDecoration: "underline",
-        fontFamily: "monospace",
-        fontSize: 11.5
-      },
-      onClick: () => setIsrView(isr2)
-    }, isr2))) : "—"), /*#__PURE__*/React.createElement("td", {
-      style: {
-        ...tdSt,
-        fontFamily: "monospace"
-      }
-    }, d.totalHours.toFixed(2)), /*#__PURE__*/React.createElement("td", {
-      style: {
-        ...tdSt,
-        fontFamily: "monospace"
-      }
-    }, d.regularHours.toFixed(2)), /*#__PURE__*/React.createElement("td", {
-      style: {
-        ...tdSt,
-        fontSize: 11.5,
-        whiteSpace: "nowrap",
-        color: d.otHours > 0 ? "var(--c-text3)" : "var(--c-text5)"
-      }
-    }, (() => {
-      if (!(d.otHours > 0) || !d.dayEnd) return "—";
-      // OT is the tail of the worked span: on ordinary weekdays it begins
-      // at 6:30 PM onwards (per the v127 rules; holidays/rest days count
-      // the whole span), so its start = end − OT hours.
-      const end = new Date(d.dayEnd);
-      const start = new Date(end.getTime() - d.otHours * 3600000);
-      const h12 = t => {
-        let h = t.getHours(),
-          m = String(t.getMinutes()).padStart(2, "0");
-        const ap = h >= 12 ? "PM" : "AM";
-        h = h % 12 || 12;
-        return h + ":" + m + " " + ap;
-      };
-      const nextDay = end.toDateString() !== start.toDateString();
-      return h12(start) + " → " + h12(end) + (nextDay ? " (+1d)" : "");
-    })()), /*#__PURE__*/React.createElement("td", {
-      style: {
-        ...tdSt,
-        fontFamily: "monospace",
-        fontWeight: 800,
-        color: d.otHours > 0 ? "#fbbf24" : "var(--c-text5)"
-      }
-    }, d.otHours > 0 ? otHM(d.otHours) : "—"), /*#__PURE__*/React.createElement("td", {
-      style: tdSt
-    }, d.otHours > 0 ? /*#__PURE__*/React.createElement(OtAppCell, {
-      engName: engName,
-      d: d
-    }) : /*#__PURE__*/React.createElement("span", {
-      style: {
-        color: "var(--c-text5)",
-        fontSize: 11
-      }
-    }, "—")), /*#__PURE__*/React.createElement("td", {
-      style: {
-        ...tdSt,
-        fontSize: 11,
-        color: "var(--c-text4)"
-      }
-    }, [d.holidayName, (d.sources || []).join("; ")].filter(Boolean).join(" · ") || "")), openDays[d.date] && /*#__PURE__*/React.createElement("tr", null, /*#__PURE__*/React.createElement("td", {
-      colSpan: 9,
+    }, /*#__PURE__*/React.createElement("tr", { className: "ib-otrow" }, otVis.map(cid => otCell(cid, d))), openDays[d.date] && /*#__PURE__*/React.createElement("tr", null, /*#__PURE__*/React.createElement("td", {
+      colSpan: otVis.length,
       style: {
         ...tdSt,
         background: "var(--c-card2)",
@@ -13971,77 +14052,80 @@ function OvertimeTab({
   }, "Your account isn't linked to an employee name yet — ask an administrator to set your \"Linked employee name\" so your overtime shows here.")), selectedEng === "__all__" && /*#__PURE__*/React.createElement("div", {
     style: cardSt
   }, /*#__PURE__*/React.createElement("div", {
+    style: { display: "flex", alignItems: "center", gap: 8, marginBottom: 10, flexWrap: "wrap", position: "relative" }
+  }, /*#__PURE__*/React.createElement("div", {
     style: {
       fontSize: 12,
       fontWeight: 800,
       color: "var(--c-text4)",
-      textTransform: "uppercase",
-      marginBottom: 10
+      textTransform: "uppercase"
     }
-  }, "All Employees — ", periodLabel), /*#__PURE__*/React.createElement("table", {
+  }, "All Employees — ", periodLabel), /*#__PURE__*/React.createElement("div", {
+    style: { marginLeft: "auto", display: "flex", alignItems: "center", gap: 8, flexShrink: 0 }
+  }, /*#__PURE__*/React.createElement("button", {
+    title: "Show / hide columns (your view only)",
+    style: { ...btnSt(otmColsOpen ? "var(--c-key)" : "var(--c-border)", otmColsOpen ? "var(--c-bg)" : "var(--c-text2)"), padding: "5px 6px", fontSize: 10.5, width: 162, whiteSpace: "nowrap", textAlign: "center", boxSizing: "border-box" },
+    onClick: () => setOtmColsOpen(o => !o)
+  }, "\ud83e\udde9 Show/Hide Columns" + (otmOrder.some(cid => otmHidden[cid]) ? " (" + otmVis.length + "/" + otmOrder.length + ")" : "")), /*#__PURE__*/React.createElement("button", {
+    title: "Restore default column order, widths, visibility and sorting (your view only)",
+    style: { ...btnSt("var(--c-border)", "var(--c-text2)"), padding: "5px 6px", fontSize: 10.5, width: 162, whiteSpace: "nowrap", textAlign: "center", boxSizing: "border-box" },
+    onClick: () => {
+      try {
+        localStorage.removeItem(OTM_KEY);
+      } catch (e) {}
+      setOtmCol({});
+      setOtmColsOpen(false);
+      setOtmSort(null);
+    }
+  }, "\u21ba Reset")), otmColsOpen && /*#__PURE__*/React.createElement("div", {
+    style: { order: 99, flexBasis: "100%", display: "flex", flexWrap: "wrap", gap: 6, padding: "8px 10px", border: "1px solid var(--c-border)", borderRadius: 10, background: "var(--c-card)" }
+  }, otmOrder.map(cid => /*#__PURE__*/React.createElement("button", {
+    key: cid,
+    onClick: () => otmSave(s2 => ({ ...s2, hidden: { ...(s2.hidden || {}), [cid]: !(s2.hidden || {})[cid] } })),
+    style: { ...btnSt(otmHidden[cid] ? "var(--c-border)" : "var(--c-key)", otmHidden[cid] ? "var(--c-text3)" : "var(--c-bg)"), padding: "3px 9px", fontSize: 10.5 }
+  }, (otmHidden[cid] ? "" : "\u2713 ") + (otmColDef(cid) || {}).label)))), /*#__PURE__*/React.createElement("table", {
     style: {
       width: "100%",
       borderCollapse: "collapse"
     }
-  }, /*#__PURE__*/React.createElement("thead", null, /*#__PURE__*/React.createElement("tr", null, ["Employee", "Days", "Regular Hrs", "OT Hrs", "💵 Approved Cash", "🔁 Approved Offset", "⏳ Pending", ""].map(h => /*#__PURE__*/React.createElement("th", {
-    key: h,
-    style: thSt
-  }, h)))), /*#__PURE__*/React.createElement("tbody", null, engineerNames.map(n => {
-    const t = totalsFor(n),
-      dCount = daysInPeriod(n).length;
-    if (!dCount) return null;
-    return /*#__PURE__*/React.createElement("tr", {
-      key: n
-    }, /*#__PURE__*/React.createElement("td", {
-      style: {
-        ...tdSt,
-        fontWeight: 700,
-        color: "var(--c-key)"
-      }
-    }, n), /*#__PURE__*/React.createElement("td", {
-      style: tdSt
-    }, dCount), /*#__PURE__*/React.createElement("td", {
-      style: {
-        ...tdSt,
-        fontFamily: "monospace"
-      }
-    }, t.regular.toFixed(2)), /*#__PURE__*/React.createElement("td", {
-      style: {
-        ...tdSt,
-        fontFamily: "monospace",
-        fontWeight: 800,
-        color: t.ot > 0 ? "#fbbf24" : "var(--c-text5)"
-      }
-    }, t.ot.toFixed(2)), /*#__PURE__*/React.createElement("td", {
-      style: {
-        ...tdSt,
-        fontFamily: "monospace",
-        color: t.apCash > 0 ? "#34d399" : "var(--c-text5)"
-      }
-    }, t.apCash.toFixed(2)), /*#__PURE__*/React.createElement("td", {
-      style: {
-        ...tdSt,
-        fontFamily: "monospace",
-        color: t.apOffset > 0 ? "#a78bfa" : "var(--c-text5)"
-      }
-    }, t.apOffset.toFixed(2)), /*#__PURE__*/React.createElement("td", {
-      style: {
-        ...tdSt,
-        fontFamily: "monospace",
-        fontWeight: 700,
-        color: t.pending > 0 ? "#fbbf24" : "var(--c-text5)"
-      }
-    }, t.pending), /*#__PURE__*/React.createElement("td", {
-      style: tdSt
-    }, /*#__PURE__*/React.createElement("button", {
-      style: {
-        ...btnSt("var(--c-border)", "var(--c-text2)"),
-        padding: "4px 10px",
-        fontSize: 11
-      },
-      onClick: () => setSelectedEng(n)
-    }, "View days")));
-  }))), /*#__PURE__*/React.createElement("div", {
+  }, /*#__PURE__*/React.createElement("thead", null, /*#__PURE__*/React.createElement("tr", null, otmVis.map(cid => /*#__PURE__*/React.createElement("th", {
+    key: cid,
+    draggable: true,
+    onDragStart: () => { otmDragCol.current = cid; },
+    onDragOver: e => e.preventDefault(),
+    onDrop: () => {
+      const dc = otmDragCol.current;
+      otmDragCol.current = null;
+      if (!dc || dc === cid) return;
+      otmSave(s2 => {
+        const o = otmOrder.filter(x => x !== dc);
+        o.splice(o.indexOf(cid), 0, dc);
+        return { ...s2, order: o };
+      });
+    },
+    onClick: () => setOtmSort(s2 => s2 && s2.col === cid ? { col: cid, dir: -s2.dir } : { col: cid, dir: 1 }),
+    title: "Click: sort \u00b7 Drag: move column \u00b7 Drag right edge: resize",
+    style: { ...thSt, width: otmColW(cid), maxWidth: otmColW(cid), minWidth: otmColW(cid), cursor: "grab", userSelect: "none", whiteSpace: "nowrap", position: "relative" }
+  }, (otmColDef(cid) || {}).id === "view" ? "" : (otmColDef(cid) || {}).label, otmSort && otmSort.col === cid ? otmSort.dir < 0 ? " \u25bc" : " \u25b2" : "", /*#__PURE__*/React.createElement("span", {
+    onMouseDown: e => otmStartResize(e, cid),
+    onClick: e => e.stopPropagation(),
+    draggable: false,
+    onDragStart: e => { e.preventDefault(); e.stopPropagation(); },
+    title: "Drag to resize this column",
+    style: { position: "absolute", top: 0, right: 0, width: 8, height: "100%", cursor: "col-resize", userSelect: "none" }
+  }))))), /*#__PURE__*/React.createElement("tbody", null, (() => {
+    const rows = engineerNames.map(n => ({ n: n, t: totalsFor(n), d: daysInPeriod(n).length })).filter(r => r.d);
+    if (otmSort) rows.sort((a, b) => {
+      const ka = otmVal(otmSort.col, a),
+        kb = otmVal(otmSort.col, b);
+      const c2 = typeof ka === "number" && typeof kb === "number" ? ka - kb : String(ka).localeCompare(String(kb), undefined, { numeric: true });
+      return otmSort.dir * c2;
+    });
+    return rows.map(r => /*#__PURE__*/React.createElement("tr", {
+      key: r.n,
+      className: "ib-otrow"
+    }, otmVis.map(cid => otmCell(cid, r))));
+  })())), /*#__PURE__*/React.createElement("div", {
     style: {
       marginTop: 10,
       fontSize: 10.5,
@@ -20502,7 +20586,7 @@ function App() {
     tabId: tab
   }, /*#__PURE__*/React.createElement("div", {
     key: tab,
-    className: "ibase-tab-panel" + (tabAnimStyle(uiAnim, "content") !== "none" ? " anim-" + tabAnimStyle(uiAnim, "content") : "")
+    className: "ibase-tab-panel ib-tab-" + tab + (tabAnimStyle(uiAnim, "content") !== "none" ? " anim-" + tabAnimStyle(uiAnim, "content") : "")
   }, tab === "dashboard" && pCanTab(signedProfile, "dashboard", "view") && /*#__PURE__*/React.createElement(DashboardTab, {
     labs: labs
   }), tab === "labs" && pCanTab(signedProfile, "labs", "view") && /*#__PURE__*/React.createElement(LabsTab, {
