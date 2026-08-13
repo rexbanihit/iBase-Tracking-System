@@ -300,21 +300,14 @@
         --ib-hlc: color-mix(in srgb, var(--c-key) 24%, transparent);
       }
 
-      /* ── Tab buttons (the rail / bottom bar) ── */
+      /* ── Tab buttons: macOS-Dock MAGNIFICATION (the Default style).
+            The rail's mousemove drives per-icon scale with a Gaussian
+            falloff; this only smooths the tracking and the release. ── */
       body.ib-anim-tabs-default .ib-nav-btn {
-        transition: transform .16s ease, background .16s ease, color .16s ease,
-                    border-color .16s ease, box-shadow .16s ease;
+        transition: transform .09s ease-out, color .16s ease;
       }
-      body.ib-anim-tabs-default .ib-nav-btn:hover {
-        transform: scale(1.08);
-        background: var(--c-card) !important;
-        border-left-color: var(--c-key) !important;
-        color: var(--c-key) !important;
-        box-shadow: 0 4px 12px rgba(0, 0, 0, .22);
-        position: relative;
-        z-index: 1;
-      }
-      body.ib-anim-tabs-default .ib-nav-btn:active { transform: scale(1.02); }
+      body.ib-anim-tabs-default .ib-nav-btn:hover { color: var(--c-key) !important; }
+      body.ib-anim-tabs-default .ib-nav-btn:active { filter: brightness(1.3); }
 
       /* ── Every button in the content: sub-tab headers, + New Laboratory,
             Show/Hide Columns, Reset, the Cards/Table toggle, all of them ── */
@@ -395,10 +388,51 @@
     /* ═══ 📱 SMARTPHONES (≤ 700px) — layout adaptations ONLY.
        Everything lives inside this media query, so the laptop/desktop
        view keeps its exact style. ═══ */
+    /* ═══ 🍎 THE DOCK (desktop, 701px and up): icons only, a name bubble on
+       hover, a small dot marks the active tab — the macOS taskbar look. ═══ */
+    @media (min-width: 701px) {
+      .ib-siderail { overflow: visible !important; }
+      .ib-nav-ico { font-size: 27px !important; line-height: 1.05; }
+      .ib-nav-label { display: none; }
+      .ib-nav-btn:hover .ib-nav-label {
+        display: block;
+        position: absolute;
+        bottom: calc(100% + 10px);
+        left: 50%;
+        transform: translateX(-50%);
+        background: var(--c-card);
+        border: 1px solid var(--c-border);
+        border-radius: 8px;
+        padding: 3px 10px;
+        font-size: 10px !important;
+        letter-spacing: .4px;
+        white-space: nowrap;
+        box-shadow: 0 6px 18px rgba(0, 0, 0, .35);
+        z-index: 6;
+      }
+      /* After a click the bubble stays hidden until the pointer leaves the
+         button and returns — hover shows it, clicking dismisses it. */
+      .ib-nav-btn.ib-nav-clicked .ib-nav-label { display: none !important; }
+      .ib-nav-active::after {
+        content: "";
+        position: absolute;
+        bottom: 3px;
+        left: 50%;
+        transform: translateX(-50%);
+        width: 4px;
+        height: 4px;
+        border-radius: 50%;
+        background: var(--c-key);
+      }
+    }
+
     @media (max-width: 700px) {
       /* The left icon rail becomes a bottom tab bar (thumb-reachable) */
       .ib-siderail {
         top: auto !important; bottom: 0 !important; left: 0 !important; right: 0 !important;
+        transform: none !important; border-radius: 0 !important; max-width: none !important;
+        background: var(--c-bg2) !important; box-shadow: none !important;
+        backdrop-filter: none !important; -webkit-backdrop-filter: none !important;
         width: 100% !important; height: 62px !important;
         flex-direction: row !important; align-items: center !important;
         padding: 4px 6px !important; border-right: none !important;
@@ -406,7 +440,6 @@
         overflow-x: auto !important; overflow-y: hidden !important;
         -webkit-overflow-scrolling: touch;
       }
-      .ib-siderail > div:first-child { display: none !important; }
       .ib-siderail button { flex: 0 0 auto !important; padding: 5px 10px !important; }
       /* Content spans the full width and stays clear of the bottom bar */
       .ib-mainarea { margin-left: 0 !important; padding-bottom: 76px !important; }
@@ -489,7 +522,7 @@
 (function () {
   var okLibs = (typeof firebase !== "undefined") && (typeof React !== "undefined") && (typeof ReactDOM !== "undefined") && (typeof XLSX !== "undefined");
   window.__IBASE_LIBS_OK = okLibs;
-  window.__IBASE_BUILD = "v297";
+  window.__IBASE_BUILD = "v304";
   if (!okLibs) {
     document.getElementById("root").innerHTML =
       "<div style='max-width:520px;margin:90px auto;padding:30px;background:#16181d;border:1px solid #f8717155;border-radius:16px;font-family:system-ui,sans-serif;color:#e5e7eb;text-align:center'>" +
@@ -897,7 +930,7 @@ function computeEngineerOt(engineerName, allVisits, otSettings, holidayMap) {
     }
     return {
       date: dateKey, totalHours: otRound2(totalHours), regularHours: otRound2(regularHours), otHours: otRound2(otHours),
-      isHoliday: isHoliday, holidayName: holidayName, restDay: isRestDay, visitCount: rec.visitIds.length, isrNos: rec.isrNos,
+      isHoliday: isHoliday, holidayName: holidayName, restDay: isRestDay, visitCount: rec.visitIds.length, isrNos: rec.isrNos.filter(function (x, i) { return rec.isrNos.indexOf(x) === i; }),
       sources: rec.sources.filter(function (s, i) { return rec.sources.indexOf(s) === i; }),
       dayStart: dayStart, dayEnd: dayEnd,
     };
@@ -2991,7 +3024,6 @@ const BK_UNITS = [
   { key: "labs",      label: "🏥 Institutions & LOGS", hint: "laboratories · machines · every service visit — the LOGS tab is a view of this data, and the Overtime tab's computed hours derive from it too", sheets: ["labs"] },
   { key: "inventory", label: "📦 Inventory", hint: "machine inventory · spare parts · reagents", sheets: ["inventory", "spareParts", "reagents"] },
   { key: "ot",        label: "🕒 Overtime applications", hint: "FILED applications only — computed overtime hours are derived live from LOGS and restore with Institutions", sheets: ["otApplications"] },
-  { key: "sales",     label: "📊 Sales", hint: "the sales ledger", sheets: ["sales"] },
   { key: "users",     label: "👥 Users & permissions", hint: "accounts, roles, tab rights (the owner record is never touched on restore)", sheets: ["users"] },
   { key: "config",    label: "⚙ Settings & configuration", hint: "catalog · tabs · login cards · PM-kit rules · holidays · stored import files", sheets: ["config"] },
   { key: "att",       label: "📎 Attachments", hint: "visit photos & files", sheets: ["attachments"] }
@@ -3002,7 +3034,6 @@ function bkSummary(coll, d) {
     if (coll === "inventory") return [d.brand, d.machineModel, d.serialNo].filter(Boolean).join(" ");
     if (coll === "spareParts") return [d.brand, d.partNumber].filter(Boolean).join(" ");
     if (coll === "reagents") return [d.itemId, d.name].filter(Boolean).join(" · ");
-    if (coll === "sales") return [d.date, d.account, d.amount].filter(x => x !== undefined && x !== "").join(" · ");
     if (coll === "users") return String(d.email || d.displayName || "");
     if (coll === "attachments") return String(d.name || d.visitId || "");
     return "";
@@ -3569,7 +3600,7 @@ function Login({
       letterSpacing: 2,
       textTransform: "uppercase"
     }
-  }, "version: v297"), !dept ? /*#__PURE__*/React.createElement("div", null,
+  }, "version: v304"), !dept ? /*#__PURE__*/React.createElement("div", null,
     /*#__PURE__*/React.createElement("div", { style: { fontSize: 12.5, color: "var(--c-text3)", textAlign: "center", marginBottom: 14 } }, "Select your department or module to continue"),
     /*#__PURE__*/React.createElement("div", { style: { display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 } },
       (depts || []).filter(d => !d.disabled).map((d, i) => /*#__PURE__*/React.createElement("button", { key: (d.id || d.name) + i, onClick: () => pickDept(d.name), style: { background: "var(--c-bg)", border: "1px solid var(--c-border)", borderRadius: 12, padding: "16px 10px", cursor: "pointer", display: "flex", flexDirection: "column", alignItems: "center", gap: 8, color: "var(--c-text2)" } },
@@ -3594,7 +3625,7 @@ function Login({
     value: email,
     onChange: e => setEmail(e.target.value),
     onKeyDown: e => e.key === "Enter" && submit(),
-    placeholder: "you@company.com"
+    placeholder: "Email"
   }), /*#__PURE__*/React.createElement("label", {
     style: labelSt
   }, "Password"), /*#__PURE__*/React.createElement("div", {
@@ -3611,7 +3642,7 @@ function Login({
     value: pw,
     onChange: e => setPw(e.target.value),
     onKeyDown: e => e.key === "Enter" && submit(),
-    placeholder: "Enter password"
+    placeholder: "Password"
   }), /*#__PURE__*/React.createElement("button", {
     type: "button",
     title: showPw ? "Hide password" : "Show password",
@@ -4322,47 +4353,12 @@ function DashboardTab({
   }, /*#__PURE__*/React.createElement("div", {
     className: "ib-dash-pie",
     style: {
-      width: "52%"
+      width: "100%"
     }
   }, /*#__PURE__*/React.createElement(PieSVG, {
     data: flagData,
     donut: true
-  })), /*#__PURE__*/React.createElement("div", {
-    style: {
-      flex: 1
-    }
-  }, flagData.map((e, i) => /*#__PURE__*/React.createElement("div", {
-    key: i,
-    style: {
-      display: "flex",
-      alignItems: "center",
-      gap: 8,
-      marginBottom: 10
-    }
-  }, /*#__PURE__*/React.createElement("div", {
-    style: {
-      width: 11,
-      height: 11,
-      borderRadius: 3,
-      background: e.color
-    }
-  }), /*#__PURE__*/React.createElement("span", {
-    style: {
-      fontSize: 12,
-      color: "var(--c-text2)",
-      flex: 1
-    }
-  }, e.label), /*#__PURE__*/React.createElement("span", {
-    style: {
-      fontSize: 15,
-      fontWeight: 700
-    }
-  }, e.value))), flagData.length === 0 && /*#__PURE__*/React.createElement("div", {
-    style: {
-      fontSize: 12,
-      color: "var(--c-text4)"
-    }
-  }, "No active units.")))), /*#__PURE__*/React.createElement("div", {
+  })))), /*#__PURE__*/React.createElement("div", {
     style: cardSt
   }, /*#__PURE__*/React.createElement("div", {
     style: {
@@ -8618,12 +8614,6 @@ function BinTab({
         ...data
       } = e.payload;
       await db.collection("reagents").add(data);
-    } else if (e.kind === "sale") {
-      const {
-        id,
-        ...data
-      } = e.payload;
-      await db.collection("sales").add(data);
     } else if (e.kind === "cfgRole") {
       const snapR = await db.doc("config/catalog").get();
       const catR = snapR.data() || {};
@@ -8973,9 +8963,6 @@ const MANAGED_TABS = [{
 }, {
   id: "overtime",
   def: "🕒 Overtime"
-}, {
-  id: "sales",
-  def: "📊 Sales"
 }, {
   id: "wpoa",
   def: "🗓 WPOA"
@@ -11952,6 +11939,20 @@ function SmerTab({ profile, labs, notify }) {
         rows.push({ _key: v.id || (l.id + m.id + ds), ds: ds, _first: dcrStart(v) || (ds + "T99:99"), date: ds, travel: l.name || "", instrument: m.instrument || "", isr: v.isrNo || "", kmFrom: "", kmTo: "", totalKm: "", dcr: dcrOf(v), meals: "", parking: "" });
       })));
       rows.sort((a, b) => String(a._first).localeCompare(String(b._first)) || String(a.instrument).localeCompare(String(b.instrument)));
+      {
+        // One row per ISR number: after the chronological sort, the EARLIEST
+        // logged visit keeps the ISR; later duplicates are dropped. Rows with
+        // no ISR are untouched.
+        const seenIsr = {};
+        for (let i2 = 0; i2 < rows.length; i2++) {
+          const k2 = String(rows[i2].isr || "").trim();
+          if (!k2) continue;
+          if (seenIsr[k2]) {
+            rows.splice(i2, 1);
+            i2--;
+          } else seenIsr[k2] = 1;
+        }
+      }
       return rows;
     };
   }, [labs, myName]);
@@ -11961,11 +11962,183 @@ function SmerTab({ profile, labs, notify }) {
   const logoW = Math.max(40, Math.min(260, Number(brandDoc && brandDoc.logoW) || 84));
   const emptyRow = () => ({ date: "", travel: "", kmFrom: "", kmTo: "", totalKm: "", instrument: "", isr: "", dcr: "", meals: "", parking: "" });
   const [rowFocus, setRowFocus] = useState(-1);
-  const blank = () => ({ periodId: "", gasS: "", name: profile && profile.name || "", position: "Field Service Engineer", rows: Array.from({ length: 12 }, emptyRow), parkingS: "", tollS: "", loadS: "", empSig: "" });
+  const blank = () => ({ periodId: "", gasS: "", name: profile && profile.name || "", position: "Field Service Engineer", rows: Array.from({ length: 12 }, emptyRow), parkingS: "", tollS: "", loadS: "", empSig: "", totKmS: "", totMealsS: "", totParkS: "" });
   const SMER_DEF_W = ["9%", "18%", "8%", "8%", "8%", "17%", "8%", "11%", "6%", "7%"];
   const [colW, setColW] = useState(() => { try { return JSON.parse(localStorage.getItem("ibase_smer_colw") || "{}"); } catch (e) { return {}; } });
   useEffect(() => { try { localStorage.setItem("ibase_smer_colw", JSON.stringify(colW)); } catch (e) {} }, [colW]);
   const SMER_COLS = ["date", "travel", "kmFrom", "kmTo", "totalKm", "instrument", "isr", "dcr", "meals", "parking"];
+  // ── 🧮 Excel-style formulas ────────────────────────────────────────────
+  // Any cell may hold a formula starting with "=": cell references use the
+  // on-screen column letters A–J (A=Date … E=Total KM … I=Meals, J=Parking)
+  // and 1-based row numbers, e.g. =SUM(I2:I9), =AVERAGE(E2:E13), =D5-C5,
+  // =SUM(I2:I9)+SUM(J2:J9), =MIN(...), =MAX(...), =COUNT(...).
+  // While a cell is being edited it shows the formula; everywhere else (the
+  // grid, totals, print and Excel export) it shows the computed result.
+  // Safe hand-written parser — no eval(). Errors show as #ERROR, circular
+  // references as #CYCLE. Text cells count as 0 inside math, and are
+  // skipped by AVERAGE/MIN/MAX/COUNT, like Excel.
+  const smerEvalCell = (rows, ri, ck, visiting) => {
+    const r0 = rows[ri];
+    const raw = String(r0 && r0[ck] != null ? r0[ck] : "");
+    if (raw.charAt(0) !== "=") return raw;
+    const key = ri + "|" + ck;
+    if (visiting[key]) return "#CYCLE";
+    visiting[key] = 1;
+    const out = smerEvalFormula(rows, raw.slice(1), visiting);
+    delete visiting[key];
+    return out;
+  };
+  const smerCellNum = (rows, ri, ck, visiting) => {
+    const v = smerEvalCell(rows, ri, ck, visiting);
+    if (v === "#CYCLE" || v === "#ERROR") return null;
+    const n = parseFloat(String(v).replace(/,/g, ""));
+    return isFinite(n) ? n : null;
+  };
+  function smerEvalFormula(rows, src, visiting) {
+    try {
+      const S = String(src);
+      let p = 0;
+      const peek = () => S.charAt(p);
+      const skip = () => { while (p < S.length && S.charAt(p) === " ") p++; };
+      const isDigit = c => c >= "0" && c <= "9";
+      const isAlpha = c => c >= "A" && c <= "Z" || c >= "a" && c <= "z";
+      const colIdx = L => L.toUpperCase().charCodeAt(0) - 65;
+      const refNum = (ci, ri) => {
+        if (ci < 0 || ci >= SMER_COLS.length || ri < 0 || ri >= rows.length) return null;
+        const v = smerEvalCell(rows, ri, SMER_COLS[ci], visiting);
+        if (v === "#CYCLE") throw "CYCLE"; // a circular chain must SURFACE, never silently become 0
+        if (v === "#ERROR") throw 0;
+        const n = parseFloat(String(v).replace(/,/g, ""));
+        return isFinite(n) ? n : null;
+      };
+      // range values: "A2:A9" → numeric cells only (nulls skipped)
+      const rangeVals = (c1, r1, c2, r2) => {
+        const out = [];
+        const ca = Math.min(c1, c2), cb = Math.max(c1, c2);
+        const ra = Math.min(r1, r2), rb = Math.max(r1, r2);
+        for (let ci = ca; ci <= cb; ci++) for (let ri = ra; ri <= rb; ri++) {
+          const n = refNum(ci, ri);
+          if (n !== null) out.push(n);
+        }
+        return out;
+      };
+      const readCellRef = () => {
+        // returns { c, r } or null (does not consume on failure)
+        const q = p;
+        if (!isAlpha(peek())) return null;
+        const L = S.charAt(p);
+        let q2 = p + 1, digits = "";
+        while (q2 < S.length && isDigit(S.charAt(q2))) { digits += S.charAt(q2); q2++; }
+        if (!digits) { p = q; return null; }
+        p = q2;
+        return { c: colIdx(L), r: parseInt(digits, 10) - 1 };
+      };
+      const args = fname => {
+        // consumes "( ... )" → array of numbers (ranges expanded)
+        skip();
+        if (peek() !== "(") throw 0;
+        p++;
+        const vals = [];
+        skip();
+        if (peek() === ")") { p++; return vals; }
+        for (;;) {
+          skip();
+          const save = p;
+          const ref = readCellRef();
+          if (ref) {
+            skip();
+            if (peek() === ":") {
+              p++;
+              skip();
+              const ref2 = readCellRef();
+              if (!ref2) throw 0;
+              rangeVals(ref.c, ref.r, ref2.c, ref2.r).forEach(v => vals.push(v));
+            } else {
+              p = save;
+              const n = expr();
+              vals.push(n);
+            }
+          } else {
+            const n = expr();
+            vals.push(n);
+          }
+          skip();
+          if (peek() === ",") { p++; continue; }
+          if (peek() === ")") { p++; break; }
+          throw 0;
+        }
+        return vals;
+      };
+      const factor = () => {
+        skip();
+        const c = peek();
+        if (c === "(") {
+          p++;
+          const v = expr();
+          skip();
+          if (peek() !== ")") throw 0;
+          p++;
+          return v;
+        }
+        if (c === "-") { p++; return -factor(); }
+        if (c === "+") { p++; return factor(); }
+        if (isDigit(c) || c === ".") {
+          let num = "";
+          while (p < S.length && (isDigit(S.charAt(p)) || S.charAt(p) === ".")) { num += S.charAt(p); p++; }
+          return parseFloat(num);
+        }
+        if (isAlpha(c)) {
+          // function name or cell reference
+          let q2 = p, word = "";
+          while (q2 < S.length && isAlpha(S.charAt(q2))) { word += S.charAt(q2); q2++; }
+          const up = word.toUpperCase();
+          let q3 = q2;
+          while (q3 < S.length && S.charAt(q3) === " ") q3++;
+          if (S.charAt(q3) === "(" && up.length > 1) {
+            p = q2;
+            const vals = args(up);
+            if (up === "SUM") return vals.reduce((a, b) => a + b, 0);
+            if (up === "AVERAGE" || up === "AVG") return vals.length ? vals.reduce((a, b) => a + b, 0) / vals.length : 0;
+            if (up === "MIN") return vals.length ? Math.min.apply(null, vals) : 0;
+            if (up === "MAX") return vals.length ? Math.max.apply(null, vals) : 0;
+            if (up === "COUNT") return vals.length;
+            if (up === "ABS") return Math.abs(vals[0] || 0);
+            if (up === "ROUND") return Math.round((vals[0] || 0) * Math.pow(10, vals[1] || 0)) / Math.pow(10, vals[1] || 0);
+            throw 0;
+          }
+          const ref = readCellRef();
+          if (!ref) throw 0;
+          const n = refNum(ref.c, ref.r);
+          return n === null ? 0 : n;
+        }
+        throw 0;
+      };
+      const term = () => {
+        let v = factor();
+        for (;;) {
+          skip();
+          const c = peek();
+          if (c === "*") { p++; v = v * factor(); } else if (c === "/") { p++; v = v / factor(); } else return v;
+        }
+      };
+      const expr = () => {
+        let v = term();
+        for (;;) {
+          skip();
+          const c = peek();
+          if (c === "+") { p++; v = v + term(); } else if (c === "-") { p++; v = v - term(); } else return v;
+        }
+      };
+      const out = expr();
+      skip();
+      if (p < S.length) throw 0;
+      if (!isFinite(out)) return "#ERROR";
+      return String(Math.round(out * 100) / 100);
+    } catch (e) {
+      return e === "CYCLE" ? "#CYCLE" : "#ERROR";
+    }
+  }
+  const smerShow = (ri, ck) => smerEvalCell(f.rows, ri, ck, {});
   const [colAlign, setColAlign] = useState(() => { try { return JSON.parse(localStorage.getItem("ibase_smer_colalign") || "{}"); } catch (e) { return {}; } });
   useEffect(() => { try { localStorage.setItem("ibase_smer_colalign", JSON.stringify(colAlign)); } catch (e) {} }, [colAlign]);
   const alignOf = key => colAlign[key] || "center"; // every column centered by default
@@ -12061,15 +12234,42 @@ function SmerTab({ profile, labs, notify }) {
     if (Object.values(r2 || {}).some(v => String(v || "").trim()) && !confirm("Delete this row and everything typed in it?")) return;
     setF(x => ({ ...x, rows: x.rows.filter((_, j) => j !== i) }));
   };
-  const tKm = f.rows.reduce((a, r) => a + num(r.totalKm), 0);
-  const tMeals = f.rows.reduce((a, r) => a + num(r.meals), 0);
-  const tPark = f.rows.reduce((a, r) => a + num(r.parking), 0);
-  const grand = num(f.gasS) + tMeals + num(f.parkingS) + num(f.tollS) + num(f.loadS);
+  const tKm = f.rows.reduce((a, r, i2) => a + (smerCellNum(f.rows, i2, "totalKm", {}) || 0), 0);
+  const tMeals = f.rows.reduce((a, r, i2) => a + (smerCellNum(f.rows, i2, "meals", {}) || 0), 0);
+  const tPark = f.rows.reduce((a, r, i2) => a + (smerCellNum(f.rows, i2, "parking", {}) || 0), 0);
+  // A value OR a formula ("=SUM(I2:I9)") anywhere money is typed:
+  const sNum = v => {
+    const raw = String(v == null ? "" : v).trim();
+    if (!raw) return 0;
+    if (raw.charAt(0) === "=") {
+      const r2 = smerEvalFormula(f.rows, raw.slice(1), {});
+      const n2 = parseFloat(String(r2));
+      return isFinite(n2) ? n2 : 0;
+    }
+    return num(raw);
+  };
+  // The TOTAL row is DYNAMIC: automatic sums by default, but each of the
+  // three totals can be overridden by typing a number or a formula into it;
+  // clearing the cell returns it to automatic.
+  const effKm = String(f.totKmS || "").trim() ? sNum(f.totKmS) : tKm;
+  const effMeals = String(f.totMealsS || "").trim() ? sNum(f.totMealsS) : tMeals;
+  const effPark = String(f.totParkS || "").trim() ? sNum(f.totParkS) : tPark;
+  const [totFocus, setTotFocus] = useState("");
+  const totCellInput = (fld, key2, auto, eff) => /*#__PURE__*/React.createElement("input", {
+    style: paperIn({ textAlign: "right", fontWeight: 800, fontSize: 11.5, padding: "0 3px" }),
+    title: "Automatic total: " + auto.toFixed(2) + " \u2014 type a number or a formula (e.g. =SUM(I2:I9)) to override; clear the cell to go back to automatic",
+    value: totFocus === fld ? String(f[key2] || "") : String(f[key2] || "").trim() ? eff.toFixed(2) : auto.toFixed(2),
+    placeholder: auto.toFixed(2),
+    onFocus: () => setTotFocus(fld),
+    onBlur: () => setTotFocus(""),
+    onChange: e => setF(x => ({ ...x, [key2]: e.target.value }))
+  });
+  const grand = sNum(f.gasS) + effMeals + sNum(f.parkingS) + sNum(f.tollS) + sNum(f.loadS);
   function saveSheet(forceNew) {
     const id = !forceNew && curId ? curId : uid + "_" + Date.now();
     const per = PERIODS.find(p => p.id === f.periodId) || null;
     const title = per ? per.label : (String(f.title || "").trim() || "SMER " + today());
-    db.collection("smer").doc(id).set({ uid: uid, by: meEmail(profile) || "", title: title, periodId: f.periodId || "", gasS: f.gasS, name: f.name, position: f.position, rows: f.rows, parkingS: f.parkingS, tollS: f.tollS, loadS: f.loadS, empSig: f.empSig || "", savedAt: new Date().toISOString() }).then(() => {
+    db.collection("smer").doc(id).set({ uid: uid, by: meEmail(profile) || "", title: title, periodId: f.periodId || "", gasS: f.gasS, name: f.name, position: f.position, rows: f.rows, parkingS: f.parkingS, tollS: f.tollS, loadS: f.loadS, totKmS: f.totKmS || "", totMealsS: f.totMealsS || "", totParkS: f.totParkS || "", empSig: f.empSig || "", savedAt: new Date().toISOString() }).then(() => {
       setCurId(id);
       notify(forceNew ? "Saved as a NEW copy — the previous sheet stays untouched." : "SMER sheet \u201C" + title + "\u201D saved.", "ok");
     }).catch(e => notify("Save failed: " + (e && e.message || e), "error"));
@@ -12078,7 +12278,7 @@ function SmerTab({ profile, labs, notify }) {
     const sh = (sheets || []).find(x => x.id === id);
     if (!sh) { setCurId(""); setF(blank()); return; }
     setCurId(id);
-    setF({ periodId: sh.periodId || "", title: sh.title || "", gasS: sh.gasS || "", name: sh.name || "", position: sh.position || "Field Service Engineer", rows: Array.isArray(sh.rows) && sh.rows.length ? sh.rows.map(r => ({ ...emptyRow(), ...r })) : Array.from({ length: 12 }, emptyRow), parkingS: sh.parkingS || "", tollS: sh.tollS || "", loadS: sh.loadS || "", empSig: sh.empSig || "" });
+    setF({ periodId: sh.periodId || "", title: sh.title || "", gasS: sh.gasS || "", name: sh.name || "", position: sh.position || "Field Service Engineer", rows: Array.isArray(sh.rows) && sh.rows.length ? sh.rows.map(r => ({ ...emptyRow(), ...r })) : Array.from({ length: 12 }, emptyRow), parkingS: sh.parkingS || "", tollS: sh.tollS || "", loadS: sh.loadS || "", totKmS: sh.totKmS || "", totMealsS: sh.totMealsS || "", totParkS: sh.totParkS || "", empSig: sh.empSig || "" });
   }
   function delSheet() {
     if (!curId) return;
@@ -12154,8 +12354,8 @@ function SmerTab({ profile, labs, notify }) {
     const esc = t => String(t == null ? "" : t).replace(/&/g, "&amp;").replace(/</g, "&lt;");
     const SIG_W = 150, SIG_H = 26;
     const sigSmall = await smerSmallSig(f.empSig, SIG_W, SIG_H);
-    const cells = r => [r.date, r.travel, r.kmFrom, r.kmTo, r.totalKm, r.instrument, r.isr, r.dcr, r.meals, r.parking];
-    const body = f.rows.map(r => "<tr>" + cells(r).map((c, ci) => '<td style="text-align:' + alignOf(SMER_COLS[ci]) + '">' + esc(c) + "&nbsp;</td>").join("") + "</tr>").join("");
+    const cells = (r, ri) => SMER_COLS.map(ck => smerEvalCell(f.rows, ri, ck, {}));
+    const body = f.rows.map((r, ri) => "<tr>" + cells(r, ri).map((c, ci) => '<td style="text-align:' + alignOf(SMER_COLS[ci]) + '">' + esc(c) + "&nbsp;</td>").join("") + "</tr>").join("");
     const html = "<!doctype html><html><head><title>SMER</title><style>@page{size:A4 landscape;margin:8mm}@media print{html,body{width:297mm}}body{font-family:Arial,Helvetica,sans-serif;color:#000;margin:0;padding:4px 6px}.logo{display:flex;align-items:center;gap:10px}.sq{display:grid;grid-template-columns:repeat(3,11px);grid-auto-rows:11px}.sq i{display:block}.sq i.b{background:#1a1a1a}.brand{border-left:1pt solid #000;padding-left:10px}.fas{font-weight:900;font-size:24px;letter-spacing:2px;line-height:1}.sub{font-size:9.5px;line-height:1.1}h1{font-size:13px;text-align:center;margin:-18px 0 8px;font-weight:800}.meta{font-size:11.5px;font-weight:700;margin:1px 0;display:flex}.meta em{font-style:normal;width:64px;flex-shrink:0}.meta span{font-weight:400;border-bottom:.5pt solid #000;display:inline-block;min-width:420px;padding:0 4px}.note{font-size:9.5px;font-style:italic;margin:2px 0 4px}table{width:100%;border-collapse:collapse;table-layout:fixed}table.main th,table.main td{border:.5pt solid #000;mso-border-alt:solid #000 .5pt;font-size:9.8px;padding:1px 3px;height:15.5px;overflow:hidden;white-space:nowrap}table.main th{font-weight:700;text-align:center}.y{background:#ffff00 !important;-webkit-print-color-adjust:exact;print-color-adjust:exact}.tot td{font-weight:700}.foot{width:100%;margin-top:10px;border-collapse:collapse}.foot td{border:none}.foot>tr>td{vertical-align:bottom}.sums{font-size:11px;border-collapse:collapse}.sums td{padding:1px 6px 1px 0;border:none}.sums .lbl{text-align:left;white-space:nowrap}.sums .u{border-bottom:.5pt solid #000;text-align:right;min-width:80px;padding-left:16px}.sums .n{text-align:right;min-width:80px;padding-left:16px}.sums .g td{font-weight:800;padding-top:2px}.sums .g .u{border-top:.5pt solid #000}.sums .g .lbl{border-top:none}.foot td.sigspace{height:26pt;mso-height-source:userset;text-align:center;vertical-align:bottom;border:none;overflow:hidden}.foot td.siggap{height:30pt;mso-height-source:userset;border:none}.foot td.sigline{border-top:.5pt solid #000;border-left:none;border-right:none;border-bottom:none;text-align:center;padding-top:2px;font-size:10.5px}</style></head><body>" +
       '<div class="logo">' + (logo ? '<img src="' + logo + '" width="' + logoW + '" style="width:' + logoW + 'px;height:auto">' : '') + '</div>' +
       "<h1>SEMI-MONTHLY EXPENSE REPORT(SMER)</h1>" +
@@ -12164,15 +12364,15 @@ function SmerTab({ profile, labs, notify }) {
       '<table class="main"><colgroup><col style="width:9%"><col style="width:18%"><col style="width:8%"><col style="width:8%"><col style="width:8%"><col style="width:17%"><col style="width:8%"><col style="width:11%"><col style="width:6%"><col style="width:7%"></colgroup>' +
       '<tr><th rowspan="2">Date</th><th rowspan="2">Travel Details (From/To)</th><th colspan="2" class="y">Daily KM Reading/FARE</th><th rowspan="2" class="y">Total KM/FARE</th><th rowspan="2">Instrument</th><th rowspan="2">ISR<br>Number</th><th rowspan="2">DCR (TIME &amp; OUT)</th><th rowspan="2" class="y">Meals</th><th rowspan="2" class="y">Parking/<br>Toll/Load</th></tr>' +
       '<tr><th class="y">From</th><th class="y">To</th></tr>' + body +
-      '<tr class="tot"><td style="text-align:center">TOTAL:</td><td></td><td></td><td></td><td style="text-align:right">' + tKm.toFixed(2) + '</td><td></td><td></td><td></td><td style="text-align:right">' + tMeals.toFixed(2) + '</td><td style="text-align:right">' + tPark.toFixed(2) + "</td></tr></table>" +
+      '<tr class="tot"><td style="text-align:center">TOTAL:</td><td></td><td></td><td></td><td style="text-align:right">' + effKm.toFixed(2) + '</td><td></td><td></td><td></td><td style="text-align:right">' + effMeals.toFixed(2) + '</td><td style="text-align:right">' + effPark.toFixed(2) + "</td></tr></table>" +
       '<table class="foot"><colgroup><col style="width:9%"><col style="width:18%"><col style="width:8%"><col style="width:8%"><col style="width:8%"><col style="width:17%"><col style="width:8%"><col style="width:11%"><col style="width:6%"><col style="width:7%"></colgroup>' +
       '<tr><td colspan="7" rowspan="4" valign="top">' +
       '<table class="sums">' +
-      '<tr><td class="lbl">1. Gas/Fare</td><td class="u">' + num(f.gasS).toFixed(2) + '</td></tr>' +
-      '<tr><td class="lbl">2. Meals</td><td class="u">' + tMeals.toFixed(2) + '</td></tr>' +
-      '<tr><td class="lbl">3. Parking</td><td class="u">' + num(f.parkingS).toFixed(2) + '</td></tr>' +
-      '<tr><td class="lbl">4. Toll</td><td class="u">' + num(f.tollS).toFixed(2) + '</td></tr>' +
-      '<tr><td class="lbl">5. Load</td><td class="n">' + num(f.loadS).toFixed(2) + '</td></tr>' +
+      '<tr><td class="lbl">1. Gas/Fare</td><td class="u">' + sNum(f.gasS).toFixed(2) + '</td></tr>' +
+      '<tr><td class="lbl">2. Meals</td><td class="u">' + effMeals.toFixed(2) + '</td></tr>' +
+      '<tr><td class="lbl">3. Parking</td><td class="u">' + sNum(f.parkingS).toFixed(2) + '</td></tr>' +
+      '<tr><td class="lbl">4. Toll</td><td class="u">' + sNum(f.tollS).toFixed(2) + '</td></tr>' +
+      '<tr><td class="lbl">5. Load</td><td class="n">' + sNum(f.loadS).toFixed(2) + '</td></tr>' +
       '<tr class="g"><td class="lbl">TOTAL :</td><td class="u">' + grand.toFixed(2) + '</td></tr>' +
       '</table></td>' +
       '<td colspan="3" class="sigspace" style="height:26.0pt;mso-height-source:userset">' + (sigSmall ? '<img src="' + sigSmall + '" height="' + SIG_H + '" width="' + SIG_W + '" style="height:' + SIG_H + 'px;width:' + SIG_W + 'px;display:block;margin:0 auto">' : '&nbsp;') + '</td></tr>' +
@@ -12195,8 +12395,8 @@ function SmerTab({ profile, labs, notify }) {
   }
   function printSheet() {
     const esc = t => String(t == null ? "" : t).replace(/&/g, "&amp;").replace(/</g, "&lt;");
-    const cells = r => [r.date, r.travel, r.kmFrom, r.kmTo, r.totalKm, r.instrument, r.isr, r.dcr, r.meals, r.parking];
-    const body = f.rows.map(r => "<tr>" + cells(r).map((c, ci) => '<td style="text-align:' + alignOf(SMER_COLS[ci]) + '">' + esc(c) + "&nbsp;</td>").join("") + "</tr>").join("");
+    const cells = (r, ri) => SMER_COLS.map(ck => smerEvalCell(f.rows, ri, ck, {}));
+    const body = f.rows.map((r, ri) => "<tr>" + cells(r, ri).map((c, ci) => '<td style="text-align:' + alignOf(SMER_COLS[ci]) + '">' + esc(c) + "&nbsp;</td>").join("") + "</tr>").join("");
     const html = "<!doctype html><html><head><title></title><style>@page{size:A4 landscape;margin:0}@media print{html,body{width:297mm}}body{font-family:Arial,Helvetica,sans-serif;color:#000;margin:0;padding:8mm 8mm 6mm}.logo{display:flex;align-items:center;gap:10px}.sq{display:grid;grid-template-columns:repeat(3,11px);grid-auto-rows:11px}.sq i{display:block}.sq i.b{background:#1a1a1a}.brand{border-left:2px solid #000;padding-left:10px}.fas{font-weight:900;font-size:24px;letter-spacing:2px;line-height:1}.sub{font-size:9.5px;line-height:1.1}h1{font-size:13px;text-align:center;margin:-18px 0 8px;font-weight:800}.meta{font-size:11.5px;font-weight:700;margin:1px 0;display:flex}.meta em{font-style:normal;width:64px;flex-shrink:0}.meta span{font-weight:400;border-bottom:1px solid #000;display:inline-block;min-width:420px;padding:0 4px}.note{font-size:9.5px;font-style:italic;margin:2px 0 4px}table{width:100%;border-collapse:collapse;table-layout:fixed}th,td{border:1px solid #000;font-size:9.8px;padding:1.5px 3px;height:15.5px;overflow:hidden;white-space:nowrap}th{font-weight:700;text-align:center}.y{background:#ffff00 !important;-webkit-print-color-adjust:exact;print-color-adjust:exact}.tot td{font-weight:700}.foot{display:flex;justify-content:space-between;margin-top:10px}.sums{font-size:11px;width:300px}.sums div{display:flex;justify-content:space-between;padding:1px 0}.sums .u{border-bottom:1px solid #000;min-width:90px;text-align:right}.sums .n{min-width:90px;text-align:right}.sums .g{font-weight:800;border-top:1px solid #000;margin-top:3px;padding-top:3px}.sig{width:280px;text-align:center;font-size:10.5px}.sig .l{border-top:1px solid #000;margin-top:30px;padding-top:2px}</style></head><body>" +
       '<div class="logo">' + (logo ? '<img src="' + logo + '" style="width:' + logoW + 'px;height:auto">' : '') + '</div>' +
       "<h1>SEMI-MONTHLY EXPENSE REPORT(SMER)</h1>" +
@@ -12205,8 +12405,8 @@ function SmerTab({ profile, labs, notify }) {
       '<table><colgroup><col style="width:9%"><col style="width:18%"><col style="width:8%"><col style="width:8%"><col style="width:8%"><col style="width:17%"><col style="width:8%"><col style="width:11%"><col style="width:6%"><col style="width:7%"></colgroup>' +
       '<tr><th rowspan="2">Date</th><th rowspan="2">Travel Details (From/To)</th><th colspan="2" class="y">Daily KM Reading/FARE</th><th rowspan="2" class="y">Total KM/FARE</th><th rowspan="2">Instrument</th><th rowspan="2">ISR<br>Number</th><th rowspan="2">DCR (TIME &amp; OUT)</th><th rowspan="2" class="y">Meals</th><th rowspan="2" class="y">Parking/<br>Toll/Load</th></tr>' +
       '<tr><th class="y">From</th><th class="y">To</th></tr>' + body +
-      '<tr class="tot"><td style="text-align:center">TOTAL:</td><td></td><td></td><td></td><td style="text-align:right">' + tKm.toFixed(2) + '</td><td></td><td></td><td></td><td style="text-align:right">' + tMeals.toFixed(2) + '</td><td style="text-align:right">' + tPark.toFixed(2) + "</td></tr></table>" +
-      '<div class="foot"><div class="sums"><div><span>1. Gas/Fare</span><span class="u">' + num(f.gasS).toFixed(2) + '</span></div><div><span>2. Meals</span><span class="u">' + tMeals.toFixed(2) + '</span></div><div><span>3. Parking</span><span class="u">' + num(f.parkingS).toFixed(2) + '</span></div><div><span>4. Toll</span><span class="u">' + num(f.tollS).toFixed(2) + '</span></div><div><span>5. Load</span><span class="n">' + num(f.loadS).toFixed(2) + '</span></div><div class="g"><span>TOTAL :</span><span class="u">' + grand.toFixed(2) + '</span></div></div>' +
+      '<tr class="tot"><td style="text-align:center">TOTAL:</td><td></td><td></td><td></td><td style="text-align:right">' + effKm.toFixed(2) + '</td><td></td><td></td><td></td><td style="text-align:right">' + effMeals.toFixed(2) + '</td><td style="text-align:right">' + effPark.toFixed(2) + "</td></tr></table>" +
+      '<div class="foot"><div class="sums"><div><span>1. Gas/Fare</span><span class="u">' + sNum(f.gasS).toFixed(2) + '</span></div><div><span>2. Meals</span><span class="u">' + effMeals.toFixed(2) + '</span></div><div><span>3. Parking</span><span class="u">' + sNum(f.parkingS).toFixed(2) + '</span></div><div><span>4. Toll</span><span class="u">' + sNum(f.tollS).toFixed(2) + '</span></div><div><span>5. Load</span><span class="n">' + sNum(f.loadS).toFixed(2) + '</span></div><div class="g"><span>TOTAL :</span><span class="u">' + grand.toFixed(2) + '</span></div></div>' +
       '<div class="sig">' + (f.empSig ? '<img src="' + f.empSig + '" style="height:40px;max-width:230px;object-fit:contain;display:block;margin:0 auto 2px">' : '') + '<div class="l">Employee&#39;s Signature</div><div class="l" style="margin-top:44px">Vice President for Operations</div></div></div></body></html>';
     const w = window.open("", "_blank", "width=1150,height=780");
     try { if (w) w.__wantLandscape = true; } catch (e) {}
@@ -12267,7 +12467,10 @@ function SmerTab({ profile, labs, notify }) {
     })
   }, "⬇ Insert row below"), /*#__PURE__*/React.createElement("span", {
     style: { fontSize: 10.5, color: "var(--c-text5)", alignSelf: "center" }
-  }, rowFocus >= 0 ? "cursor: row " + (rowFocus + 1) : "click a row to place the cursor"), /*#__PURE__*/React.createElement("button", {
+  }, rowFocus >= 0 ? "cursor: row " + (rowFocus + 1) : "click a row to place the cursor"), /*#__PURE__*/React.createElement("span", {
+    title: "Type a formula into any cell. Columns are A\u2013J in screen order (A=Date, E=Total KM, I=Meals, J=Parking); rows are numbered from 1. Examples: =SUM(I2:I9) \u00b7 =AVERAGE(E2:E13) \u00b7 =D5-C5 \u00b7 =SUM(I2:I9)+SUM(J2:J9) \u00b7 MIN / MAX / COUNT / ROUND also work. While editing you see the formula; everywhere else (and on print/Excel) the computed result.",
+    style: { fontSize: 10.5, color: "var(--c-text5)", alignSelf: "center", cursor: "help" }
+  }, "\ud83e\uddee =SUM(I2:I9) works here"), /*#__PURE__*/React.createElement("button", {
     style: btnSt("var(--c-border)", "var(--c-text2)"),
     title: "Reset every column back to its default width (your view only)",
     onClick: resetAllCols
@@ -12346,23 +12549,41 @@ function SmerTab({ profile, labs, notify }) {
     return null;
   })(), /*#__PURE__*/React.createElement("table", {
     style: { width: "100%", borderCollapse: "collapse", tableLayout: "fixed", minWidth: 1050 }
-  }, /*#__PURE__*/React.createElement("colgroup", null, SMER_DEF_W.map((w, i) => /*#__PURE__*/React.createElement("col", {
+  }, /*#__PURE__*/React.createElement("colgroup", null, /*#__PURE__*/React.createElement("col", {
+    key: "rownum",
+    style: { width: 30 }
+  }), SMER_DEF_W.map((w, i) => /*#__PURE__*/React.createElement("col", {
     key: i,
     style: { width: colW[i] != null ? colW[i] + "px" : w }
-  }))), /*#__PURE__*/React.createElement("thead", null, /*#__PURE__*/React.createElement("tr", null, /*#__PURE__*/React.createElement("th", { rowSpan: 2, style: bTd({ fontSize: 11, position: "relative" }) }, "Date", /*#__PURE__*/React.createElement("span", { onMouseDown: e2 => startColDrag(e2, 0), onDoubleClick: () => resetCol(0), title: "Drag to resize this column \u00b7 double-click to reset \u2014 your view only", style: { position: "absolute", top: 0, right: -4, width: 8, height: "100%", cursor: "col-resize", zIndex: 2 } })), /*#__PURE__*/React.createElement("th", { rowSpan: 2, style: bTd({ fontSize: 11, position: "relative" }) }, "Travel Details (From/To)", /*#__PURE__*/React.createElement("span", { onMouseDown: e2 => startColDrag(e2, 1), onDoubleClick: () => resetCol(1), title: "Drag to resize this column \u00b7 double-click to reset \u2014 your view only", style: { position: "absolute", top: 0, right: -4, width: 8, height: "100%", cursor: "col-resize", zIndex: 2 } })), /*#__PURE__*/React.createElement("th", { colSpan: 2, style: bTd({ ...yl, fontSize: 11 }) }, "Daily KM Reading/FARE"), /*#__PURE__*/React.createElement("th", { rowSpan: 2, style: bTd({ ...yl, fontSize: 11, position: "relative" }) }, "Total KM/FARE", /*#__PURE__*/React.createElement("span", { onMouseDown: e2 => startColDrag(e2, 4), onDoubleClick: () => resetCol(4), title: "Drag to resize this column \u00b7 double-click to reset \u2014 your view only", style: { position: "absolute", top: 0, right: -4, width: 8, height: "100%", cursor: "col-resize", zIndex: 2 } })), /*#__PURE__*/React.createElement("th", { rowSpan: 2, style: bTd({ fontSize: 11, position: "relative" }) }, "Instrument", /*#__PURE__*/React.createElement("span", { onMouseDown: e2 => startColDrag(e2, 5), onDoubleClick: () => resetCol(5), title: "Drag to resize this column \u00b7 double-click to reset \u2014 your view only", style: { position: "absolute", top: 0, right: -4, width: 8, height: "100%", cursor: "col-resize", zIndex: 2 } })), /*#__PURE__*/React.createElement("th", { rowSpan: 2, style: bTd({ fontSize: 11, position: "relative" }) }, "ISR", /*#__PURE__*/React.createElement("br", null), "Number", /*#__PURE__*/React.createElement("span", { onMouseDown: e2 => startColDrag(e2, 6), onDoubleClick: () => resetCol(6), title: "Drag to resize this column \u00b7 double-click to reset \u2014 your view only", style: { position: "absolute", top: 0, right: -4, width: 8, height: "100%", cursor: "col-resize", zIndex: 2 } })), /*#__PURE__*/React.createElement("th", { rowSpan: 2, style: bTd({ fontSize: 11, position: "relative" }) }, "DCR (TIME & OUT)", /*#__PURE__*/React.createElement("span", { onMouseDown: e2 => startColDrag(e2, 7), onDoubleClick: () => resetCol(7), title: "Drag to resize this column \u00b7 double-click to reset \u2014 your view only", style: { position: "absolute", top: 0, right: -4, width: 8, height: "100%", cursor: "col-resize", zIndex: 2 } })), /*#__PURE__*/React.createElement("th", { rowSpan: 2, style: bTd({ ...yl, fontSize: 11, position: "relative" }) }, "Meals", /*#__PURE__*/React.createElement("span", { onMouseDown: e2 => startColDrag(e2, 8), onDoubleClick: () => resetCol(8), title: "Drag to resize this column \u00b7 double-click to reset \u2014 your view only", style: { position: "absolute", top: 0, right: -4, width: 8, height: "100%", cursor: "col-resize", zIndex: 2 } })), /*#__PURE__*/React.createElement("th", { rowSpan: 2, style: bTd({ ...yl, fontSize: 11, position: "relative" }) }, "Parking/", /*#__PURE__*/React.createElement("br", null), "Toll/Load", /*#__PURE__*/React.createElement("span", { onMouseDown: e2 => startColDrag(e2, 9), onDoubleClick: () => resetCol(9), title: "Drag to resize this column \u00b7 double-click to reset \u2014 your view only", style: { position: "absolute", top: 0, right: -4, width: 8, height: "100%", cursor: "col-resize", zIndex: 2 } }))), /*#__PURE__*/React.createElement("tr", null, /*#__PURE__*/React.createElement("th", { style: bTd({ ...yl, fontSize: 11, position: "relative" }) }, "From", /*#__PURE__*/React.createElement("span", { onMouseDown: e2 => startColDrag(e2, 2), onDoubleClick: () => resetCol(2), title: "Drag to resize this column \u00b7 double-click to reset \u2014 your view only", style: { position: "absolute", top: 0, right: -4, width: 8, height: "100%", cursor: "col-resize", zIndex: 2 } })), /*#__PURE__*/React.createElement("th", { style: bTd({ ...yl, fontSize: 11, position: "relative" }) }, "To", /*#__PURE__*/React.createElement("span", { onMouseDown: e2 => startColDrag(e2, 3), onDoubleClick: () => resetCol(3), title: "Drag to resize this column \u00b7 double-click to reset \u2014 your view only", style: { position: "absolute", top: 0, right: -4, width: 8, height: "100%", cursor: "col-resize", zIndex: 2 } })))), /*#__PURE__*/React.createElement("tbody", null, f.rows.map((r, i) => /*#__PURE__*/React.createElement("tr", {
+  }))), /*#__PURE__*/React.createElement("thead", null, /*#__PURE__*/React.createElement("tr", null, /*#__PURE__*/React.createElement("th", {
+    title: "Spreadsheet column letters \u2014 use them in formulas, e.g. =SUM(I2:I9). On screen only; never printed or exported.",
+    style: bTd({ fontSize: 9, color: "var(--c-text5)", padding: "1px 2px", textAlign: "center" })
+  }, "#"), SMER_COLS.map((ck2, ci2) => /*#__PURE__*/React.createElement("th", {
+    key: "L" + ck2,
+    title: "Column " + String.fromCharCode(65 + ci2) + " in formulas \u2014 e.g. =SUM(" + String.fromCharCode(65 + ci2) + "2:" + String.fromCharCode(65 + ci2) + "9)",
+    style: bTd({ fontSize: 9, color: "var(--c-text5)", padding: "1px 2px", textAlign: "center", fontWeight: 700 })
+  }, String.fromCharCode(65 + ci2)))), /*#__PURE__*/React.createElement("tr", null, /*#__PURE__*/React.createElement("th", { rowSpan: 2, style: bTd({ fontSize: 9, color: "var(--c-text5)" }) }, ""), /*#__PURE__*/React.createElement("th", { rowSpan: 2, style: bTd({ fontSize: 11, position: "relative" }) }, "Date", /*#__PURE__*/React.createElement("span", { onMouseDown: e2 => startColDrag(e2, 0), onDoubleClick: () => resetCol(0), title: "Drag to resize this column \u00b7 double-click to reset \u2014 your view only", style: { position: "absolute", top: 0, right: -4, width: 8, height: "100%", cursor: "col-resize", zIndex: 2 } })), /*#__PURE__*/React.createElement("th", { rowSpan: 2, style: bTd({ fontSize: 11, position: "relative" }) }, "Travel Details (From/To)", /*#__PURE__*/React.createElement("span", { onMouseDown: e2 => startColDrag(e2, 1), onDoubleClick: () => resetCol(1), title: "Drag to resize this column \u00b7 double-click to reset \u2014 your view only", style: { position: "absolute", top: 0, right: -4, width: 8, height: "100%", cursor: "col-resize", zIndex: 2 } })), /*#__PURE__*/React.createElement("th", { colSpan: 2, style: bTd({ ...yl, fontSize: 11 }) }, "Daily KM Reading/FARE"), /*#__PURE__*/React.createElement("th", { rowSpan: 2, style: bTd({ ...yl, fontSize: 11, position: "relative" }) }, "Total KM/FARE", /*#__PURE__*/React.createElement("span", { onMouseDown: e2 => startColDrag(e2, 4), onDoubleClick: () => resetCol(4), title: "Drag to resize this column \u00b7 double-click to reset \u2014 your view only", style: { position: "absolute", top: 0, right: -4, width: 8, height: "100%", cursor: "col-resize", zIndex: 2 } })), /*#__PURE__*/React.createElement("th", { rowSpan: 2, style: bTd({ fontSize: 11, position: "relative" }) }, "Instrument", /*#__PURE__*/React.createElement("span", { onMouseDown: e2 => startColDrag(e2, 5), onDoubleClick: () => resetCol(5), title: "Drag to resize this column \u00b7 double-click to reset \u2014 your view only", style: { position: "absolute", top: 0, right: -4, width: 8, height: "100%", cursor: "col-resize", zIndex: 2 } })), /*#__PURE__*/React.createElement("th", { rowSpan: 2, style: bTd({ fontSize: 11, position: "relative" }) }, "ISR", /*#__PURE__*/React.createElement("br", null), "Number", /*#__PURE__*/React.createElement("span", { onMouseDown: e2 => startColDrag(e2, 6), onDoubleClick: () => resetCol(6), title: "Drag to resize this column \u00b7 double-click to reset \u2014 your view only", style: { position: "absolute", top: 0, right: -4, width: 8, height: "100%", cursor: "col-resize", zIndex: 2 } })), /*#__PURE__*/React.createElement("th", { rowSpan: 2, style: bTd({ fontSize: 11, position: "relative" }) }, "DCR (TIME & OUT)", /*#__PURE__*/React.createElement("span", { onMouseDown: e2 => startColDrag(e2, 7), onDoubleClick: () => resetCol(7), title: "Drag to resize this column \u00b7 double-click to reset \u2014 your view only", style: { position: "absolute", top: 0, right: -4, width: 8, height: "100%", cursor: "col-resize", zIndex: 2 } })), /*#__PURE__*/React.createElement("th", { rowSpan: 2, style: bTd({ ...yl, fontSize: 11, position: "relative" }) }, "Meals", /*#__PURE__*/React.createElement("span", { onMouseDown: e2 => startColDrag(e2, 8), onDoubleClick: () => resetCol(8), title: "Drag to resize this column \u00b7 double-click to reset \u2014 your view only", style: { position: "absolute", top: 0, right: -4, width: 8, height: "100%", cursor: "col-resize", zIndex: 2 } })), /*#__PURE__*/React.createElement("th", { rowSpan: 2, style: bTd({ ...yl, fontSize: 11, position: "relative" }) }, "Parking/", /*#__PURE__*/React.createElement("br", null), "Toll/Load", /*#__PURE__*/React.createElement("span", { onMouseDown: e2 => startColDrag(e2, 9), onDoubleClick: () => resetCol(9), title: "Drag to resize this column \u00b7 double-click to reset \u2014 your view only", style: { position: "absolute", top: 0, right: -4, width: 8, height: "100%", cursor: "col-resize", zIndex: 2 } }))), /*#__PURE__*/React.createElement("tr", null, /*#__PURE__*/React.createElement("th", { style: bTd({ ...yl, fontSize: 11, position: "relative" }) }, "From", /*#__PURE__*/React.createElement("span", { onMouseDown: e2 => startColDrag(e2, 2), onDoubleClick: () => resetCol(2), title: "Drag to resize this column \u00b7 double-click to reset \u2014 your view only", style: { position: "absolute", top: 0, right: -4, width: 8, height: "100%", cursor: "col-resize", zIndex: 2 } })), /*#__PURE__*/React.createElement("th", { style: bTd({ ...yl, fontSize: 11, position: "relative" }) }, "To", /*#__PURE__*/React.createElement("span", { onMouseDown: e2 => startColDrag(e2, 3), onDoubleClick: () => resetCol(3), title: "Drag to resize this column \u00b7 double-click to reset \u2014 your view only", style: { position: "absolute", top: 0, right: -4, width: 8, height: "100%", cursor: "col-resize", zIndex: 2 } })))), /*#__PURE__*/React.createElement("tbody", null, f.rows.map((r, i) => /*#__PURE__*/React.createElement("tr", {
     key: i
-  }, /*#__PURE__*/React.createElement("td", { style: { ...bTd(), position: "relative" } }, /*#__PURE__*/React.createElement("input", { style: paperIn({ paddingRight: 12, textAlign: alignOf("date") }), value: r.date, onFocus: () => { setRowFocus(i); setColFocus("date"); }, onChange: e => setRow(i, "date", e.target.value), placeholder: "" }), /*#__PURE__*/React.createElement("button", { title: "Delete this row", onClick: () => delRow(i), style: { position: "absolute", top: 0, right: 0, background: "none", border: "none", cursor: "pointer", fontSize: 9, color: "#a00", lineHeight: "14px", padding: "0 2px" } }, "✕")), /*#__PURE__*/React.createElement("td", { style: bTd() }, /*#__PURE__*/React.createElement("input", { style: paperIn({ textAlign: alignOf("travel") }), value: r.travel, onFocus: () => { setRowFocus(i); setColFocus("travel"); }, onChange: e => setRow(i, "travel", e.target.value) })), /*#__PURE__*/React.createElement("td", { style: bTd() }, /*#__PURE__*/React.createElement("input", { style: paperIn({ textAlign: alignOf("kmFrom") }), value: r.kmFrom, onFocus: () => { setRowFocus(i); setColFocus("kmFrom"); }, onChange: e => setRow(i, "kmFrom", e.target.value) })), /*#__PURE__*/React.createElement("td", { style: bTd() }, /*#__PURE__*/React.createElement("input", { style: paperIn({ textAlign: alignOf("kmTo") }), value: r.kmTo, onFocus: () => { setRowFocus(i); setColFocus("kmTo"); }, onChange: e => setRow(i, "kmTo", e.target.value) })), /*#__PURE__*/React.createElement("td", { style: bTd() }, /*#__PURE__*/React.createElement("input", { title: "Auto-computes To − From when both are numbers; you can also type a fare directly", style: paperIn({ textAlign: alignOf("totalKm") }), value: r.totalKm, onFocus: () => { setRowFocus(i); setColFocus("totalKm"); }, onChange: e => setRow(i, "totalKm", e.target.value) })), /*#__PURE__*/React.createElement("td", { style: bTd() }, /*#__PURE__*/React.createElement("input", { style: paperIn({ textAlign: alignOf("instrument") }), list: "smer-models", value: r.instrument, onFocus: () => { setRowFocus(i); setColFocus("instrument"); }, onChange: e => setRow(i, "instrument", e.target.value) })), /*#__PURE__*/React.createElement("td", { style: bTd() }, /*#__PURE__*/React.createElement("input", { style: paperIn({ textAlign: alignOf("isr") }), value: r.isr, onFocus: () => { setRowFocus(i); setColFocus("isr"); }, onChange: e => setRow(i, "isr", e.target.value) })), /*#__PURE__*/React.createElement("td", { style: bTd() }, /*#__PURE__*/React.createElement("input", { style: paperIn({ textAlign: alignOf("dcr") }), value: r.dcr, onFocus: () => { setRowFocus(i); setColFocus("dcr"); }, onChange: e => setRow(i, "dcr", e.target.value) })), /*#__PURE__*/React.createElement("td", { style: bTd() }, /*#__PURE__*/React.createElement("input", { style: paperIn({ textAlign: alignOf("meals") }), value: r.meals, onFocus: () => { setRowFocus(i); setColFocus("meals"); }, onChange: e => setRow(i, "meals", e.target.value) })), /*#__PURE__*/React.createElement("td", { style: bTd() }, /*#__PURE__*/React.createElement("input", { style: paperIn({ textAlign: alignOf("parking") }), value: r.parking, onFocus: () => { setRowFocus(i); setColFocus("parking"); }, onChange: e => setRow(i, "parking", e.target.value) })))), /*#__PURE__*/React.createElement("tr", null, /*#__PURE__*/React.createElement("td", { style: bTd({ textAlign: "center", fontWeight: 800, fontSize: 11.5 }) }, "TOTAL:"), /*#__PURE__*/React.createElement("td", { style: bTd() }), /*#__PURE__*/React.createElement("td", { style: bTd() }), /*#__PURE__*/React.createElement("td", { style: bTd() }), /*#__PURE__*/React.createElement("td", { style: bTd({ textAlign: "right", fontWeight: 800, fontSize: 11.5, padding: "0 3px" }) }, tKm.toFixed(2)), /*#__PURE__*/React.createElement("td", { style: bTd() }), /*#__PURE__*/React.createElement("td", { style: bTd() }), /*#__PURE__*/React.createElement("td", { style: bTd() }), /*#__PURE__*/React.createElement("td", { style: bTd({ textAlign: "right", fontWeight: 800, fontSize: 11.5, padding: "0 3px" }) }, tMeals.toFixed(2)), /*#__PURE__*/React.createElement("td", { style: bTd({ textAlign: "right", fontWeight: 800, fontSize: 11.5, padding: "0 3px" }) }, tPark.toFixed(2))))), /*#__PURE__*/React.createElement("datalist", { id: "smer-models" }, models.map((m2, i2) => /*#__PURE__*/React.createElement("option", { key: m2 + i2, value: m2 }))), /*#__PURE__*/React.createElement("div", {
+  }, /*#__PURE__*/React.createElement("td", {
+    style: bTd({ textAlign: "center", fontSize: 9.5, color: "var(--c-text5)", fontFamily: "monospace", padding: 0 })
+  }, i + 1), /*#__PURE__*/React.createElement("td", { style: { ...bTd(), position: "relative" } }, /*#__PURE__*/React.createElement("input", { style: paperIn({ paddingRight: 12, textAlign: alignOf("date") }), value: rowFocus === i && colFocus === "date" ? r.date : smerShow(i, "date"), onFocus: () => { setRowFocus(i); setColFocus("date"); }, onChange: e => setRow(i, "date", e.target.value), placeholder: "" }), /*#__PURE__*/React.createElement("button", { title: "Delete this row", onClick: () => delRow(i), style: { position: "absolute", top: 0, right: 0, background: "none", border: "none", cursor: "pointer", fontSize: 9, color: "#a00", lineHeight: "14px", padding: "0 2px" } }, "✕")), /*#__PURE__*/React.createElement("td", { style: bTd() }, /*#__PURE__*/React.createElement("input", { style: paperIn({ textAlign: alignOf("travel") }), value: rowFocus === i && colFocus === "travel" ? r.travel : smerShow(i, "travel"), onFocus: () => { setRowFocus(i); setColFocus("travel"); }, onChange: e => setRow(i, "travel", e.target.value) })), /*#__PURE__*/React.createElement("td", { style: bTd() }, /*#__PURE__*/React.createElement("input", { style: paperIn({ textAlign: alignOf("kmFrom") }), value: rowFocus === i && colFocus === "kmFrom" ? r.kmFrom : smerShow(i, "kmFrom"), onFocus: () => { setRowFocus(i); setColFocus("kmFrom"); }, onChange: e => setRow(i, "kmFrom", e.target.value) })), /*#__PURE__*/React.createElement("td", { style: bTd() }, /*#__PURE__*/React.createElement("input", { style: paperIn({ textAlign: alignOf("kmTo") }), value: rowFocus === i && colFocus === "kmTo" ? r.kmTo : smerShow(i, "kmTo"), onFocus: () => { setRowFocus(i); setColFocus("kmTo"); }, onChange: e => setRow(i, "kmTo", e.target.value) })), /*#__PURE__*/React.createElement("td", { style: bTd() }, /*#__PURE__*/React.createElement("input", { title: "Auto-computes To − From when both are numbers; you can also type a fare directly", style: paperIn({ textAlign: alignOf("totalKm") }), value: rowFocus === i && colFocus === "totalKm" ? r.totalKm : smerShow(i, "totalKm"), onFocus: () => { setRowFocus(i); setColFocus("totalKm"); }, onChange: e => setRow(i, "totalKm", e.target.value) })), /*#__PURE__*/React.createElement("td", { style: bTd() }, /*#__PURE__*/React.createElement("input", { style: paperIn({ textAlign: alignOf("instrument") }), list: "smer-models", value: rowFocus === i && colFocus === "instrument" ? r.instrument : smerShow(i, "instrument"), onFocus: () => { setRowFocus(i); setColFocus("instrument"); }, onChange: e => setRow(i, "instrument", e.target.value) })), /*#__PURE__*/React.createElement("td", { style: bTd() }, /*#__PURE__*/React.createElement("input", { style: paperIn({ textAlign: alignOf("isr") }), value: rowFocus === i && colFocus === "isr" ? r.isr : smerShow(i, "isr"), onFocus: () => { setRowFocus(i); setColFocus("isr"); }, onChange: e => setRow(i, "isr", e.target.value) })), /*#__PURE__*/React.createElement("td", { style: bTd() }, /*#__PURE__*/React.createElement("input", { style: paperIn({ textAlign: alignOf("dcr") }), value: rowFocus === i && colFocus === "dcr" ? r.dcr : smerShow(i, "dcr"), onFocus: () => { setRowFocus(i); setColFocus("dcr"); }, onChange: e => setRow(i, "dcr", e.target.value) })), /*#__PURE__*/React.createElement("td", { style: bTd() }, /*#__PURE__*/React.createElement("input", { style: paperIn({ textAlign: alignOf("meals") }), value: rowFocus === i && colFocus === "meals" ? r.meals : smerShow(i, "meals"), onFocus: () => { setRowFocus(i); setColFocus("meals"); }, onChange: e => setRow(i, "meals", e.target.value) })), /*#__PURE__*/React.createElement("td", { style: bTd() }, /*#__PURE__*/React.createElement("input", { style: paperIn({ textAlign: alignOf("parking") }), value: rowFocus === i && colFocus === "parking" ? r.parking : smerShow(i, "parking"), onFocus: () => { setRowFocus(i); setColFocus("parking"); }, onChange: e => setRow(i, "parking", e.target.value) })))), /*#__PURE__*/React.createElement("tr", null, /*#__PURE__*/React.createElement("td", { style: bTd() }), /*#__PURE__*/React.createElement("td", { style: bTd({ textAlign: "center", fontWeight: 800, fontSize: 11.5 }) }, "TOTAL:"), /*#__PURE__*/React.createElement("td", { style: bTd() }), /*#__PURE__*/React.createElement("td", { style: bTd() }), /*#__PURE__*/React.createElement("td", { style: bTd() }), /*#__PURE__*/React.createElement("td", { style: bTd() }, totCellInput("km", "totKmS", tKm, effKm)), /*#__PURE__*/React.createElement("td", { style: bTd() }), /*#__PURE__*/React.createElement("td", { style: bTd() }), /*#__PURE__*/React.createElement("td", { style: bTd() }), /*#__PURE__*/React.createElement("td", { style: bTd() }, totCellInput("meals", "totMealsS", tMeals, effMeals)), /*#__PURE__*/React.createElement("td", { style: bTd() }, totCellInput("park", "totParkS", tPark, effPark))))), /*#__PURE__*/React.createElement("datalist", { id: "smer-models" }, models.map((m2, i2) => /*#__PURE__*/React.createElement("option", { key: m2 + i2, value: m2 }))), /*#__PURE__*/React.createElement("div", {
     style: { display: "flex", justifyContent: "space-between", marginTop: 14, flexWrap: "wrap", gap: 20 }
   }, /*#__PURE__*/React.createElement("div", {
     style: { fontSize: 12, width: 300 }
-  }, [["1. Gas/Fare", null, "gasS"], ["2. Meals", tMeals.toFixed(2), null], ["3. Parking", null, "parkingS"], ["4. Toll", null, "tollS"], ["5. Load", null, "loadS"]].map(([lb, val, key2]) => /*#__PURE__*/React.createElement("div", {
+  }, [["1. Gas/Fare", null, "gasS"], ["2. Meals", effMeals.toFixed(2), null], ["3. Parking", null, "parkingS"], ["4. Toll", null, "tollS"], ["5. Load", null, "loadS"]].map(([lb, val, key2]) => /*#__PURE__*/React.createElement("div", {
     key: lb,
     style: { display: "flex", justifyContent: "space-between", alignItems: "center", padding: "1px 0" }
-  }, /*#__PURE__*/React.createElement("span", null, lb), key2 ? /*#__PURE__*/React.createElement("input", {
+  }, /*#__PURE__*/React.createElement("span", null, lb), key2 ? /*#__PURE__*/React.createElement("span", {
+    style: { display: "inline-flex", alignItems: "center", gap: 6 }
+  }, String(f[key2] || "").trim().charAt(0) === "=" ? /*#__PURE__*/React.createElement("span", {
+    title: "Computed result of the formula",
+    style: { fontSize: 10, color: "var(--c-text4)", fontWeight: 700 }
+  }, "= " + sNum(f[key2]).toFixed(2)) : null, /*#__PURE__*/React.createElement("input", {
     style: paperIn({ borderBottom: key2 === "loadS" ? "none" : "1px solid #000", width: 90, textAlign: "right" }),
+    title: "A number or an Excel-style formula \u2014 e.g. =SUM(I2:I9)",
     value: f[key2],
     onChange: e => setF(x => ({ ...x, [key2]: e.target.value }))
-  }) : /*#__PURE__*/React.createElement("span", {
+  })) : /*#__PURE__*/React.createElement("span", {
     style: { borderBottom: "1px solid #000", minWidth: 90, textAlign: "right" }
   }, val))), /*#__PURE__*/React.createElement("div", {
     style: { display: "flex", justifyContent: "space-between", fontWeight: 800, borderTop: "1px solid #000", marginTop: 4, paddingTop: 3 }
@@ -16940,7 +17161,7 @@ function DangerZone({
         }
       }
       logAudit(profile, "danger.audit", entries.length + " entr" + (entries.length === 1 ? "y" : "ies") + " permanently deleted" + (rangeLabel ? " (" + rangeLabel + ")" : "") + (failed ? " (" + failed + " refused)" : ""));
-      notify(failed ? entries.length - failed + " deleted; " + failed + " refused — publish the new security rules first." : "🗑 " + entries.length + " audit entr" + (entries.length === 1 ? "y" : "ies") + " permanently deleted.", failed ? "error" : "bin");
+      notify(failed ? entries.length - failed + " deleted; " + failed + " refused by the server — audit deletion needs firestore_v22.rules published (it allows Danger-granted administrators, not only the owner)." : "🗑 " + entries.length + " audit entr" + (entries.length === 1 ? "y" : "ies") + " permanently deleted.", failed ? "error" : "bin");
     } catch (e) {
       notify("SERVER REFUSED:\n" + e.message, "error");
     }
@@ -17183,7 +17404,7 @@ function DangerZone({
     }
   }, "Inventory, spare parts and overtime land in the Bin as one restorable entry each. The audit trail is different: security rules make audit entries immutable, so deleting them is ", /*#__PURE__*/React.createElement("b", null, "permanent"), " — and the deletion itself is recorded as a fresh audit entry.")));
 }
-const TAB_ANIMS = [["default", "Default", "colored highlight + slight zoom when hovering tabs, buttons, cards and table headers; a soft zoom-in on switch"], ["none", "None", "no animation at all"], ["bounce", "Bounce", "springs up with a playful overshoot"], ["bubble", "Bubble", "inflates softly like a bubble"], ["zoom", "Zoom", "zooms in and settles"], ["slide", "Slide", "glides in from the left"], ["fade", "Fade", "a clean, calm cross-fade"], ["flip", "Flip", "flips forward in 3-D"], ["drop", "Drop", "falls from above and lands with a bounce"], ["swing", "Swing", "swings in from the top corner"], ["blur", "Blur", "sharpens into focus"], ["wipe", "Wipe", "reveals left-to-right like a curtain"], ["spin", "Spin", "twists in with a quick quarter-turn"], ["elastic", "Elastic", "stretches like jelly and snaps into shape"], ["rise", "Rise", "rises smoothly from below"], ["skew", "Skew", "slants in and straightens up"], ["glow", "Glow", "fades in with a bright flash"], ["curtain", "Curtain", "unrolls from the top like a curtain"], ["sweep", "Sweep", "sweeps in with a diagonal wipe"], ["spiral", "Spiral", "spins inward and settles"], ["newspaper", "Newspaper", "whirls in like a spinning headline"], ["stretch", "Stretch", "expands out from a horizontal line"], ["glitch", "Glitch", "snaps in with a digital jitter"], ["fold", "Fold", "folds down like a sheet of paper"], ["iris", "Iris", "opens from the center like a camera iris"], ["shutter", "Shutter", "opens like horizontal shutters"], ["tumble", "Tumble", "tumbles in with a rolling spin"], ["pop", "Pop", "pops in with a snappy overshoot"], ["drift", "Drift", "drifts in gently from the corner"], ["wave", "Wave", "sways in and settles like a wave"]];
+const TAB_ANIMS = [["default", "Default", "macOS-style Dock magnification on the tab bar (icons swell as the pointer approaches); colored highlight + slight zoom on content buttons, cards and table headers"], ["none", "None", "no animation at all"], ["bounce", "Bounce", "springs up with a playful overshoot"], ["bubble", "Bubble", "inflates softly like a bubble"], ["zoom", "Zoom", "zooms in and settles"], ["slide", "Slide", "glides in from the left"], ["fade", "Fade", "a clean, calm cross-fade"], ["flip", "Flip", "flips forward in 3-D"], ["drop", "Drop", "falls from above and lands with a bounce"], ["swing", "Swing", "swings in from the top corner"], ["blur", "Blur", "sharpens into focus"], ["wipe", "Wipe", "reveals left-to-right like a curtain"], ["spin", "Spin", "twists in with a quick quarter-turn"], ["elastic", "Elastic", "stretches like jelly and snaps into shape"], ["rise", "Rise", "rises smoothly from below"], ["skew", "Skew", "slants in and straightens up"], ["glow", "Glow", "fades in with a bright flash"], ["curtain", "Curtain", "unrolls from the top like a curtain"], ["sweep", "Sweep", "sweeps in with a diagonal wipe"], ["spiral", "Spiral", "spins inward and settles"], ["newspaper", "Newspaper", "whirls in like a spinning headline"], ["stretch", "Stretch", "expands out from a horizontal line"], ["glitch", "Glitch", "snaps in with a digital jitter"], ["fold", "Fold", "folds down like a sheet of paper"], ["iris", "Iris", "opens from the center like a camera iris"], ["shutter", "Shutter", "opens like horizontal shutters"], ["tumble", "Tumble", "tumbles in with a rolling spin"], ["pop", "Pop", "pops in with a snappy overshoot"], ["drift", "Drift", "drifts in gently from the corner"], ["wave", "Wave", "sways in and settles like a wave"]];
 // "default" resolves to the system default style.
 // PER-USER: reads the local ui preference object — never the shared catalog.
 // PER-TARGET animations: the tab CONTENT and the tab BUTTONS each keep their
@@ -17287,7 +17508,7 @@ function AnimationsCard({
 // is required; 3 consecutive wrong attempts lock this function for 24 hours
 // (recorded on the user's own doc + this device), and every failed attempt is
 // audited AND broadcast to all administrators. The sole owner is traceless.
-const BR_COLLECTIONS = ["labs", "inventory", "spareParts", "reagents", "sales", "otApplications", "wpoa", "smer", "bin", "audit", "attachments", "config", "users"];
+const BR_COLLECTIONS = ["labs", "inventory", "spareParts", "reagents", "otApplications", "wpoa", "smer", "bin", "audit", "attachments", "config", "users"];
 function BackupRestoreZone({ profile, notify }) {
   const iAmOwner = isOwnerAcct(profile) || isOwnerAcct(auth.currentUser);
   const [emailIn, setEmailIn] = useState("");
@@ -17429,7 +17650,7 @@ function BackupRestoreZone({ profile, notify }) {
   return /*#__PURE__*/React.createElement("div", { style: cardSt },
     /*#__PURE__*/React.createElement("div", { style: { fontWeight: 800, fontSize: 15, marginBottom: 4 } }, "\ud83d\udee1 Backup & Restore \u2014 administrators' danger zone"),
     /*#__PURE__*/React.createElement("div", { style: { fontSize: 12, color: "var(--c-text4)", marginBottom: 14 } },
-      "One click backs up the ENTIRE system to a single file \u2014 LOGS & institutions, machine / spare-parts / reagents inventories, sales, overtime applications & settings & saved forms, WPOA, SMER, the Bin, attachments, every user's settings and all configuration. Restoring replaces everything with the file's contents. 3 wrong password attempts lock this page for 24 hours and every administrator is alerted."),
+      "One click backs up the ENTIRE system to a single file \u2014 LOGS & institutions, machine / spare-parts / reagents inventories, overtime applications & settings & saved forms, WPOA, SMER, the Bin, attachments, every user's settings and all configuration. Restoring replaces everything with the file's contents. 3 wrong password attempts lock this page for 24 hours and every administrator is alerted."),
     locked ? /*#__PURE__*/React.createElement("div", { style: { padding: "14px 16px", border: "1px solid #7f1d1d", background: "rgba(127,29,29,.15)", borderRadius: 10, fontSize: 13, color: "#fca5a5", fontWeight: 700 } },
       "\u26d4 Locked after 3 wrong attempts. Try again in " + leftTxt(lockLeft) + ".") :
     !unlocked ? /*#__PURE__*/React.createElement("div", { style: { display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap" } },
@@ -19858,134 +20079,6 @@ function ReagentsTab({ profile, labs, catalog, notify }) {
 }
 function notifyG(msg, kind) { if (window.__rgNotify) window.__rgNotify(msg, kind); }
 // ═══════════════ SALES PERFORMANCE TRACKER ═══════════════
-function SaleModal({ profile, labs, catalog, onSave, onClose }) {
-  const myName = (profile.displayName || meEmail(profile) || "").trim();
-  const [f, setF] = useState({ date: today(), account: "", brand: "", model: "", territory: "", amount: "", units: "1", notes: "", rep: myName });
-  const set = (k, v) => setF(x => ({ ...x, [k]: v }));
-  const models = (catalog && catalog.machines) || [];
-  const brands = Array.from(new Set(models.map(m => m.brand).filter(Boolean))).sort();
-  const pickAccount = v => {
-    const lab = (labs || []).find(l => labNameNorm(l.name) === labNameNorm(v));
-    setF(x => ({ ...x, account: v, territory: x.territory || (lab ? lab.subRegion || lab.location || "" : "") }));
-  };
-  return RG_h(Modal, { title: "💰 Record a Sale", onClose: onClose, wide: true },
-    RG_h("div", { style: { display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 } },
-      RG_h("div", null, RG_h("label", { style: labelSt }, "Date *"), RG_h("input", { type: "date", style: inputSt(), value: f.date, onChange: e => set("date", e.target.value) })),
-      RG_h("div", null, RG_h("label", { style: labelSt }, "Customer / Account *"), RG_h("input", { style: inputSt(), value: f.account, onChange: e => pickAccount(e.target.value), list: "sl-acc" }), RG_h("datalist", { id: "sl-acc" }, (labs || []).map(l => RG_h("option", { key: l.id, value: l.name })))),
-      RG_h("div", null, RG_h("label", { style: labelSt }, "Brand"), RG_h("input", { style: inputSt(), value: f.brand, onChange: e => set("brand", e.target.value), list: "sl-br" }), RG_h("datalist", { id: "sl-br" }, brands.map(b => RG_h("option", { key: b, value: b })))),
-      RG_h("div", null, RG_h("label", { style: labelSt }, "Machine / Model"), RG_h("input", { style: inputSt(), value: f.model, onChange: e => set("model", e.target.value), list: "sl-md" }), RG_h("datalist", { id: "sl-md" }, models.filter(m => !f.brand || m.brand === f.brand).map((m, i) => RG_h("option", { key: m.model + i, value: m.model })))),
-      RG_h("div", null, RG_h("label", { style: labelSt }, "Assigned Area / Territory"), RG_h("input", { style: inputSt(), value: f.territory, onChange: e => set("territory", e.target.value), placeholder: "auto-fills from the account" })),
-      RG_h("div", null, RG_h("label", { style: labelSt }, "Amount (\u20B1) *"), RG_h("input", { type: "number", min: "0", style: inputSt(), value: f.amount, onChange: e => set("amount", e.target.value) })),
-      RG_h("div", null, RG_h("label", { style: labelSt }, "Units"), RG_h("input", { type: "number", min: "1", style: inputSt(), value: f.units, onChange: e => set("units", e.target.value) })),
-      profile.isAdmin ? RG_h("div", null, RG_h("label", { style: labelSt }, "Sales Representative"), RG_h("input", { style: inputSt(), value: f.rep, onChange: e => set("rep", e.target.value) })) : RG_h("div", null, RG_h("label", { style: labelSt }, "Sales Representative"), RG_h("input", { style: { ...inputSt(), opacity: .6 }, value: myName, disabled: true })),
-      RG_h("div", { style: { gridColumn: "1 / -1" } }, RG_h("label", { style: labelSt }, "Notes"), RG_h("input", { style: inputSt(), value: f.notes, onChange: e => set("notes", e.target.value) }))),
-    RG_h("div", { style: { display: "flex", gap: 10, marginTop: 16 } },
-      RG_h("button", { style: btnSt("var(--c-key)", "var(--c-bg)"), onClick: () => {
-        const amt = Number(f.amount);
-        const missing = [[f.date, "Date"], [f.account.trim(), "Customer / Account"], [amt > 0, "Amount"]].filter(x => !x[0]).map(x => x[1]);
-        if (missing.length) { notifyG("Please complete: " + missing.join(", "), "error"); return; }
-        onSave({ date: f.date, account: f.account.trim(), brand: f.brand.trim(), model: f.model.trim(), territory: f.territory.trim(), amount: amt, units: Math.max(1, Number(f.units) || 1), notes: f.notes.trim(), rep: (profile.isAdmin ? f.rep.trim() : myName) || myName });
-      } }, "Save Sale"),
-      RG_h("button", { style: btnSt("var(--c-border)", "var(--c-text2)"), onClick: onClose }, "Cancel")));
-}
-function SalesTab({ profile, labs, catalog, notify }) {
-  window.__rgNotify = notify;
-  const [sales, setSales] = useState(null);
-  const [adding, setAdding] = useState(false);
-  const [rep, setRep] = useState(profile.isAdmin ? "all" : "me");
-  const [period, setPeriod] = useState("mtd");
-  const [from, setFrom] = useState("");
-  const [to, setTo] = useState("");
-  useEffect(() => { const un = db.collection("sales").onSnapshot(s2 => setSales(s2.docs.map(d => ({ id: d.id, ...d.data() }))), e => notify("Sales: " + e.message, "error")); return un; }, []);
-  const myName = (profile.displayName || meEmail(profile) || "").trim();
-  const reps = useMemo(() => Array.from(new Set((sales || []).map(s2 => s2.rep).filter(Boolean))).sort(), [sales]);
-  const inPeriod = d => {
-    if (!d) return false;
-    const now = new Date(); const dd = String(d).slice(0, 10);
-    if (period === "custom") return (!from || dd >= from) && (!to || dd <= to);
-    const y = String(now.getFullYear());
-    if (period === "ytd") return dd.slice(0, 4) === y && dd <= now.toISOString().slice(0, 10);
-    const m = y + "-" + String(now.getMonth() + 1).padStart(2, "0");
-    return dd.slice(0, 7) === m;
-  };
-  const mine = s2 => String(s2.rep || "").trim().toLowerCase() === myName.toLowerCase();
-  const visible = useMemo(() => (sales || []).filter(s2 => inPeriod(s2.date) && (profile.isAdmin ? (rep === "all" ? true : rep === "me" ? mine(s2) : s2.rep === rep) : mine(s2))), [sales, rep, period, from, to]);
-  const peso = n => "\u20B1" + Number(n || 0).toLocaleString();
-  const tot = visible.reduce((a, s2) => a + (Number(s2.amount) || 0), 0);
-  const totU = visible.reduce((a, s2) => a + (Number(s2.units) || 0), 0);
-  const accounts = new Set(visible.map(s2 => s2.account)).size;
-  const groupBy = key => { const m = {}; visible.forEach(s2 => { const k = String(s2[key] || "—") || "—"; if (!m[k]) m[k] = { k: k, amt: 0, units: 0, n: 0 }; m[k].amt += Number(s2.amount) || 0; m[k].units += Number(s2.units) || 0; m[k].n++; }); return Object.values(m).sort((a, b) => b.amt - a.amt); };
-  const Breakdown = (title, key) => { const rows = groupBy(key); const max = rows.length ? rows[0].amt : 1; return RG_h("div", { style: { ...cardSt, flex: "1 1 340px", minWidth: 320 } },
-    RG_h("div", { style: { fontSize: 12, fontWeight: 800, color: "var(--c-text4)", textTransform: "uppercase", marginBottom: 8 } }, title),
-    rows.length === 0 ? RG_h("div", { style: { fontSize: 12, color: "var(--c-text5)" } }, "No sales in this period.") :
-    rows.slice(0, 12).map((r, i) => RG_h("div", { key: r.k + i, style: { marginBottom: 7 } },
-      RG_h("div", { style: { display: "flex", justifyContent: "space-between", fontSize: 12 } },
-        RG_h("span", { style: { color: "var(--c-text2)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", maxWidth: "60%" } }, r.k),
-        RG_h("span", { style: { color: "var(--c-text3)", fontWeight: 700 } }, peso(r.amt), RG_h("span", { style: { color: "var(--c-text5)", fontWeight: 400 } }, "  · " + r.units + "u · " + r.n + " sale(s)"))),
-      RG_h("div", { style: { height: 6, borderRadius: 4, background: "var(--c-bg)", overflow: "hidden", marginTop: 3 } },
-        RG_h("div", { className: "ib-dash-bar", style: { width: Math.max(3, r.amt / max * 100) + "%", height: "100%", borderRadius: 4, background: CHART_PALETTE[i % CHART_PALETTE.length] } }))))); };
-  const monthly = useMemo(() => { const m = {}; visible.forEach(s2 => { const k = String(s2.date || "").slice(0, 7); if (!k) return; m[k] = (m[k] || 0) + (Number(s2.amount) || 0); }); return Object.keys(m).sort().map(k => ({ k: k, amt: m[k] })); }, [visible]);
-  const KPI = (label, val) => RG_h("div", { style: { ...cardSt, flex: "1 1 150px", textAlign: "center" } },
-    RG_h("div", { style: { fontSize: 22, fontWeight: 900, color: "var(--c-key)" } }, val),
-    RG_h("div", { style: { fontSize: 10.5, color: "var(--c-text4)", textTransform: "uppercase", fontWeight: 700, marginTop: 4 } }, label));
-  return RG_h("div", null,
-    RG_h("div", { style: { display: "flex", gap: 8, marginBottom: 12, flexWrap: "wrap", alignItems: "flex-end" } },
-      profile.isAdmin ? RG_h("select", { style: { ...inputSt(), maxWidth: 230, cursor: "pointer" }, value: rep, onChange: e => setRep(e.target.value) },
-        RG_h("option", { value: "all" }, "👔 All representatives (management)"),
-        RG_h("option", { value: "me" }, "🙋 My sales"),
-        reps.map(r => RG_h("option", { key: r, value: r }, r))) :
-        RG_h("div", { style: { fontSize: 13, fontWeight: 800, color: "var(--c-text2)", padding: "8px 0" } }, "🙋 My performance — ", myName),
-      RG_h("select", { style: { ...inputSt(), maxWidth: 190, cursor: "pointer" }, value: period, onChange: e => setPeriod(e.target.value) },
-        RG_h("option", { value: "mtd" }, "Month-to-Date (MTD)"),
-        RG_h("option", { value: "ytd" }, "Year-to-Date (YTD)"),
-        RG_h("option", { value: "custom" }, "Custom range")),
-      period === "custom" ? RG_h("div", null, RG_h("label", { style: labelSt }, "From"), RG_h("input", { type: "date", style: inputSt(), value: from, onChange: e => setFrom(e.target.value) })) : null,
-      period === "custom" ? RG_h("div", null, RG_h("label", { style: labelSt }, "To"), RG_h("input", { type: "date", style: inputSt(), value: to, onChange: e => setTo(e.target.value) })) : null,
-      RG_h("button", { style: { ...btnSt("var(--c-key)", "var(--c-bg)"), marginLeft: "auto" }, onClick: () => setAdding(true) }, "+ Record Sale")),
-    sales === null ? RG_h("div", { style: { color: "var(--c-text4)", fontSize: 13 } }, "Loading…") : RG_h(React.Fragment, null,
-      RG_h("div", { style: { display: "flex", gap: 12, flexWrap: "wrap", marginBottom: 14 } },
-        KPI("Total Sales", peso(tot)), KPI("Units", totU), KPI("Transactions", visible.length), KPI("Accounts", accounts)),
-      monthly.length > 1 ? RG_h("div", { style: { ...cardSt, marginBottom: 14 } },
-        RG_h("div", { style: { fontSize: 12, fontWeight: 800, color: "var(--c-text4)", textTransform: "uppercase", marginBottom: 8 } }, "📈 Monthly trend"),
-        monthly.map((r, i) => { const max = Math.max(...monthly.map(x => x.amt)); return RG_h("div", { key: r.k, style: { display: "flex", alignItems: "center", gap: 8, marginBottom: 4 } },
-          RG_h("span", { style: { fontSize: 11, color: "var(--c-text4)", width: 58 } }, r.k),
-          RG_h("div", { style: { flex: 1, height: 8, borderRadius: 4, background: "var(--c-bg)", overflow: "hidden" } },
-            RG_h("div", { className: "ib-dash-bar", style: { width: Math.max(2, r.amt / max * 100) + "%", height: "100%", background: "var(--c-key)", borderRadius: 4 } })),
-          RG_h("span", { style: { fontSize: 11.5, color: "var(--c-text3)", width: 110, textAlign: "right" } }, peso(r.amt))); })) : null,
-      RG_h("div", { style: { display: "flex", gap: 12, flexWrap: "wrap", marginBottom: 14 } },
-        Breakdown("🏥 Per Account", "account"),
-        Breakdown("🏷 Per Brand", "brand"),
-        Breakdown("🔬 Per Machine", "model"),
-        Breakdown("📍 Per Territory", "territory")),
-      profile.isAdmin && rep === "all" ? RG_h("div", { style: { ...cardSt, marginBottom: 14 } },
-        RG_h("div", { style: { fontSize: 12, fontWeight: 800, color: "var(--c-text4)", textTransform: "uppercase", marginBottom: 8 } }, "👔 Representative comparison"),
-        groupBy("rep").map((r, i) => { const rows = groupBy("rep"); const max = rows.length ? rows[0].amt : 1; return RG_h("div", { key: r.k, style: { display: "flex", alignItems: "center", gap: 8, marginBottom: 5 } },
-          RG_h("span", { style: { fontSize: 12, color: "var(--c-text2)", width: 170, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" } }, r.k),
-          RG_h("div", { style: { flex: 1, height: 8, borderRadius: 4, background: "var(--c-bg)", overflow: "hidden" } },
-            RG_h("div", { className: "ib-dash-bar", style: { width: Math.max(2, r.amt / max * 100) + "%", height: "100%", background: CHART_PALETTE[i % CHART_PALETTE.length], borderRadius: 4 } })),
-          RG_h("span", { style: { fontSize: 11.5, color: "var(--c-text3)", width: 150, textAlign: "right" } }, peso(r.amt), " · " + r.n)); })) : null,
-      RG_h(ITable, { id: "sales", cols: [
-        { id: "date", label: "Date", w: 95, sv: s2 => s2.date || "", render: s2 => RG_h("span", null, fmtDate(s2.date)) },
-        { id: "rep", label: "Sales Rep", w: 140, sv: s2 => s2.rep || "" },
-        { id: "account", label: "Customer / Account", w: 200, sv: s2 => s2.account || "" },
-        { id: "brand", label: "Brand", w: 100, sv: s2 => s2.brand || "" },
-        { id: "model", label: "Machine", w: 150, sv: s2 => s2.model || "" },
-        { id: "territory", label: "Territory", w: 120, sv: s2 => s2.territory || "" },
-        { id: "units", label: "Units", w: 60, sv: s2 => String(s2.units || 0) },
-        { id: "amount", label: "Amount", w: 110, sv: s2 => String(s2.amount || 0), render: s2 => RG_h("b", { style: { color: "#34d399" } }, peso(s2.amount)) },
-        { id: "notes", label: "Notes", w: 180, sv: s2 => s2.notes || "" },
-        { id: "act", label: "", w: 60, sv: () => "", render: s2 => profile.isAdmin ? RG_h("button", { title: "Delete (administrators only)", style: { ...btnSt("#3a1d1d", "#fca5a5"), padding: "3px 8px", fontSize: 11 }, onClick: async e2 => { e2.stopPropagation(); if (!confirm("Delete this sale (" + s2.account + ", " + peso(s2.amount) + ")?")) return; try { await binIt("sale", s2.account + " · " + peso(s2.amount), { id: s2.id, ...s2 }, profile.email); await db.collection("sales").doc(s2.id).delete(); } catch (e3) { notify("SERVER REFUSED:\n" + e3.message, "error"); } } }, "🗑") : null }
-      ], rows: visible, rowKey: s2 => s2.id, initSort: { col: "date", dir: -1 }, filterPlaceholder: "🔍 Filter sales…", maxH: 420, empty: "No sales recorded in this period." })),
-    adding ? RG_h(SaleModal, { profile: profile, labs: labs, catalog: catalog, onClose: () => setAdding(false), onSave: async rec => {
-      try {
-        await db.collection("sales").add({ ...rec, at: auditNow(), by: scrubOwner(meEmail(profile)) });
-        logAudit(profile, "sales.add", rec.account + " " + rec.amount);
-        notify("💰 Sale recorded — " + rec.account + ", \u20B1" + Number(rec.amount).toLocaleString() + ".", "ok");
-        setAdding(false);
-      } catch (e2) { notify("SERVER REFUSED:\n" + e2.message, "error"); }
-    } }) : null);
-}
-
 function App() {
   const [user, setUser] = useState(undefined);
   const [profile, setProfile] = useState(undefined);
@@ -20309,9 +20402,6 @@ function App() {
   }, (signedProfile.isAdmin || pCanTab(signedProfile, "inventory", "view")) && !tabHidden(tabsCfg, "inventory") && {
     id: "inventory",
     label: tabLabel(tabsCfg, "inventory", "📦 Inventory")
-  }, (signedProfile.isAdmin || pCanTab(signedProfile, "sales", "view")) && !tabHidden(tabsCfg, "sales") && {
-    id: "sales",
-    label: tabLabel(tabsCfg, "sales", "📊 Sales")
   }, (signedProfile.isAdmin || pCanTab(signedProfile, "overtime", "view")) && !tabHidden(tabsCfg, "overtime") && {
     id: "overtime",
     label: tabLabel(tabsCfg, "overtime", "🕒 Overtime")
@@ -20355,38 +20445,54 @@ function App() {
   }));
   return /*#__PURE__*/React.createElement(React.Fragment, null, /*#__PURE__*/React.createElement("div", {
     className: "ib-siderail",
+    onPointerMove: e => {
+      // 🍎 macOS-Dock magnification — the Default tab animation. Icons swell
+      // continuously as the pointer nears them (Gaussian falloff over the
+      // cursor's X), exactly like the Apple Dock. Imperative DOM writes for
+      // 60fps tracking; no React re-renders involved.
+      // Pointer events (not mouse events) so a TABLET PEN hovering the dock
+      // magnifies too; a finger stays excluded — dragging it would fight
+      // the bar's own scrolling and feel jumpy.
+      if (e.pointerType === "touch") return;
+      if (!document.body.classList.contains("ib-anim-tabs-default")) return;
+      if (window.innerWidth <= 700) return;
+      const mx = e.clientX;
+      e.currentTarget.querySelectorAll(".ib-nav-btn").forEach(b => {
+        const r2 = b.getBoundingClientRect();
+        const d2 = Math.abs(mx - (r2.left + r2.width / 2));
+        const sc = 1 + 0.6 * Math.exp(-(d2 * d2) / 9800);
+        b.style.transform = "scale(" + sc.toFixed(3) + ")";
+        b.style.zIndex = sc > 1.25 ? "3" : "1";
+      });
+    },
+    onPointerLeave: e => {
+      e.currentTarget.querySelectorAll(".ib-nav-btn").forEach(b => {
+        b.style.transform = "";
+        b.style.zIndex = "";
+      });
+    },
     style: {
       position: "fixed",
-      top: 0,
-      left: 0,
-      bottom: 0,
-      width: 96,
-      background: "var(--c-bg2)",
-      borderRight: "1px solid var(--c-border)",
+      left: "50%",
+      transform: "translateX(-50%)",
+      bottom: 10,
+      top: "auto",
+      maxWidth: "calc(100% - 24px)",
+      background: "color-mix(in srgb, var(--c-bg2) 78%, transparent)",
+      backdropFilter: "blur(14px) saturate(1.4)",
+      WebkitBackdropFilter: "blur(14px) saturate(1.4)",
+      border: "1px solid var(--c-border)",
+      borderRadius: 20,
+      boxShadow: "0 12px 34px rgba(0, 0, 0, .38)",
       display: "flex",
-      flexDirection: "column",
-      alignItems: "stretch",
-      padding: "14px 0",
-      zIndex: 20,
-      overflowY: "auto"
+      flexDirection: "row",
+      alignItems: "flex-end",
+      gap: 2,
+      padding: "7px 10px",
+      zIndex: 60,
+      overflow: "visible"
     }
-  }, /*#__PURE__*/React.createElement("div", {
-    style: {
-      display: "flex",
-      justifyContent: "center",
-      gap: 3,
-      marginBottom: 18
-    }
-  }, [14, 20, 17].map((h, i) => /*#__PURE__*/React.createElement("span", {
-    key: i,
-    style: {
-      width: 7,
-      height: h,
-      borderRadius: 4,
-      background: "linear-gradient(180deg,#38bdf8,#0ea5e9)",
-      alignSelf: "flex-end"
-    }
-  }))), TABS.map(t => {
+  }, TABS.map(t => {
     const parts = t.label.split(" ");
     const icon = parts[0];
     const name = parts.slice(1).join(" ");
@@ -20394,22 +20500,31 @@ function App() {
     return /*#__PURE__*/React.createElement("button", {
       key: t.id,
       className: "ib-nav-btn" + (active ? " ib-nav-active" : ""),
-      onClick: () => setTab(t.id),
-      title: name,
+      onClick: e => {
+        // The name bubble must vanish the moment the tab is clicked, even
+        // though the pointer still hovers the button; it re-arms only after
+        // the pointer leaves. (The native title tooltip is dropped — the
+        // bubble IS the name.)
+        e.currentTarget.classList.add("ib-nav-clicked");
+        setTab(t.id);
+      },
+      onPointerLeave: e => e.currentTarget.classList.remove("ib-nav-clicked"),
       style: {
-        background: active ? "var(--c-card)" : "transparent",
+        background: "transparent",
         border: "none",
-        borderLeft: active ? "3px solid var(--c-key)" : "3px solid transparent",
         color: active ? "var(--c-key)" : "var(--c-text3)",
         cursor: "pointer",
-        padding: "11px 4px",
+        padding: "6px 8px 10px",
         display: "flex",
         flexDirection: "column",
         alignItems: "center",
-        gap: 4
+        gap: 4,
+        position: "relative",
+        transformOrigin: "bottom center",
+        borderRadius: 12
       }
     }, /*#__PURE__*/React.createElement("span", {
-      className: active ? tabAnimStyle(uiAnim, "tabs") === "none" ? "" : "ib-nav-fx anim-" + tabAnimStyle(uiAnim, "tabs") : "",
+      className: "ib-nav-ico" + (active ? tabAnimStyle(uiAnim, "tabs") === "none" ? "" : " ib-nav-fx anim-" + tabAnimStyle(uiAnim, "tabs") : ""),
       style: {
         fontSize: 19,
         position: "relative",
@@ -20435,6 +20550,7 @@ function App() {
         boxShadow: "0 0 6px rgba(249,115,22,.6)"
       }
     }, binItems.length)), /*#__PURE__*/React.createElement("span", {
+      className: "ib-nav-label",
       style: {
         fontSize: 8.5,
         fontWeight: 800,
@@ -20447,7 +20563,8 @@ function App() {
   })), /*#__PURE__*/React.createElement("div", {
     className: "ib-mainarea",
     style: {
-      marginLeft: 96
+      marginLeft: 0,
+      paddingBottom: 100
     }
   }, /*#__PURE__*/React.createElement("div", {
     className: "ib-topbar",
@@ -20610,11 +20727,6 @@ function App() {
     labs: labs,
     catalog: catalog,
     tabsCfg: tabsCfg,
-    notify: notify
-  }), tab === "sales" && pCanTab(signedProfile, "sales", "view") && /*#__PURE__*/React.createElement(SalesTab, {
-    profile: signedProfile,
-    labs: labs,
-    catalog: catalog,
     notify: notify
   }), tab === "wpoa" && pCanTab(signedProfile, "wpoa", "view") && /*#__PURE__*/React.createElement(WpoaTab, {
     profile: signedProfile,
