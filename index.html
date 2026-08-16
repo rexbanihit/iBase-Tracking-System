@@ -529,7 +529,7 @@
 (function () {
   var okLibs = (typeof firebase !== "undefined") && (typeof React !== "undefined") && (typeof ReactDOM !== "undefined") && (typeof XLSX !== "undefined");
   window.__IBASE_LIBS_OK = okLibs;
-  window.__IBASE_BUILD = "v325";
+  window.__IBASE_BUILD = "v327";
   if (!okLibs) {
     document.getElementById("root").innerHTML =
       "<div style='max-width:520px;margin:90px auto;padding:30px;background:#16181d;border:1px solid #f8717155;border-radius:16px;font-family:system-ui,sans-serif;color:#e5e7eb;text-align:center'>" +
@@ -3607,7 +3607,7 @@ function Login({
       letterSpacing: 2,
       textTransform: "uppercase"
     }
-  }, "version: v325"), /*#__PURE__*/React.createElement(React.Fragment, null,
+  }, "version: v327"), /*#__PURE__*/React.createElement(React.Fragment, null,
   /*#__PURE__*/React.createElement("label", {
     style: labelSt
   }, "Email"), /*#__PURE__*/React.createElement("input", {
@@ -16296,6 +16296,14 @@ function ImportExcel({
   const [grids, setGrids] = useState(null); // { sheetName: grid } for manual mapping
   const [mapUI, setMapUI] = useState(null);
   const [instFix, setInstFix] = useState(null); // { sheet, headerRow, assigns:{colIdx:field} }
+  // Live view of Settings → Models: keeps the resolver panel's dropdowns
+  // fresh when ANOTHER admin registers a machine or brand while this screen
+  // is open. The gate's CHECK still fetches at upload time (v321), so the
+  // old loading race cannot return — this feed only refreshes the lists.
+  const catLive = useDoc("config/catalog", true);
+  const liveEntriesArr = catLive && Array.isArray(catLive.machines) ? catLive.machines : [];
+  const liveNames = liveEntriesArr.map(m => typeof m === "string" ? m.trim() : String(m && m.model || "").trim()).filter(Boolean);
+  const liveBrands = (catLive && Array.isArray(catLive.brands) ? catLive.brands : []).map(b => String(b).trim()).filter(Boolean);
   const [busy, setBusy] = useState(false);
   // Loud alarms for the two silent killers: an unmapped Instrument column
   // (blank machines — the name check has nothing to check) and an unmapped
@@ -16502,9 +16510,20 @@ function ImportExcel({
         const b = (fx.brandChoices || {})[n];
         brandOf[n] = b === "__none__" ? "" : b;
       });
+      // Merge against the FRESHEST registry — another admin may have added
+      // machines while this panel was open; a stale snapshot would silently
+      // drop them from the array on save.
+      let baseEntries = fx.regEntries || [];
+      let baseBrands = fx.regBrands || [];
+      try {
+        const snap2 = await db.doc("config/catalog").get();
+        const cat2 = snap2.data() || {};
+        if (Array.isArray(cat2.machines)) baseEntries = cat2.machines;
+        if (Array.isArray(cat2.brands)) baseBrands = cat2.brands;
+      } catch (e) {}
       const merged = [];
       const seen = {};
-      (fx.regEntries || []).forEach(m => {
+      baseEntries.forEach(m => {
         const model = typeof m === "string" ? m.trim() : String(m && m.model || "").trim();
         if (!model || seen[model.toLowerCase()]) return;
         seen[model.toLowerCase()] = 1;
@@ -16516,8 +16535,25 @@ function ImportExcel({
         seen[k.toLowerCase()] = 1;
         merged.push({ model: k, brand: brandOf[k] || "" });
       });
+      // The chosen brands enter the Brand Catalog too — a brand picked
+      // "(from the file)" used to live only on the machine record, leaving
+      // the Settings dropdown unable to display it.
+      const mergedBrands = [];
+      const seenB = {};
+      baseBrands.forEach(b => {
+        const k = String(b).trim();
+        if (!k || seenB[k.toLowerCase()]) return;
+        seenB[k.toLowerCase()] = 1;
+        mergedBrands.push(k);
+      });
+      toAdd.forEach(n => {
+        const k = String(brandOf[n] || "").trim();
+        if (!k || seenB[k.toLowerCase()]) return;
+        seenB[k.toLowerCase()] = 1;
+        mergedBrands.push(k);
+      });
       try {
-        await db.doc("config/catalog").set({ machines: merged }, { merge: true });
+        await db.doc("config/catalog").set({ machines: merged, brands: mergedBrands.sort((a, b) => a.localeCompare(b)) }, { merge: true });
         logAudit(profile, "catalog.machines", "added via import: " + toAdd.join(", "));
       } catch (e) {
         notify("SERVER REFUSED saving the new instrument name(s):\n" + e.message, "error");
@@ -17138,7 +17174,7 @@ function ImportExcel({
           // Smart default: the file's brand — healed to the registered
           // spelling when it matches one — otherwise left for the admin.
           const fb = (x.fileBrands || {})[nm] || "";
-          const hit = (x.regBrands || []).find(b => b.toLowerCase() === fb.toLowerCase());
+          const hit = (liveBrands.length ? liveBrands : x.regBrands || []).find(b => b.toLowerCase() === fb.toLowerCase());
           if (hit) bc[nm] = hit;else if (fb) bc[nm] = fb;
         }
         return { ...x, choices: { ...x.choices, [nm]: val }, brandChoices: bc };
@@ -17151,7 +17187,7 @@ function ImportExcel({
     value: "__add__"
   }, "➕ Add “" + nm + "” to the registered instruments"), /*#__PURE__*/React.createElement("option", {
     value: "__ignore__"
-  }, "🚫 Ignore — exclude " + instFix.counts[nm] + " row(s) from this import"), (instFix.regNames || []).slice().sort((a, b) => a.localeCompare(b)).map(rn => /*#__PURE__*/React.createElement("option", {
+  }, "🚫 Ignore — exclude " + instFix.counts[nm] + " row(s) from this import"), (liveNames.length ? liveNames : instFix.regNames || []).slice().sort((a, b) => a.localeCompare(b)).map(rn => /*#__PURE__*/React.createElement("option", {
     key: rn,
     value: rn
   }, "Rename to: " + rn))), instFix.choices[nm] === "__add__" && /*#__PURE__*/React.createElement("select", {
@@ -17161,9 +17197,9 @@ function ImportExcel({
     style: { background: "var(--c-bg2)", color: "var(--c-text)", border: "1px solid #f59e0b88", borderRadius: 8, padding: "5px 8px", fontSize: 12, width: 210, flexShrink: 0 }
   }, /*#__PURE__*/React.createElement("option", {
     value: ""
-  }, "— choose the brand —"), (instFix.fileBrands || {})[nm] && !(instFix.regBrands || []).some(b => b.toLowerCase() === String(instFix.fileBrands[nm]).toLowerCase()) && /*#__PURE__*/React.createElement("option", {
+  }, "— choose the brand —"), (instFix.fileBrands || {})[nm] && !(liveBrands.length ? liveBrands : instFix.regBrands || []).some(b => b.toLowerCase() === String(instFix.fileBrands[nm]).toLowerCase()) && /*#__PURE__*/React.createElement("option", {
     value: instFix.fileBrands[nm]
-  }, instFix.fileBrands[nm] + " (from the file)"), (instFix.regBrands || []).slice().sort((a, b) => a.localeCompare(b)).map(b => /*#__PURE__*/React.createElement("option", {
+  }, instFix.fileBrands[nm] + " (from the file)"), (liveBrands.length ? liveBrands : instFix.regBrands || []).slice().sort((a, b) => a.localeCompare(b)).map(b => /*#__PURE__*/React.createElement("option", {
     key: b,
     value: b
   }, b)), /*#__PURE__*/React.createElement("option", {
@@ -18173,6 +18209,29 @@ function SettingsTab({
     }
   }
   const models = catalog && Array.isArray(catalog.machines) ? catalog.machines : [];
+  // Every brand that is either registered in the Brand Catalog OR already in
+  // use by a registered model — union, case-insensitive, catalog spelling
+  // preferred, ALPHABETICAL — so the Brand dropdown always displays and can
+  // select them all (models added via the Excel import carried brands that
+  // never entered the catalog; those are included here and, going forward,
+  // the import registers them properly).
+  const brandOptions = (() => {
+    const seen = {};
+    const out = [];
+    brands.forEach(b => {
+      const k = String(b).trim();
+      if (!k || seen[k.toLowerCase()]) return;
+      seen[k.toLowerCase()] = 1;
+      out.push(k);
+    });
+    models.forEach(m => {
+      const k = String(m && m.brand || "").trim();
+      if (!k || seen[k.toLowerCase()]) return;
+      seen[k.toLowerCase()] = 1;
+      out.push(k);
+    });
+    return sortAlpha(out);
+  })();
   const rowSt = sel => ({
     display: "flex",
     alignItems: "center",
@@ -19299,7 +19358,7 @@ function SettingsTab({
     onChange: e => setNmBrand(e.target.value)
   }, /*#__PURE__*/React.createElement("option", {
     value: ""
-  }, "— pick —"), brands.map(b => /*#__PURE__*/React.createElement("option", {
+  }, "— pick —"), brandOptions.map(b => /*#__PURE__*/React.createElement("option", {
     key: b,
     value: b
   }, b)))), /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("label", {
