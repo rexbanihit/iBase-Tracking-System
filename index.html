@@ -277,16 +277,28 @@
     @keyframes ibase-anim-tumble { from { opacity:0; transform: translateY(-26px) rotate(-160deg) scale(.6); } to { opacity:1; transform: none; } }
     .anim-pop     { animation: ibase-anim-pop .38s cubic-bezier(.34,1.56,.64,1); }
     @keyframes ibase-anim-pop { 0% { opacity:0; transform: scale(.55); } 70% { opacity:1; transform: scale(1.08); } 100% { transform: scale(1); } }
-    .anim-default { animation: ibase-anim-default .45s ease-out; }
-    @keyframes ibase-anim-default { from { opacity: 0; transform: scale(.985); } to { opacity: 1; transform: none; } }
+    /* The Default style switches tabs with NO animation at all. */
+    .anim-default { animation: none; }
     .anim-drift   { animation: ibase-anim-drift .7s ease-out; }
     @keyframes ibase-anim-drift { from { opacity:0; transform: translate(-18px,14px); } to { opacity:1; transform: none; } }
     .anim-wave    { animation: ibase-anim-wave .6s ease-out; }
     @keyframes ibase-anim-wave { 0% { opacity:0; transform: skewX(14deg) translateX(-16px); } 55% { opacity:1; transform: skewX(-7deg) translateX(6px); } 80% { transform: skewX(3deg); } 100% { transform: none; } }
     .ib-dash-bar { transform-origin: left center; animation: ib-bar-grow .6s cubic-bezier(.2,.8,.25,1) backwards; }
     @keyframes ib-bar-grow { from { transform: scaleX(0); } to { transform: scaleX(1); } }
-    .ib-dash-pie { animation: ib-pie-in .55s cubic-bezier(.2,.8,.25,1); transform-origin: 50% 50%; }
-    @keyframes ib-pie-in { from { opacity:0; transform: rotate(-70deg) scale(.85); } to { opacity:1; transform: none; } }
+    /* CHART entrances, per style (Dashboard + Analytics; nothing else
+       animates): pies & the gauge ROTATE in like the earlier build; bars
+       GROW from zero to their value, gently staggered; the trend line
+       DRAWS itself point-to-point, its area fading in beneath. */
+    /* PIE/DONUT: the gauge-style SWEEP is driven in JS inside PieSVG —
+       the ring draws itself around from 0% to 100% completion; every
+       total, percentage and label stays static. Bars grow; the line
+       draws itself. */
+    .ib-anim-barrect { transform-box: fill-box; transform-origin: 50% 100%; animation: ib-bar-up .55s cubic-bezier(.2,.8,.25,1) backwards; animation-delay: calc(var(--bi, 0) * 35ms); }
+    @keyframes ib-bar-up { from { transform: scaleY(0); } to { transform: scaleY(1); } }
+    .ib-anim-linepath { stroke-dasharray: 1; stroke-dashoffset: 1; animation: ib-line-draw .8s ease-out forwards; }
+    @keyframes ib-line-draw { to { stroke-dashoffset: 0; } }
+    .ib-anim-linefill { animation: ib-fade-in .7s ease .25s backwards; }
+    @keyframes ib-fade-in { from { opacity: 0; } to { opacity: 1; } }
     .ib-nav-fx   { display: inline-block; }
 
     /* ═══ 🎬 The "Default" ANIMATION STYLE: colored highlight + slight zoom
@@ -304,7 +316,7 @@
             The rail's mousemove drives per-icon scale with a Gaussian
             falloff; this only smooths the tracking and the release. ── */
       body.ib-anim-tabs-default .ib-nav-btn {
-        transition: transform .09s ease-out, color .16s ease;
+        transition: transform .18s ease-out, color .16s ease;
       }
       body.ib-anim-tabs-default .ib-nav-btn:hover { color: var(--c-key) !important; }
       body.ib-anim-tabs-default .ib-nav-btn:active { filter: brightness(1.3); }
@@ -392,14 +404,18 @@
        hover, a small dot marks the active tab — the macOS taskbar look. ═══ */
     @media (min-width: 701px) {
       .ib-siderail { overflow: visible !important; }
-      .ib-nav-ico { font-size: 27px !important; line-height: 1.05; }
+      .ib-nav-ico { font-size: 22px !important; line-height: 1.05; }
       .ib-nav-label { display: none; }
       .ib-nav-btn:hover .ib-nav-label {
         display: block;
         position: absolute;
-        bottom: calc(100% + 10px);
+        bottom: calc(100% + 8px);
         left: 50%;
-        transform: translateX(-50%);
+        /* the button underneath is scaled by the magnification; dividing by
+           the same factor keeps the name at its NORMAL size */
+        transform: translateX(-50%) scale(calc(1 / var(--sc, 1)));
+        transform-origin: bottom center;
+        transition: none;
         background: var(--c-card);
         border: 1px solid var(--c-border);
         border-radius: 8px;
@@ -491,19 +507,10 @@
     }
     .ib-nav-btn { transition: background .25s ease, color .25s ease, transform .12s ease; }
     .ib-nav-btn:active { transform: scale(.94); }
-    .ib-nav-on { animation: ibase-icon-pop .45s cubic-bezier(.34,1.56,.64,1); }
-    @keyframes ibase-icon-pop {
-      0%   { transform: scale(1); }
-      45%  { transform: scale(1.35) rotate(-5deg); }
-      100% { transform: scale(1); }
-    }
-    .ib-nav-active { animation: ibase-nav-glow .5s ease; }
-    @keyframes ibase-nav-glow {
-      0%   { box-shadow: inset 0 0 0 0 transparent; }
-      40%  { box-shadow: inset 4px 0 18px -6px var(--c-key); }
-      100% { box-shadow: inset 0 0 0 0 transparent; }
-    }
-  }
+      }
+  /* Tab switches must never shift the centred dock: reserve the scrollbar
+     gutter so the viewport width stays constant with or without a bar. */
+  html { scrollbar-gutter: stable; }
   body { background: var(--c-bg); color: var(--c-text); margin:0; font-family:'DM Sans','Segoe UI',system-ui,sans-serif; font-size:14px; }
   * { box-sizing: border-box; } input, select, button { font-family: inherit; }
 </style>
@@ -522,7 +529,7 @@
 (function () {
   var okLibs = (typeof firebase !== "undefined") && (typeof React !== "undefined") && (typeof ReactDOM !== "undefined") && (typeof XLSX !== "undefined");
   window.__IBASE_LIBS_OK = okLibs;
-  window.__IBASE_BUILD = "v304";
+  window.__IBASE_BUILD = "v325";
   if (!okLibs) {
     document.getElementById("root").innerHTML =
       "<div style='max-width:520px;margin:90px auto;padding:30px;background:#16181d;border:1px solid #f8717155;border-radius:16px;font-family:system-ui,sans-serif;color:#e5e7eb;text-align:center'>" +
@@ -3600,16 +3607,7 @@ function Login({
       letterSpacing: 2,
       textTransform: "uppercase"
     }
-  }, "version: v304"), !dept ? /*#__PURE__*/React.createElement("div", null,
-    /*#__PURE__*/React.createElement("div", { style: { fontSize: 12.5, color: "var(--c-text3)", textAlign: "center", marginBottom: 14 } }, "Select your department or module to continue"),
-    /*#__PURE__*/React.createElement("div", { style: { display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 } },
-      (depts || []).filter(d => !d.disabled).map((d, i) => /*#__PURE__*/React.createElement("button", { key: (d.id || d.name) + i, onClick: () => pickDept(d.name), style: { background: "var(--c-bg)", border: "1px solid var(--c-border)", borderRadius: 12, padding: "16px 10px", cursor: "pointer", display: "flex", flexDirection: "column", alignItems: "center", gap: 8, color: "var(--c-text2)" } },
-        /*#__PURE__*/React.createElement("span", { style: { display: "flex", alignItems: "center", justifyContent: "center", height: 34 } }, deptIcon(d.icon, 34)),
-        /*#__PURE__*/React.createElement("span", { style: { fontSize: 11.5, fontWeight: 700, textAlign: "center", lineHeight: 1.3 } }, d.name)))),
-    depts === null ? /*#__PURE__*/React.createElement("div", { style: { fontSize: 11, color: "var(--c-text5)", textAlign: "center", marginTop: 10 } }, "Loading departments…") : null
-  ) : /*#__PURE__*/React.createElement(React.Fragment, null, /*#__PURE__*/React.createElement("div", { style: { display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 14, padding: "8px 12px", border: "1px dashed var(--c-border)", borderRadius: 10 } },
-    /*#__PURE__*/React.createElement("span", { style: { fontSize: 12, color: "var(--c-text3)" } }, "Signing in to: ", /*#__PURE__*/React.createElement("b", { style: { color: "var(--c-text2)" } }, dept)),
-    /*#__PURE__*/React.createElement("button", { type: "button", style: { background: "none", border: "none", cursor: "pointer", color: "var(--c-key)", fontSize: 11.5, padding: 0 }, onClick: () => { setDept(""); try { localStorage.removeItem("ibaseLoginDept"); } catch (e) {} } }, "← change")),
+  }, "version: v325"), /*#__PURE__*/React.createElement(React.Fragment, null,
   /*#__PURE__*/React.createElement("label", {
     style: labelSt
   }, "Email"), /*#__PURE__*/React.createElement("input", {
@@ -4106,62 +4104,6 @@ function dashDaysUntil(iso) {
   const now = new Date(today() + "T00:00:00");
   return Math.round((t - now) / 86400000);
 }
-function ComplianceGauge({
-  pct
-}) {
-  const R = 62,
-    C = 2 * Math.PI * R;
-  const color = pct >= 90 ? "#10b981" : pct >= 70 ? "#f59e0b" : "#ef4444";
-  return /*#__PURE__*/React.createElement("div", {
-    style: {
-      position: "relative",
-      width: 160,
-      height: 160,
-      margin: "0 auto"
-    }
-  }, /*#__PURE__*/React.createElement("svg", {
-    width: "160",
-    height: "160",
-    viewBox: "0 0 160 160"
-  }, /*#__PURE__*/React.createElement("circle", {
-    cx: "80",
-    cy: "80",
-    r: R,
-    fill: "none",
-    stroke: "var(--c-border)",
-    strokeWidth: "14"
-  }), /*#__PURE__*/React.createElement("circle", {
-    cx: "80",
-    cy: "80",
-    r: R,
-    fill: "none",
-    stroke: color,
-    strokeWidth: "14",
-    strokeLinecap: "round",
-    strokeDasharray: C * pct / 100 + " " + C,
-    transform: "rotate(-90 80 80)"
-  })), /*#__PURE__*/React.createElement("div", {
-    style: {
-      position: "absolute",
-      inset: 0,
-      display: "flex",
-      flexDirection: "column",
-      alignItems: "center",
-      justifyContent: "center"
-    }
-  }, /*#__PURE__*/React.createElement("div", {
-    style: {
-      fontSize: 32,
-      fontWeight: 900,
-      color
-    }
-  }, pct, "%"), /*#__PURE__*/React.createElement("div", {
-    style: {
-      fontSize: 9.5,
-      color: "var(--c-text3)"
-    }
-  }, "units on schedule")));
-}
 function DashboardTab({
   labs
 }) {
@@ -4216,6 +4158,10 @@ function DashboardTab({
     value: count(f),
     color: DASH_FLAG_COLORS[f]
   })).filter(d => d.value > 0);
+  // View selectors for the two PM cards + the Compliance pie/bar dataset.
+  const [dashStatusChart, setDashStatusChart] = useState("pie");
+  const [dashCompChart, setDashCompChart] = useState("pie");
+  const compData = [{ label: "Compliant", value: Math.max(activeN - overdue, 0), color: "#10b981" }, { label: "Overdue", value: overdue, color: "#ef4444" }].filter(d => d.value > 0);
   // maintenance alerts — rendered through the shared table kit
   const urgent = flagged.filter(x => x.flag !== "OK");
   return /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("div", {
@@ -4334,42 +4280,22 @@ function DashboardTab({
       padding: "24px 0",
       textAlign: "center"
     }
-  }, "No machines yet."))), /*#__PURE__*/React.createElement("div", {
-    style: cardSt
-  }, /*#__PURE__*/React.createElement("div", {
-    style: {
-      fontSize: 12,
-      fontWeight: 800,
-      color: "var(--c-text3)",
-      textTransform: "uppercase",
-      marginBottom: 10
-    }
-  }, "PM Status Distribution"), /*#__PURE__*/React.createElement("div", {
-    style: {
-      display: "flex",
-      alignItems: "center",
-      gap: 12
-    }
-  }, /*#__PURE__*/React.createElement("div", {
-    className: "ib-dash-pie",
-    style: {
-      width: "100%"
-    }
-  }, /*#__PURE__*/React.createElement(PieSVG, {
+  }, "No machines yet."))), /*#__PURE__*/React.createElement(CardWithToggle, {
+    title: "PM Status Distribution",
+    chartType: dashStatusChart,
+    setChartType: setDashStatusChart
+  }, /*#__PURE__*/React.createElement(FlexChart, {
+    type: dashStatusChart,
     data: flagData,
     donut: true
-  })))), /*#__PURE__*/React.createElement("div", {
-    style: cardSt
-  }, /*#__PURE__*/React.createElement("div", {
-    style: {
-      fontSize: 12,
-      fontWeight: 800,
-      color: "var(--c-text3)",
-      textTransform: "uppercase",
-      marginBottom: 10
-    }
-  }, "PM Compliance"), /*#__PURE__*/React.createElement(ComplianceGauge, {
-    pct: compliance
+  })), /*#__PURE__*/React.createElement(CardWithToggle, {
+    title: "PM Compliance",
+    chartType: dashCompChart,
+    setChartType: setDashCompChart
+  }, /*#__PURE__*/React.createElement(FlexChart, {
+    type: dashCompChart,
+    data: compData,
+    donut: true
   }))), /*#__PURE__*/React.createElement("div", {
     style: cardSt
   }, /*#__PURE__*/React.createElement(ITable, {
@@ -9255,6 +9181,22 @@ function PieSVG({
     cx = 100,
     cy = 100;
   const inner = donut ? 46 : 0;
+  // 🕐 The gauge-style SWEEP: the ring draws itself around the clock from
+  // 0% to 100% completion — the same fill the PM-Compliance gauge used.
+  // Driven per-frame in JS because the wedges are FILLED paths (a stroke
+  // dash trick cannot reveal fills). Texts/legends are untouched by it.
+  const [sweep, setSweep] = useState(0);
+  useEffect(() => {
+    let st = null, raf;
+    const step = ts => {
+      if (st === null) st = ts;
+      const t = Math.min(1, (ts - st) / 750);
+      setSweep(1 - Math.pow(1 - t, 3));
+      if (t < 1) raf = requestAnimationFrame(step);
+    };
+    raf = requestAnimationFrame(step);
+    return () => cancelAnimationFrame(raf);
+  }, []);
   if (total === 0) return /*#__PURE__*/React.createElement("div", {
     style: {
       color: "var(--c-text4)",
@@ -9264,29 +9206,34 @@ function PieSVG({
     }
   }, "No data in range.");
   let angle = -Math.PI / 2; // start at top
+  const maxA = -Math.PI / 2 + sweep * 2 * Math.PI; // the sweep frontier
   const arcs = data.filter(d => d.value > 0).map((d, i) => {
     const frac = d.value / total;
     const a2 = angle + frac * 2 * Math.PI;
-    const large = frac > 0.5 ? 1 : 0;
-    const x1 = cx + R * Math.cos(angle),
-      y1 = cy + R * Math.sin(angle);
-    const x2 = cx + R * Math.cos(a2),
-      y2 = cy + R * Math.sin(a2);
+    const a1c = angle;
+    const a2c = Math.min(a2, maxA); // clip this wedge to the frontier
     const color = d.color || CHART_PALETTE[i % CHART_PALETTE.length];
+    angle = a2;
+    if (a2c - a1c <= 0.0004) return null; // the sweep has not reached it yet
+    const spanFrac = (a2c - a1c) / (2 * Math.PI);
+    const large = a2c - a1c > Math.PI ? 1 : 0;
+    const x1 = cx + R * Math.cos(a1c),
+      y1 = cy + R * Math.sin(a1c);
+    const x2 = cx + R * Math.cos(a2c),
+      y2 = cy + R * Math.sin(a2c);
     let path;
-    if (frac >= 0.9999) {
+    if (spanFrac >= 0.9999) {
       // full circle
       path = `M ${cx - R} ${cy} A ${R} ${R} 0 1 1 ${cx + R} ${cy} A ${R} ${R} 0 1 1 ${cx - R} ${cy} Z`;
     } else {
       path = `M ${cx} ${cy} L ${x1} ${y1} A ${R} ${R} 0 ${large} 1 ${x2} ${y2} Z`;
     }
-    angle = a2;
     return {
       path,
       color,
       d
     };
-  });
+  }).filter(Boolean);
   return /*#__PURE__*/React.createElement("div", {
     style: {
       display: "flex",
@@ -9301,7 +9248,7 @@ function PieSVG({
       height: 200,
       flexShrink: 0
     }
-  }, arcs.map((a, i) => /*#__PURE__*/React.createElement("path", {
+  }, /*#__PURE__*/React.createElement("g", null, arcs.map((a, i) => /*#__PURE__*/React.createElement("path", {
     key: i,
     d: a.path,
     fill: a.color,
@@ -9312,7 +9259,7 @@ function PieSVG({
     cy: cy,
     r: inner,
     fill: "var(--c-card)"
-  }), donut && /*#__PURE__*/React.createElement("text", {
+  })), donut && /*#__PURE__*/React.createElement("text", {
     x: cx,
     y: cy - 4,
     textAnchor: "middle",
@@ -9435,6 +9382,8 @@ function BarSVG({
     return /*#__PURE__*/React.createElement("g", {
       key: i
     }, /*#__PURE__*/React.createElement("rect", {
+      className: "ib-anim-barrect",
+      style: { "--bi": i },
       x: x,
       y: y,
       width: bw,
@@ -9503,9 +9452,12 @@ function LineSVG({
       strokeDasharray: "2 3"
     });
   }), area && /*#__PURE__*/React.createElement("path", {
+    className: "ib-anim-linefill",
     d: area,
     fill: "#38bdf822"
   }), path && /*#__PURE__*/React.createElement("path", {
+    className: "ib-anim-linepath",
+    pathLength: 1,
     d: path,
     fill: "none",
     stroke: "#38bdf8",
@@ -12481,14 +12433,17 @@ function SmerTab({ profile, labs, notify }) {
   }, "🖨 Print (A4)"), /*#__PURE__*/React.createElement("button", {
     style: btnSt("var(--c-border)", "var(--c-text2)"),
     onClick: xlsxOut
-  }, "⬇ Excel"), curId ? /*#__PURE__*/React.createElement("button", {
-    style: btnSt("#3a1d1d", "#fca5a5"),
+  }, "⬇ Excel"), /*#__PURE__*/React.createElement("button", {
+    style: { ...btnSt("#3a1d1d", "#fca5a5"), opacity: curId ? 1 : 0.4, cursor: curId ? "pointer" : "not-allowed" },
+    disabled: !curId,
+    title: curId ? "" : "Available once this sheet has been saved",
     onClick: delSheet
-  }, "🗑 Delete sheet") : null, f.periodId ? /*#__PURE__*/React.createElement("button", {
-    style: btnSt("var(--c-border)", "var(--c-text2)"),
-    title: "Delete the saved copy (if any) and rebuild this sheet from your service visits for the selected period",
+  }, "🗑 Delete sheet"), /*#__PURE__*/React.createElement("button", {
+    style: { ...btnSt("var(--c-border)", "var(--c-text2)"), opacity: f.periodId ? 1 : 0.4, cursor: f.periodId ? "pointer" : "not-allowed" },
+    disabled: !f.periodId,
+    title: f.periodId ? "Delete the saved copy (if any) and rebuild this sheet from your service visits for the selected period" : "Select a period first",
     onClick: restartSheet
-  }, "\u21bb Restart from visits") : null, /*#__PURE__*/React.createElement("span", {
+  }, "\u21bb Restart from visits"), /*#__PURE__*/React.createElement("span", {
     style: { fontSize: 11, color: "var(--c-text5)" }
   }, "Private to YOUR account — nobody else's SMERs are touched, and every save keeps its own named copy. Totals compute automatically, like Excel.")), profile && profile.isAdmin ? /*#__PURE__*/React.createElement("div", {
     style: { display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap", marginBottom: 8, fontSize: 11.5, color: "var(--c-text3)" }
@@ -12511,7 +12466,9 @@ function SmerTab({ profile, labs, notify }) {
     style: { background: "#ffffff", color: "#000", border: "1px solid var(--c-border)", borderRadius: 6, padding: "14px 16px", width: "100%", boxSizing: "border-box", overflowX: "auto", boxShadow: "0 6px 24px rgba(0,0,0,.25)" }
   }, /*#__PURE__*/React.createElement("div", {
     style: { display: "flex", alignItems: "center", gap: 10 }
-  }, logo ? /*#__PURE__*/React.createElement("img", { src: logo, alt: "company logo", style: { width: logoW, height: "auto", display: "block" } }) : null, /*#__PURE__*/React.createElement("div", {
+  }, /*#__PURE__*/React.createElement("div", {
+    style: { width: logoW, height: 48, flexShrink: 0, display: "flex", alignItems: "center", overflow: "hidden" }
+  }, logo ? /*#__PURE__*/React.createElement("img", { src: logo, alt: "company logo", style: { maxWidth: "100%", maxHeight: 48, display: "block" } }) : null), /*#__PURE__*/React.createElement("div", {
     style: { flex: 1, textAlign: "center", fontWeight: 800, fontSize: 14, alignSelf: "center" }
   }, "SEMI-MONTHLY EXPENSE REPORT(SMER)")), /*#__PURE__*/React.createElement("div", {
     style: { fontSize: 12, fontWeight: 700, margin: "6px 0 1px", display: "flex", gap: 6 }
@@ -14783,9 +14740,46 @@ const IMP_LAYOUTS = [{
   // Side columns of the same sheet that are NOT part of a service visit:
   // deliberately ignored (never reported as unrecognized).
   ignore: ["selectactivity", "name", "account", "timein", "timeout", "leave", "offset", "travel", "activitylogsheet", "ticketlogsheet", "ticketlog", "taslogsrow1"]
+}, {
+  id: "fas-logs-v1",
+  label: "FAS service logs \u2014 older version",
+  // The OLD export: plain Name / Account (no "Name 2" / "Account 2"),
+  // same date-and-time phrasing. It must never fire on the NEW file, so
+  // the v2 markers are required to be ABSENT.
+  signature: ["timestamp", "name", "account", "isrno", "instrumentserialnumber", "dateandtimeofarrivaltohome"],
+  absent: ["name2", "account2"],
+  map: {
+    srcTimestamp: "timestamp",
+    engineer: "name",
+    type: "activityjobtype",
+    supportType: "supporttype",
+    lab: "account",
+    brand: "brand",
+    instrument: "instrument",
+    serial: "instrumentserialnumber",
+    isr: "isrno",
+    dtReported: "dateandtimereported",
+    dtDeparture: "dateandtimeofdeparture",
+    dtArrivalAccount: "dateandtimeofarrivaltoaccount",
+    dtWorkStarted: "dateandtimeworkstarted",
+    dtWorkEnded: "dateandtimeworkended",
+    dtArrivalHome: "dateandtimeofarrivaltohome",
+    problemDesc: "problemdescription",
+    systemCondition: "systemcondition",
+    status: "instrumentstatus",
+    recommendation: "recommendation",
+    endorsedTo: "endorsedto",
+    priority: "priority",
+    remarks: "descriptionofwork",
+    softwareVersion: "softwareversion"
+    // Firmware Version, Location and Sub-location are not in this file \u2014
+    // they stay blank and are filled in later inside the system.
+  },
+  // Per the spec: IGNORE every other header of the old file \u2014 anything
+  // not in the map above is deliberately silent (never reported).
+  ignoreRest: true
 }
-// ── Older version: add its block here (same shape) once its exact
-//    header list is known; the newest layout should stay first.
+// ── The NEWEST layout stays first; older ones follow it.
 ];
 function impLayoutFor(headerRow) {
   const idx = {};
@@ -14796,6 +14790,7 @@ function impLayoutFor(headerRow) {
   for (let L = 0; L < IMP_LAYOUTS.length; L++) {
     const lay = IMP_LAYOUTS[L];
     if (!lay.signature.every(sg => idx[sg] !== undefined)) continue;
+    if ((lay.absent || []).some(sg => idx[sg] !== undefined)) continue; // markers that must NOT exist for this layout
     const map = {};
     for (const field in lay.map) {
       const c = idx[lay.map[field]];
@@ -14807,7 +14802,8 @@ function impLayoutFor(headerRow) {
       id: lay.id,
       label: lay.label,
       map: map,
-      ignoreSet: ignoreSet
+      ignoreSet: ignoreSet,
+      ignoreRest: !!lay.ignoreRest
     };
   }
   return null;
@@ -14909,14 +14905,65 @@ const IMP_SKIP_ACCOUNTS = {
   "fasmanila": 1,
   "notapplicable": 1
 };
-function impRowsFromGrid(grid, hi, map) {
+function impPreferDataColumns(grid, hi, map) {
+  // Some files carry the SAME header twice — a form block and the service
+  // block BOTH literally titled "Instrument" / "Account" (the new export
+  // renamed its twins "Name 2" / "Account 2"; the old one never did).
+  // Blindly taking the first match can land on the EMPTY twin, importing
+  // everything blank. For every mapped field whose header text appears on
+  // MULTIPLE columns, prefer the twin with the MOST data underneath
+  // (sampling up to 300 rows). Unique headers pass through untouched.
+  const header = grid[hi] || [];
+  const norm = header.map(h => impNormHeader(h));
+  const dataCount = ci => {
+    let cnt = 0;
+    const lim = Math.min(grid.length, hi + 1 + 300);
+    for (let r = hi + 1; r < lim; r++) {
+      const row = grid[r] || [];
+      if (String(row[ci] == null ? "" : row[ci]).trim()) cnt++;
+    }
+    return cnt;
+  };
+  const out = {};
+  for (const f in map) {
+    const ci = map[f];
+    const token = norm[ci];
+    if (!token) {
+      out[f] = ci;
+      continue;
+    }
+    const twins = [];
+    norm.forEach((n, i) => {
+      if (n === token) twins.push(i);
+    });
+    if (twins.length <= 1) {
+      out[f] = ci;
+      continue;
+    }
+    let bestI = ci,
+      bestC = -1;
+    twins.forEach(i => {
+      const c = dataCount(i);
+      if (c > bestC) {
+        bestC = c;
+        bestI = i;
+      }
+    });
+    out[f] = bestI;
+  }
+  return out;
+}
+function impRowsFromGrid(grid, hi, map, opts) {
+  map = impPreferDataColumns(grid, hi, map); // duplicate headers: the twin WITH DATA wins
+  const keepNoSerial = !!(opts && opts.keepNoSerial);
   const rows = [];
   let skippedByRule = 0;
   // WHY each row was excluded — surfaced verbatim when nothing imports.
   const reasons = {
     serial: 0,
     account: 0,
-    isr: 0
+    isr: 0,
+    serialKept: 0
   };
   const ignoreIdx = {};
   Object.keys(map).forEach(k => {
@@ -14935,7 +14982,7 @@ function impRowsFromGrid(grid, hi, map) {
   const unmapped = header.map((h, i) => ({
     h: String(h || "").trim(),
     i
-  })).filter(x => x.h && !mappedIdx[x.i] && !(layI && layI.ignoreSet[impNormHeader(x.h)]));
+  })).filter(x => x.h && !mappedIdx[x.i] && !(layI && (layI.ignoreRest || layI.ignoreSet[impNormHeader(x.h)])));
   for (let i = hi + 1; i < grid.length; i++) {
     const r = grid[i] || [];
     if (!r.some(x => String(x == null ? "" : x).trim())) continue;
@@ -14948,14 +14995,20 @@ function impRowsFromGrid(grid, hi, map) {
     };
     const date = impDate(map.date !== undefined ? r[map.date] : "");
     const lab = g("lab") || "(Unassigned imports)";
-    const serial = g("serial");
+    let serial = g("serial");
     // A rule only applies when its COLUMN is actually mapped — a sheet with
-    // no Serial or no Location column at all imports fine (placeholder
-    // machine / blank location) instead of silently losing every row.
+    // no Serial column at all imports fine instead of silently losing rows.
     if (map.serial !== undefined && IMP_JUNK_SERIALS[serial.trim().toLowerCase().replace(/\s+/g, " ")]) {
-      skippedByRule++;
-      reasons.serial++;
-      continue;
+      if (keepNoSerial) {
+        // The admin chose to KEEP serial-less visits: the placeholder is
+        // wiped and the machine is identified by its instrument name.
+        reasons.serialKept++;
+        serial = "";
+      } else {
+        skippedByRule++;
+        reasons.serial++;
+        continue;
+      }
     }
     if (IMP_SKIP_ACCOUNTS[labNameNorm(g("lab"))]) {
       skippedByRule++;
@@ -15047,11 +15100,17 @@ function impRowsFromGrid(grid, hi, map) {
     reasons
   };
 }
-function impParseWorkbook(wb) {
+function impParseWorkbook(wb, opts) {
   const timeCheck = [];
   const rows = [];
   const sheetInfo = [];
   let skipped = 0;
+  const reasonsAll = {
+    serial: 0,
+    account: 0,
+    isr: 0,
+    serialKept: 0
+  };
   wb.SheetNames.forEach(name => {
     const grid = XLSX.utils.sheet_to_json(wb.Sheets[name], {
       header: 1,
@@ -15113,7 +15172,7 @@ function impParseWorkbook(wb) {
       });
       return;
     }
-    const built = impRowsFromGrid(grid, hi, map);
+    const built = impRowsFromGrid(grid, hi, map, opts);
     if (!timeCheck.length) {
       const dtKeys = [["date","Date"],["srcTimestamp","Timestamp"],["dtReported","Reported"],["dtDeparture","Departure"],["dtArrivalAccount","Arrival to account"],["dtWorkStarted","Work started"],["dtWorkEnded","Work ended"],["dtArrivalHome","Arrival to home"]];
       for (let ri = hi + 1; ri < Math.min(grid.length, hi + 7); ri++) {
@@ -15133,6 +15192,7 @@ function impParseWorkbook(wb) {
     }
     built.rows.forEach(r => rows.push(r));
     skipped += built.skippedByRule || 0;
+    if (built.reasons) for (const k2 in reasonsAll) reasonsAll[k2] += built.reasons[k2] || 0;
     sheetInfo.push({
       name,
       used: true,
@@ -15149,7 +15209,8 @@ function impParseWorkbook(wb) {
     skipped,
     unmappedAll,
     incomplete,
-    timeCheck
+    timeCheck,
+    reasons: reasonsAll
   };
 }
 // Sebia machines default to a YEARLY (12-month) PM schedule. Next PM always
@@ -16011,7 +16072,7 @@ function ImportRulesGuide({
       color: "var(--c-text5)",
       marginTop: 6
     }
-  }, "Detected when ≥2 recognized columns exist including one of: Serial No / Item Code / Model. Inventory uses this OWN set — ", /*#__PURE__*/React.createElement("b", null, "not"), " the LOGS headers.")), dest === "institutions" && /*#__PURE__*/React.createElement(React.Fragment, null, /*#__PURE__*/React.createElement(H, null, "Institutions — how rows are written"), /*#__PURE__*/React.createElement(R, null, "Uses the ", /*#__PURE__*/React.createElement(B, null, "same header names as LOGS"), " (Account, Brand, Instrument, Serial number, Location, Sub-location, …)."), /*#__PURE__*/React.createElement(R, null, "Writes ", /*#__PURE__*/React.createElement(B, null, "laboratories and machines only"), " — no service history. Use the LOGS destination for visits."), /*#__PURE__*/React.createElement(R, null, /*#__PURE__*/React.createElement(B, null, "Strict serial rule:"), " a serial that already exists anywhere is fully skipped (no duplicate machine, no re-routing)."), /*#__PURE__*/React.createElement(R, null, "Install date comes from the Install date column, else the Date column. New machines start Active with an empty PM schedule."), /*#__PURE__*/React.createElement(R, null, "Excluded rows (placeholder serials; Office / FAS - Manila / Not Applicable accounts; blank Location) follow the same rules as LOGS."), /*#__PURE__*/React.createElement(H, null, "Institutions — accepted headers (same set as LOGS)"), /*#__PURE__*/React.createElement("div", {
+  }, "Detected when ≥2 recognized columns exist including one of: Serial No / Item Code / Model. Inventory uses this OWN set — ", /*#__PURE__*/React.createElement("b", null, "not"), " the LOGS headers.")), dest === "institutions" && /*#__PURE__*/React.createElement(React.Fragment, null, /*#__PURE__*/React.createElement(H, null, "Institutions — how rows are written"), /*#__PURE__*/React.createElement(R, null, "Uses the ", /*#__PURE__*/React.createElement(B, null, "same header names as LOGS"), " (Account, Brand, Instrument, Serial number, Location, Sub-location, …)."), /*#__PURE__*/React.createElement(R, null, "Writes ", /*#__PURE__*/React.createElement(B, null, "laboratories and machines only"), " — no service history. Use the LOGS destination for visits."), /*#__PURE__*/React.createElement(R, null, /*#__PURE__*/React.createElement(B, null, "Strict serial rule:"), " a serial that already exists anywhere is fully skipped (no duplicate machine, no re-routing)."), /*#__PURE__*/React.createElement(R, null, "Install date comes from the Install date column, else the Date column. New machines start Active with an empty PM schedule."), /*#__PURE__*/React.createElement(R, null, "Excluded rows (placeholder serials; Office / FAS - Manila / Not Applicable accounts) follow the same rules as LOGS."), /*#__PURE__*/React.createElement(H, null, "Institutions — accepted headers (same set as LOGS)"), /*#__PURE__*/React.createElement("div", {
     style: {
       fontSize: 11.5,
       color: "var(--c-text4)",
@@ -16233,8 +16294,15 @@ function ImportExcel({
   const [rawRows, setRawRows] = useState(null);
   const [instPick, setInstPick] = useState({}); // NEW accounts: checked unless explicitly false
   const [grids, setGrids] = useState(null); // { sheetName: grid } for manual mapping
-  const [mapUI, setMapUI] = useState(null); // { sheet, headerRow, assigns:{colIdx:field} }
+  const [mapUI, setMapUI] = useState(null);
+  const [instFix, setInstFix] = useState(null); // { sheet, headerRow, assigns:{colIdx:field} }
   const [busy, setBusy] = useState(false);
+  // Loud alarms for the two silent killers: an unmapped Instrument column
+  // (blank machines — the name check has nothing to check) and an unmapped
+  // Account column (everything lands under "(Unassigned imports)").
+  const [impKeepNoSerial, setImpKeepNoSerial] = useState(false);
+  const noInst = !!(dest === "logs" && rawRows && rawRows.length && rawRows.every(r => !String(r.instrument || "").trim()));
+  const noLab = !!(dest === "logs" && rawRows && rawRows.length && rawRows.every(r => !String(r.lab || "").trim()));
   const fileRef = useRef(null);
   async function onFile(e) {
     const file = e.target.files && e.target.files[0];
@@ -16299,7 +16367,7 @@ function ImportExcel({
         setMapUI(null);
         return;
       }
-      const parsed = impParseWorkbook(wb);
+      const parsed = impParseWorkbook(wb, { keepNoSerial: impKeepNoSerial });
       if (!parsed.rows.length) {
         // Auto-detection failed → open the MANUAL column mapper instead of giving up.
         const first = wb.SheetNames[0];
@@ -16339,20 +16407,259 @@ function ImportExcel({
       setMapUI(null);
       setInvPlan(null);
       setRawRows(parsed.rows);
-      const p = dest === "institutions" ? impBuildInstPlan(parsed.rows, labs) : impBuildPlan(parsed.rows, labs, profile.email);
-      setMeta({
+      await proceedWithRows(parsed.rows, {
         file: file.name,
         rows: parsed.rows.length,
         skipped: parsed.skipped,
+        reasons: parsed.reasons,
         sheets: parsed.sheetInfo,
         unmapped: parsed.unmappedAll,
         incomplete: parsed.incomplete,
         timeCheck: parsed.timeCheck || []
       });
-      setPlan(p);
     } catch (err) {
       notify("Could not read the file: " + err.message, "error");
     }
+  }
+  // ── 🔤 Instrument-name gate (LOGS): every imported machine name must
+  //    match a registered instrument. Known names self-heal to the
+  //    registered SPELLING; unknown names pause the import so the admin can
+  //    RENAME each to a registered instrument or ADD it to the system —
+  //    after which all machines carry exactly the registered names. ──
+  async function proceedWithRows(rows, metaBase) {
+    // The registered list is fetched FRESH here, at the exact moment of the
+    // upload — never from a component hook that may still be loading. That
+    // race (an empty just-mounted list) is what silently skipped the panel
+    // even when the file's machine names differed from the registered ones.
+    let regEntries = [];
+    let regBrandsLive = [];
+    if (dest === "logs") {
+      try {
+        const snap = await db.doc("config/catalog").get();
+        const cat = snap.data() || {};
+        regEntries = Array.isArray(cat.machines) ? cat.machines : [];
+        regBrandsLive = (Array.isArray(cat.brands) ? cat.brands : []).map(b => String(b).trim()).filter(Boolean);
+      } catch (e) {
+        notify("Could not read the registered instruments — the machine-name check was skipped:\n" + e.message, "error");
+        regEntries = [];
+        regBrandsLive = [];
+      }
+    }
+    const regInstruments = regEntries.map(m => typeof m === "string" ? m.trim() : String(m && m.model || "").trim()).filter(Boolean);
+    if (dest === "logs" && regInstruments.length) {
+      const regSet = {};
+      regInstruments.forEach(n => {
+        const key = String(n).trim().toLowerCase();
+        if (key && regSet[key] === undefined) regSet[key] = String(n).trim();
+      });
+      const counts = {};
+      const fileBrands = {};
+      rows.forEach(r => {
+        const nm = String(r.instrument || "").trim();
+        if (!nm) return;
+        const canon = regSet[nm.toLowerCase()];
+        if (canon) {
+          if (canon !== nm) r.instrument = canon; // case/spacing self-heals
+        } else {
+          counts[nm] = (counts[nm] || 0) + 1;
+          if (fileBrands[nm] === undefined && String(r.brand || "").trim()) fileBrands[nm] = String(r.brand || "").trim();
+        }
+      });
+      const names = Object.keys(counts).sort((a, b) => a.localeCompare(b));
+      if (names.length) {
+        setInstFix({ rows, metaBase, names, counts, fileBrands, choices: {}, brandChoices: {}, regNames: regInstruments, regEntries: regEntries, regBrands: regBrandsLive });
+        setPlan(null);
+        setMeta(null);
+        return;
+      }
+    }
+    const p = dest === "institutions" ? impBuildInstPlan(rows, labs) : impBuildPlan(rows, labs, profile.email);
+    setRawRows(rows);
+    setMeta(metaBase);
+    setPlan(p);
+  }
+  async function applyInstFix() {
+    const fx = instFix;
+    if (!fx) return;
+    const unresolved = fx.names.filter(n => !fx.choices[n]);
+    if (unresolved.length) {
+      notify("Choose what to do with: " + unresolved.join(", "), "error");
+      return;
+    }
+    const toAdd = fx.names.filter(n => fx.choices[n] === "__add__");
+    if (toAdd.length) {
+      // Register as { model, brand } — the same shape Settings → Models
+      // keeps. The BRAND comes from the admin's explicit choice in the
+      // panel (the system cannot guess it from the file alone); "__none__"
+      // records a blank brand to be completed later in Settings.
+      const noBrand = fx.names.filter(n => fx.choices[n] === "__add__" && !(fx.brandChoices || {})[n]);
+      if (noBrand.length) {
+        notify("Choose the BRAND for: " + noBrand.join(", "), "error");
+        return;
+      }
+      const brandOf = {};
+      toAdd.forEach(n => {
+        const b = (fx.brandChoices || {})[n];
+        brandOf[n] = b === "__none__" ? "" : b;
+      });
+      const merged = [];
+      const seen = {};
+      (fx.regEntries || []).forEach(m => {
+        const model = typeof m === "string" ? m.trim() : String(m && m.model || "").trim();
+        if (!model || seen[model.toLowerCase()]) return;
+        seen[model.toLowerCase()] = 1;
+        merged.push(m);
+      });
+      toAdd.forEach(nm => {
+        const k = nm.trim();
+        if (!k || seen[k.toLowerCase()]) return;
+        seen[k.toLowerCase()] = 1;
+        merged.push({ model: k, brand: brandOf[k] || "" });
+      });
+      try {
+        await db.doc("config/catalog").set({ machines: merged }, { merge: true });
+        logAudit(profile, "catalog.machines", "added via import: " + toAdd.join(", "));
+      } catch (e) {
+        notify("SERVER REFUSED saving the new instrument name(s):\n" + e.message, "error");
+        return;
+      }
+    }
+    // IGNORE = exclude that machine's rows from this import entirely.
+    // After this step, every imported instrument is either already
+    // registered, freshly ADDED, or RENAMED to a registered name —
+    // nothing unregistered can enter the system.
+    let removedRows = 0;
+    const rows2 = fx.rows.filter(r => {
+      const nm = String(r.instrument || "").trim();
+      if (fx.choices[nm] === "__ignore__") {
+        removedRows++;
+        return false;
+      }
+      return true;
+    }).map(r => {
+      const nm = String(r.instrument || "").trim();
+      const ch = fx.choices[nm];
+      if (!ch || ch === "__add__") return r;
+      return { ...r, instrument: ch };
+    });
+    if (!rows2.length) {
+      notify("Every row was excluded by your choices — nothing left to import.", "error");
+      setInstFix(null);
+      return;
+    }
+    setInstFix(null);
+    const meta2 = { ...fx.metaBase, rows: rows2.length };
+    if (removedRows) meta2.removedByChoice = removedRows;
+    const p = dest === "institutions" ? impBuildInstPlan(rows2, labs) : impBuildPlan(rows2, labs, profile.email);
+    setRawRows(rows2);
+    setMeta(meta2);
+    setPlan(p);
+  }
+  function openRemap() {
+    // 🧭 Manual column mapping ON DEMAND — even when auto-detection
+    // "succeeded". Prefilled with the best guess, so only the wrong or
+    // missing columns (typically Instrument / Account on the old Google-
+    // Forms export) need assigning. Apply re-parses the sheet and runs
+    // the machine-name check again through the same gate.
+    if (!grids) {
+      notify("Upload the file first.", "error");
+      return;
+    }
+    const bh = bestHeaderGuess();
+    const guess = bh.guess;
+    const assigns = {};
+    Object.keys(guess).forEach(k2 => {
+      assigns[guess[k2]] = k2;
+    });
+    setMapUI({
+      sheet: bh.sheet,
+      headerRow: bh.hr,
+      assigns
+    });
+    setInstFix(null);
+  }
+  function bestHeaderGuess() {
+    // The same scoring the auto-fallback uses: across every sheet, the row
+    // (within the first 40) whose cells map the most known columns.
+    let sheet = grids && grids.names[0] || "",
+      hr = 0,
+      best = -1;
+    (grids ? grids.names : []).forEach(nmS => {
+      const grid = grids.sheets[nmS] || [];
+      for (let i2 = 0; i2 < Math.min(grid.length, 40); i2++) {
+        const sc = Object.keys(impMapHeaders(grid[i2] || [])).length;
+        if (sc > best) {
+          best = sc;
+          sheet = nmS;
+          hr = i2;
+        }
+      }
+    });
+    const grid = grids && grids.sheets[sheet] || [];
+    return {
+      sheet,
+      hr,
+      grid,
+      headerRow: grid[hr] || [],
+      guess: impMapHeaders(grid[hr] || [])
+    };
+  }
+  async function rereadNow(keepFlag) {
+    // Re-read the already-uploaded file with the new rule setting — the
+    // preview, the exclusion counts and the machine-name check all refresh.
+    if (!grids) return;
+    const bh = bestHeaderGuess();
+    const built = impRowsFromGrid(bh.grid, bh.hr, { ...bh.guess }, { keepNoSerial: keepFlag });
+    if (!built.rows.length) {
+      notify("No data rows found with the current settings.", "error");
+      return;
+    }
+    setMapUI(null);
+    await proceedWithRows(built.rows, {
+      file: grids.file,
+      rows: built.rows.length,
+      skipped: built.skippedByRule || 0,
+      reasons: built.reasons,
+      sheets: [{
+        name: bh.sheet,
+        used: true,
+        rows: built.rows.length,
+        unmapped: built.unmapped
+      }],
+      unmapped: built.unmapped,
+      incomplete: built.rows.filter(r => r.missingBits.length).length
+    });
+  }
+  async function quickAssign(field, colIdx) {
+    // ⚡ One-click rescue from the alarm banner: assign JUST the missing
+    // column (Instrument or Account) and re-run the whole pipeline — the
+    // re-parse, the plan, and the machine-name mapping panel — without
+    // touching anything that was already detected correctly.
+    if (!grids || colIdx === "" || colIdx == null) return;
+    const bh = bestHeaderGuess();
+    const map = {};
+    Object.keys(bh.guess).forEach(f => map[f] = bh.guess[f]);
+    map[field] = Number(colIdx);
+    const built = impRowsFromGrid(bh.grid, bh.hr, map, { keepNoSerial: impKeepNoSerial });
+    if (!built.rows.length) {
+      notify("No data rows survived with that column — check the choice and try again.", "error");
+      return;
+    }
+    setMapUI(null);
+    await proceedWithRows(built.rows, {
+      file: grids.file,
+      rows: built.rows.length,
+      skipped: built.skippedByRule || 0,
+      reasons: built.reasons,
+      sheets: [{
+        name: bh.sheet,
+        used: true,
+        rows: built.rows.length,
+        unmapped: built.unmapped
+      }],
+      unmapped: built.unmapped,
+      incomplete: built.rows.filter(r => r.missingBits.length).length
+    });
   }
   async function run() {
     if (!plan) return;
@@ -16428,18 +16735,34 @@ function ImportExcel({
       setInvPlan(null);
       setGrids(null);
     }
-  function applyManualMap() {
+  async function applyManualMap() {
     const grid = grids.sheets[mapUI.sheet] || [];
     const map = {};
+    const cand = {};
     Object.keys(mapUI.assigns).forEach(ci => {
       const f = mapUI.assigns[ci];
-      if (f && f !== "ignore" && map[f] === undefined) map[f] = Number(ci);
+      if (f && f !== "ignore") (cand[f] = cand[f] || []).push(Number(ci));
+    });
+    // If the SAME field ended up on several columns (a prefill twin plus
+    // the user's pick), the column with the most data wins — never the
+    // accident of a lower index.
+    const dcnt = ci => {
+      let c2 = 0;
+      const lim = Math.min(grid.length, mapUI.headerRow + 1 + 300);
+      for (let r2 = mapUI.headerRow + 1; r2 < lim; r2++) {
+        if (String((grid[r2] || [])[ci] == null ? "" : (grid[r2] || [])[ci]).trim()) c2++;
+      }
+      return c2;
+    };
+    Object.keys(cand).forEach(f => {
+      const list = cand[f];
+      map[f] = list.length === 1 ? list[0] : list.slice().sort((a, b) => dcnt(b) - dcnt(a))[0];
     });
     if (Object.keys(map).length === 0) {
       notify("Assign at least one column first.", "error");
       return;
     }
-    const built = impRowsFromGrid(grid, mapUI.headerRow, map);
+    const built = impRowsFromGrid(grid, mapUI.headerRow, map, { keepNoSerial: impKeepNoSerial });
     if (!built.rows.length) {
       const rsn = built.reasons || {};
       if (built.skippedByRule > 0) {
@@ -16453,12 +16776,11 @@ function ImportExcel({
       }
       return;
     }
-    const p = dest === "institutions" ? impBuildInstPlan(built.rows, labs) : impBuildPlan(built.rows, labs, profile.email);
-    setRawRows(built.rows);
-    setMeta({
+    await proceedWithRows(built.rows, {
       file: grids.file,
       rows: built.rows.length,
-      skipped: 0,
+      skipped: built.skippedByRule || 0,
+      reasons: built.reasons,
       sheets: [{
         name: mapUI.sheet,
         used: true,
@@ -16468,7 +16790,6 @@ function ImportExcel({
       unmapped: built.unmapped,
       incomplete: built.rows.filter(r => r.missingBits.length).length
     });
-    setPlan(p);
     setMapUI(null);
   }
   return /*#__PURE__*/React.createElement("div", {
@@ -16542,7 +16863,17 @@ function ImportExcel({
       color: "var(--c-text5)",
       marginBottom: 10
     }
-  }, "🔒 The file itself is never stored — the system only extracts what's inside and writes the data into the tab you chose."), /*#__PURE__*/React.createElement(ImportRulesGuide, {
+  }, "🔒 The file itself is never stored — the system only extracts what's inside and writes the data into the tab you chose."), dest === "logs" && /*#__PURE__*/React.createElement("label", {
+    style: { display: "flex", alignItems: "center", gap: 7, fontSize: 12, color: "var(--c-text2)", marginBottom: 10, cursor: "pointer" }
+  }, /*#__PURE__*/React.createElement("input", {
+    type: "checkbox",
+    checked: impKeepNoSerial,
+    onChange: e => {
+      const v2 = e.target.checked;
+      setImpKeepNoSerial(v2);
+      if (grids) rereadNow(v2);
+    }
+  }), /*#__PURE__*/React.createElement("span", null, "Include visits whose Serial is blank or a placeholder (-, NA, TF, …) — those machines are identified by their INSTRUMENT NAME instead. Old files often carry thousands of such rows.")), /*#__PURE__*/React.createElement(ImportRulesGuide, {
     dest: dest
   }), /*#__PURE__*/React.createElement("input", {
     ref: fileRef,
@@ -16783,7 +17114,69 @@ function ImportExcel({
       setMapUI(null);
       setGrids(null);
     }
-  }, "Cancel"))), plan && meta && /*#__PURE__*/React.createElement("div", {
+  }, "Cancel"))), instFix && /*#__PURE__*/React.createElement("div", {
+    style: { marginTop: 12, padding: 12, background: "var(--c-bg)", borderRadius: 10, border: "1px solid #f59e0b66" }
+  }, /*#__PURE__*/React.createElement("div", {
+    style: { fontSize: 12, fontWeight: 800, color: "#f59e0b", textTransform: "uppercase", marginBottom: 4 }
+  }, "🔤 " + instFix.names.length + " instrument name(s) not registered in the system"), /*#__PURE__*/React.createElement("div", {
+    style: { fontSize: 11.5, color: "var(--c-text3)", marginBottom: 10 }
+  }, "For each name below: RENAME it to one of the registered instruments (Settings → Models), ADD it to the system as a new registered instrument, or IGNORE it to exclude its rows from this import — so every machine that enters iBase carries exactly a registered name."), instFix.names.map(nm => /*#__PURE__*/React.createElement("div", {
+    key: nm,
+    style: { display: "flex", alignItems: "center", gap: 10, marginBottom: 6, flexWrap: "wrap" }
+  }, /*#__PURE__*/React.createElement("span", {
+    title: "“" + nm + "” · " + instFix.counts[nm] + " row(s)",
+    style: { fontWeight: 700, fontSize: 12.5, width: 340, flexShrink: 0, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }
+  }, "“" + nm + "”", /*#__PURE__*/React.createElement("span", {
+    style: { color: "var(--c-text4)", fontWeight: 400 }
+  }, " · " + instFix.counts[nm] + " row(s)")), /*#__PURE__*/React.createElement("select", {
+    value: instFix.choices[nm] || "",
+    onChange: e => {
+      const val = e.target.value;
+      setInstFix(x => {
+        const bc = { ...(x.brandChoices || {}) };
+        if (val === "__add__" && !bc[nm]) {
+          // Smart default: the file's brand — healed to the registered
+          // spelling when it matches one — otherwise left for the admin.
+          const fb = (x.fileBrands || {})[nm] || "";
+          const hit = (x.regBrands || []).find(b => b.toLowerCase() === fb.toLowerCase());
+          if (hit) bc[nm] = hit;else if (fb) bc[nm] = fb;
+        }
+        return { ...x, choices: { ...x.choices, [nm]: val }, brandChoices: bc };
+      });
+    },
+    style: { background: "var(--c-bg2)", color: "var(--c-text)", border: "1px solid var(--c-border)", borderRadius: 8, padding: "5px 8px", fontSize: 12, width: 300, flexShrink: 0 }
+  }, /*#__PURE__*/React.createElement("option", {
+    value: ""
+  }, "— choose —"), /*#__PURE__*/React.createElement("option", {
+    value: "__add__"
+  }, "➕ Add “" + nm + "” to the registered instruments"), /*#__PURE__*/React.createElement("option", {
+    value: "__ignore__"
+  }, "🚫 Ignore — exclude " + instFix.counts[nm] + " row(s) from this import"), (instFix.regNames || []).slice().sort((a, b) => a.localeCompare(b)).map(rn => /*#__PURE__*/React.createElement("option", {
+    key: rn,
+    value: rn
+  }, "Rename to: " + rn))), instFix.choices[nm] === "__add__" && /*#__PURE__*/React.createElement("select", {
+    value: (instFix.brandChoices || {})[nm] || "",
+    onChange: e => setInstFix(x => ({ ...x, brandChoices: { ...(x.brandChoices || {}), [nm]: e.target.value } })),
+    title: "The system needs to know which BRAND this new instrument belongs to",
+    style: { background: "var(--c-bg2)", color: "var(--c-text)", border: "1px solid #f59e0b88", borderRadius: 8, padding: "5px 8px", fontSize: 12, width: 210, flexShrink: 0 }
+  }, /*#__PURE__*/React.createElement("option", {
+    value: ""
+  }, "— choose the brand —"), (instFix.fileBrands || {})[nm] && !(instFix.regBrands || []).some(b => b.toLowerCase() === String(instFix.fileBrands[nm]).toLowerCase()) && /*#__PURE__*/React.createElement("option", {
+    value: instFix.fileBrands[nm]
+  }, instFix.fileBrands[nm] + " (from the file)"), (instFix.regBrands || []).slice().sort((a, b) => a.localeCompare(b)).map(b => /*#__PURE__*/React.createElement("option", {
+    key: b,
+    value: b
+  }, b)), /*#__PURE__*/React.createElement("option", {
+    value: "__none__"
+  }, "— no brand yet (fill later in Settings) —")))), /*#__PURE__*/React.createElement("div", {
+    style: { display: "flex", gap: 8, marginTop: 10 }
+  }, /*#__PURE__*/React.createElement("button", {
+    style: btnSt("var(--c-key)", "var(--c-bg)"),
+    onClick: applyInstFix
+  }, "Apply & continue"), /*#__PURE__*/React.createElement("button", {
+    style: btnSt("var(--c-border)", "var(--c-text2)"),
+    onClick: () => setInstFix(null)
+  }, "Cancel import"))), plan && meta && /*#__PURE__*/React.createElement("div", {
     style: {
       marginTop: 12,
       padding: 12,
@@ -16797,7 +17190,33 @@ function ImportExcel({
       fontWeight: 800,
       marginBottom: 6
     }
-  }, "Preview — ", meta.file), meta.timeCheck && meta.timeCheck.length ? /*#__PURE__*/React.createElement("details", { style: { margin: "4px 0 8px", fontSize: 11.5 } },
+  }, "Preview — ", meta.file), (noInst || noLab) && /*#__PURE__*/React.createElement("div", {
+    style: { padding: "8px 10px", borderRadius: 8, border: "1px solid #ef444488", background: "rgba(239, 68, 68, .08)", fontSize: 12, color: "#fca5a5", marginBottom: 8, fontWeight: 600 }
+  }, (noInst && noLab ? "⚠ Neither the Instrument nor the Account column was recognized in this file" : noInst ? "⚠ The Instrument column was not recognized — every machine would import BLANK, so the machine-name mapping panel has nothing to check" : "⚠ The Account column was not recognized — every row would land under “(Unassigned imports)”") + ". Pick the column right here — the file re-reads instantly and the machine-name mapping panel opens — or use 🧭 Re-map columns below for full control.", /*#__PURE__*/React.createElement("div", {
+    style: { display: "flex", gap: 10, marginTop: 8, flexWrap: "wrap", alignItems: "center" }
+  }, noInst && /*#__PURE__*/React.createElement("label", {
+    style: { display: "inline-flex", alignItems: "center", gap: 6, fontSize: 12, color: "var(--c-text2)", fontWeight: 700 }
+  }, "Instrument column:", /*#__PURE__*/React.createElement("select", {
+    defaultValue: "",
+    onChange: e => quickAssign("instrument", e.target.value),
+    style: { background: "var(--c-bg2)", color: "var(--c-text)", border: "1px solid var(--c-border)", borderRadius: 8, padding: "5px 8px", fontSize: 12, width: 300 }
+  }, /*#__PURE__*/React.createElement("option", {
+    value: ""
+  }, "— which column holds the machine name? —"), (grids ? bestHeaderGuess().headerRow : []).map((h, ci) => String(h || "").trim() ? /*#__PURE__*/React.createElement("option", {
+    key: ci,
+    value: ci
+  }, "col " + (ci + 1) + ": " + String(h).trim().slice(0, 60)) : null))), noLab && /*#__PURE__*/React.createElement("label", {
+    style: { display: "inline-flex", alignItems: "center", gap: 6, fontSize: 12, color: "var(--c-text2)", fontWeight: 700 }
+  }, "Account column:", /*#__PURE__*/React.createElement("select", {
+    defaultValue: "",
+    onChange: e => quickAssign("lab", e.target.value),
+    style: { background: "var(--c-bg2)", color: "var(--c-text)", border: "1px solid var(--c-border)", borderRadius: 8, padding: "5px 8px", fontSize: 12, width: 300 }
+  }, /*#__PURE__*/React.createElement("option", {
+    value: ""
+  }, "— which column holds the institution? —"), (grids ? bestHeaderGuess().headerRow : []).map((h, ci) => String(h || "").trim() ? /*#__PURE__*/React.createElement("option", {
+    key: ci,
+    value: ci
+  }, "col " + (ci + 1) + ": " + String(h).trim().slice(0, 60)) : null))))), meta.timeCheck && meta.timeCheck.length ? /*#__PURE__*/React.createElement("details", { style: { margin: "4px 0 8px", fontSize: 11.5 } },
     /*#__PURE__*/React.createElement("summary", { style: { cursor: "pointer", fontWeight: 800, color: "var(--c-text3)" } }, "\ud83d\udd2c Time check \u2014 exactly how the first rows\u2019 times were read (" + meta.timeCheck.length + " value(s))"),
     /*#__PURE__*/React.createElement("div", { style: { display: "grid", gridTemplateColumns: "150px 1fr 140px", gap: "2px 10px", marginTop: 6, fontFamily: "monospace", fontSize: 11 } },
       /*#__PURE__*/React.createElement("b", { key: "h1" }, "Column"), /*#__PURE__*/React.createElement("b", { key: "h2" }, "Raw cell (as the file stores it)"), /*#__PURE__*/React.createElement("b", { key: "h3" }, "System stores"),
@@ -16815,7 +17234,9 @@ function ImportExcel({
     style: {
       color: "#f59e0b"
     }
-  }, meta.skipped), " row(s) excluded by rule (placeholder serial, blank Location, or Office / FAS - Manila / Not Applicable account)") : null, " — ", /*#__PURE__*/React.createElement("b", null, plan.tNewVisits, " + ", plan.tDupes, " = ", plan.tNewVisits + plan.tDupes), plan.tNewVisits + plan.tDupes === meta.rows ? " ✓ every row accounted for" : " (rows routed by serial to existing machines are counted where they land)", plan.tHealed ? /*#__PURE__*/React.createElement(React.Fragment, null, /*#__PURE__*/React.createElement("br", null), "🩹 ", /*#__PURE__*/React.createElement("b", null, plan.tHealed), " previously-imported visit(s) will be repaired — their dates filled from their Timestamps, so installation dates appear.") : null), /*#__PURE__*/React.createElement("div", {
+  }, meta.skipped), " row(s) excluded by rule" + (meta.reasons ? " — " + [meta.reasons.serial ? meta.reasons.serial + " blank / placeholder Serial (tick the checkbox above to keep them)" : "", meta.reasons.account ? meta.reasons.account + " Office / FAS-Manila / N.A. accounts" : "", meta.reasons.isr ? meta.reasons.isr + " non-service ISR markers (leave / offset / travel …)" : ""].filter(Boolean).join(" · ") : " (placeholder serial, or Office / FAS - Manila / Not Applicable account)")) : null, meta && meta.reasons && meta.reasons.serialKept ? /*#__PURE__*/React.createElement("span", null, " · ", /*#__PURE__*/React.createElement("b", {
+    style: { color: "#10b981" }
+  }, meta.reasons.serialKept), " serial-less visit(s) KEPT — identified by instrument name") : null, " — ", /*#__PURE__*/React.createElement("b", null, plan.tNewVisits, " + ", plan.tDupes, " = ", plan.tNewVisits + plan.tDupes), plan.tNewVisits + plan.tDupes === meta.rows ? " ✓ every row accounted for" : " (rows routed by serial to existing machines are counted where they land)", plan.tHealed ? /*#__PURE__*/React.createElement(React.Fragment, null, /*#__PURE__*/React.createElement("br", null), "🩹 ", /*#__PURE__*/React.createElement("b", null, plan.tHealed), " previously-imported visit(s) will be repaired — their dates filled from their Timestamps, so installation dates appear.") : null), /*#__PURE__*/React.createElement("div", {
     style: {
       maxHeight: 150,
       overflowY: "auto",
@@ -16892,6 +17313,11 @@ function ImportExcel({
     disabled: busy || !(plan.tNewVisits || plan.tNewMachines || plan.tNewLabs),
     onClick: run
   }, busy ? "Importing…" : "✅ Import " + plan.tNewVisits + " visit(s) now"), /*#__PURE__*/React.createElement("button", {
+    style: btnSt(noInst || noLab ? "#7c2d12" : "var(--c-border)", noInst || noLab ? "#fdba74" : "var(--c-text2)"),
+    disabled: !!busy,
+    title: "Open the manual column mapper (prefilled with what was detected) — assign or fix any column, then Apply to re-check everything, including the machine names",
+    onClick: openRemap
+  }, "🧭 Re-map columns"), /*#__PURE__*/React.createElement("button", {
     style: btnSt("var(--c-border)", "var(--c-text2)"),
     disabled: busy,
     onClick: () => {
@@ -20119,6 +20545,27 @@ function App() {
     b.classList.add("ib-anim-tabs-" + tabAnimStyle(uiAnim, "tabs"));
     b.classList.add("ib-anim-content-" + tabAnimStyle(uiAnim, "content"));
   }, [uiAnim]);
+  // The dock wave, callable from BOTH the pointer stream and the post-click
+  // re-apply. React re-renders reset each button's inline style from props,
+  // which wiped the transforms mid-hover the instant a tab was clicked, so
+  // the wave snapped flat until the next pointer move (the "glitch").
+  const dockMagnify = (bar, mx) => {
+    if (!document.body.classList.contains("ib-anim-tabs-default")) return;
+    if (window.innerWidth <= 700) return;
+    bar.querySelectorAll(".ib-nav-btn").forEach(b => {
+      const r2 = b.getBoundingClientRect();
+      const d2 = Math.abs(mx - (r2.left + r2.width / 2));
+      // THREE icons ride the wave: centre ~1.45x, one neighbour each side
+      // ~1.17x, everything further sits still. Direct tracking, no
+      // transition while applying, so icons and text stay crisp.
+      const sc = 1 + 0.45 * Math.exp(-(d2 * d2) / 2312);
+      const lift = (sc - 1) * 8;
+      b.style.transition = "none";
+      b.style.transform = "translateY(-" + lift.toFixed(1) + "px) scale(" + sc.toFixed(3) + ")";
+      b.style.zIndex = sc > 1.3 ? "3" : "1";
+      b.style.setProperty("--sc", sc.toFixed(3));
+    });
+  };
   const [toast, setToast] = useState(null);
   const [theme, setTheme] = useState(() => {
     try {
@@ -20446,29 +20893,20 @@ function App() {
   return /*#__PURE__*/React.createElement(React.Fragment, null, /*#__PURE__*/React.createElement("div", {
     className: "ib-siderail",
     onPointerMove: e => {
-      // 🍎 macOS-Dock magnification — the Default tab animation. Icons swell
-      // continuously as the pointer nears them (Gaussian falloff over the
-      // cursor's X), exactly like the Apple Dock. Imperative DOM writes for
-      // 60fps tracking; no React re-renders involved.
-      // Pointer events (not mouse events) so a TABLET PEN hovering the dock
-      // magnifies too; a finger stays excluded — dragging it would fight
-      // the bar's own scrolling and feel jumpy.
+      // Pointer events so a TABLET PEN works too; a finger stays excluded
+      // (it would fight the bar's own scrolling). The bar remembers the
+      // pointer's X so the wave can be RE-APPLIED right after a click
+      // re-render (see the tab button's onClick).
       if (e.pointerType === "touch") return;
-      if (!document.body.classList.contains("ib-anim-tabs-default")) return;
-      if (window.innerWidth <= 700) return;
-      const mx = e.clientX;
-      e.currentTarget.querySelectorAll(".ib-nav-btn").forEach(b => {
-        const r2 = b.getBoundingClientRect();
-        const d2 = Math.abs(mx - (r2.left + r2.width / 2));
-        const sc = 1 + 0.6 * Math.exp(-(d2 * d2) / 9800);
-        b.style.transform = "scale(" + sc.toFixed(3) + ")";
-        b.style.zIndex = sc > 1.25 ? "3" : "1";
-      });
+      e.currentTarget.__ibmx = e.clientX;
+      dockMagnify(e.currentTarget, e.clientX);
     },
     onPointerLeave: e => {
       e.currentTarget.querySelectorAll(".ib-nav-btn").forEach(b => {
-        b.style.transform = "";
+        b.style.transition = ""; // restore the CSS transition first…
+        b.style.transform = ""; // …so the settle back to rest animates
         b.style.zIndex = "";
+        b.style.removeProperty("--sc");
       });
     },
     style: {
@@ -20501,12 +20939,16 @@ function App() {
       key: t.id,
       className: "ib-nav-btn" + (active ? " ib-nav-active" : ""),
       onClick: e => {
-        // The name bubble must vanish the moment the tab is clicked, even
-        // though the pointer still hovers the button; it re-arms only after
-        // the pointer leaves. (The native title tooltip is dropped — the
-        // bubble IS the name.)
+        // The bubble vanishes the moment the tab is clicked (re-arms after
+        // the pointer leaves). setTab re-renders the dock, which resets the
+        // buttons' inline styles, so the wave is RE-APPLIED on the very
+        // next frame, before paint: the dock never visibly snaps flat.
         e.currentTarget.classList.add("ib-nav-clicked");
+        const bar = e.currentTarget.parentElement;
         setTab(t.id);
+        requestAnimationFrame(() => {
+          if (bar && bar.__ibmx != null) dockMagnify(bar, bar.__ibmx);
+        });
       },
       onPointerLeave: e => e.currentTarget.classList.remove("ib-nav-clicked"),
       style: {
