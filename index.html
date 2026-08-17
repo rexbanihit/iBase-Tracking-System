@@ -529,7 +529,7 @@
 (function () {
   var okLibs = (typeof firebase !== "undefined") && (typeof React !== "undefined") && (typeof ReactDOM !== "undefined") && (typeof XLSX !== "undefined");
   window.__IBASE_LIBS_OK = okLibs;
-  window.__IBASE_BUILD = "v329";
+  window.__IBASE_BUILD = "v330";
   if (!okLibs) {
     document.getElementById("root").innerHTML =
       "<div style='max-width:520px;margin:90px auto;padding:30px;background:#16181d;border:1px solid #f8717155;border-radius:16px;font-family:system-ui,sans-serif;color:#e5e7eb;text-align:center'>" +
@@ -3627,7 +3627,7 @@ function Login({
       letterSpacing: 2,
       textTransform: "uppercase"
     }
-  }, "version: v329"), /*#__PURE__*/React.createElement(React.Fragment, null,
+  }, "version: v330"), /*#__PURE__*/React.createElement(React.Fragment, null,
   /*#__PURE__*/React.createElement("label", {
     style: labelSt
   }, "Email"), /*#__PURE__*/React.createElement("input", {
@@ -10121,6 +10121,7 @@ function vgridSave(key, val) {
     localStorage.setItem(key, JSON.stringify(val));
   } catch (e) {}
 }
+const __visitRowsCache = typeof WeakMap !== "undefined" ? new WeakMap() : null;
 function VisitsTab({
   labs,
   profile,
@@ -10264,15 +10265,30 @@ function VisitsTab({
   }, [catalog]);
   // resolve a machine's brand: registered model brand → lab brand → first word (last resort)
   const brandOf = (l, m) => modelBrand[String(m.instrument || "").trim().toLowerCase()] || String(l.brand || "").trim() || String(m.instrument || "").trim().split(" ")[0] || "";
-  const all = useMemo(() => labs.flatMap(l => (l.machines || []).flatMap(m => (m.visits || []).map(v => ({
-    ...v,
-    _labId: l.id,
-    _lab: l.name,
-    _mId: m.id,
-    _machine: m.instrument,
-    _sn: m.serialNo,
-    _brand: brandOf(l, m)
-  })))), [labs, modelBrand]);
+  const all = useMemo(() => {
+    // The 14k-row model is rebuilt on every tab ENTRY because unmounting
+    // kills useMemo. This module-level cache (keyed by the labs array, which
+    // is stable between Firestore snapshots) makes re-entering the tab
+    // instant; a data change naturally produces a new array and a rebuild.
+    if (__visitRowsCache) {
+      const hit = __visitRowsCache.get(labs);
+      if (hit && hit.mb === modelBrand) return hit.rows;
+    }
+    const rows0 = labs.flatMap(l => (l.machines || []).flatMap(m => (m.visits || []).map(v => ({
+      ...v,
+      _labId: l.id,
+      _lab: l.name,
+      _mId: m.id,
+      _machine: m.instrument,
+      _sn: m.serialNo,
+      _brand: brandOf(l, m)
+    }))));
+    if (__visitRowsCache) __visitRowsCache.set(labs, {
+      mb: modelBrand,
+      rows: rows0
+    });
+    return rows0;
+  }, [labs, modelBrand]);
   const labOpts = useMemo(() => sortAlpha(Array.from(new Set(all.map(v => v._lab).filter(Boolean)))), [all]);
   const brandOpts = useMemo(() => sortAlpha(Array.from(new Set(all.map(v => v._brand).filter(Boolean)))), [all]);
   const machineOpts = useMemo(() => sortAlpha(Array.from(new Set(all.filter(v => !brandF || v._brand === brandF).map(v => v._machine).filter(Boolean)))), [all, brandF]);
@@ -20967,6 +20983,11 @@ function App() {
     label: tabLabel(tabsCfg, "settings", "⚙ Settings")
   }].filter(Boolean) : [];
   const [tab, setTab] = useState("dashboard");
+  // React 18 concurrency: the dock highlight follows `tab` (urgent, paints
+  // the same frame as the click); the heavy tab CONTENT renders from this
+  // DEFERRED value in a non-blocking pass — the slight freeze on tab clicks
+  // was the panel remount running synchronously inside the click.
+  const panelTab = React.useDeferredValue ? React.useDeferredValue(tab) : tab;
   useEffect(() => {
     if (TABS.length && !TABS.find(t => t.id === tab)) setTab(TABS[0].id);
   }, [TABS.map(t => t.id).join("|")]);
@@ -21243,51 +21264,51 @@ function App() {
       lineHeight: 1.6
     }
   }, "This usually means the connection dropped. Check your internet connection — this page keeps retrying automatically. If you're online and this message stays, ask your administrator to check your account's access.")), signedProfile && /*#__PURE__*/React.createElement(TabBoundary, {
-    tabId: tab
+    tabId: panelTab
   }, /*#__PURE__*/React.createElement("div", {
-    key: tab,
-    className: "ibase-tab-panel ib-tab-" + tab + (tabAnimStyle(uiAnim, "content") !== "none" ? " anim-" + tabAnimStyle(uiAnim, "content") : "")
-  }, tab === "dashboard" && pCanTab(signedProfile, "dashboard", "view") && /*#__PURE__*/React.createElement(DashboardTab, {
+    key: panelTab,
+    className: "ibase-tab-panel ib-tab-" + panelTab + (tabAnimStyle(uiAnim, "content") !== "none" ? " anim-" + tabAnimStyle(uiAnim, "content") : "")
+  }, panelTab === "dashboard" && pCanTab(signedProfile, "dashboard", "view") && /*#__PURE__*/React.createElement(DashboardTab, {
     labs: labs
-  }), tab === "labs" && pCanTab(signedProfile, "labs", "view") && /*#__PURE__*/React.createElement(LabsTab, {
+  }), panelTab === "labs" && pCanTab(signedProfile, "labs", "view") && /*#__PURE__*/React.createElement(LabsTab, {
     labs: labs,
     profile: signedProfile,
     catalog: catalog,
     inventory: invForLabs,
     dl: dlCfg,
     notify: notify
-  }), tab === "analytics" && (signedProfile.isAdmin || pCanTab(signedProfile, "analytics", "view")) && /*#__PURE__*/React.createElement(AnalyticsTab, {
+  }), panelTab === "analytics" && (signedProfile.isAdmin || pCanTab(signedProfile, "analytics", "view")) && /*#__PURE__*/React.createElement(AnalyticsTab, {
     labs: labs,
     catalog: catalog
-  }), tab === "visits" && (signedProfile.isAdmin || pCanTab(signedProfile, "visits", "view")) && /*#__PURE__*/React.createElement(VisitsTab, {
+  }), panelTab === "visits" && (signedProfile.isAdmin || pCanTab(signedProfile, "visits", "view")) && /*#__PURE__*/React.createElement(VisitsTab, {
     labs: labs,
     profile: signedProfile,
     catalog: catalog,
     dl: dlCfg,
     notify: notify
-  }), tab === "inventory" && pCanTab(signedProfile, "inventory", "view") && /*#__PURE__*/React.createElement(InventoryTab, {
+  }), panelTab === "inventory" && pCanTab(signedProfile, "inventory", "view") && /*#__PURE__*/React.createElement(InventoryTab, {
     profile: signedProfile,
     labs: labs,
     catalog: catalog,
     tabsCfg: tabsCfg,
     notify: notify
-  }), tab === "wpoa" && pCanTab(signedProfile, "wpoa", "view") && /*#__PURE__*/React.createElement(WpoaTab, {
+  }), panelTab === "wpoa" && pCanTab(signedProfile, "wpoa", "view") && /*#__PURE__*/React.createElement(WpoaTab, {
     profile: signedProfile,
     notify: notify
-  }), tab === "smer" && /*#__PURE__*/React.createElement(SmerTab, {
+  }), panelTab === "smer" && /*#__PURE__*/React.createElement(SmerTab, {
     profile: signedProfile,
     labs: labs,
     notify: notify
-  }), tab === "overtime" && pCanTab(signedProfile, "overtime", "view") && /*#__PURE__*/React.createElement(OvertimeTab, {
+  }), panelTab === "overtime" && pCanTab(signedProfile, "overtime", "view") && /*#__PURE__*/React.createElement(OvertimeTab, {
     profile: signedProfile,
     labs: labs,
     users: signedProfile.isAdmin ? users : [],
     notify: notify
-  }), tab === "bin" && signedProfile.isAdmin && /*#__PURE__*/React.createElement(BinTab, {
+  }), panelTab === "bin" && signedProfile.isAdmin && /*#__PURE__*/React.createElement(BinTab, {
     profile: signedProfile,
     labs: labs,
     notify: notify
-  }), tab === "settings" && /*#__PURE__*/React.createElement(SettingsTab, {
+  }), panelTab === "settings" && /*#__PURE__*/React.createElement(SettingsTab, {
     profile: signedProfile,
     users: users,
     catalog: catalog,
