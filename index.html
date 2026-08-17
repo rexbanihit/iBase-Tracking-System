@@ -529,7 +529,7 @@
 (function () {
   var okLibs = (typeof firebase !== "undefined") && (typeof React !== "undefined") && (typeof ReactDOM !== "undefined") && (typeof XLSX !== "undefined");
   window.__IBASE_LIBS_OK = okLibs;
-  window.__IBASE_BUILD = "v328";
+  window.__IBASE_BUILD = "v329";
   if (!okLibs) {
     document.getElementById("root").innerHTML =
       "<div style='max-width:520px;margin:90px auto;padding:30px;background:#16181d;border:1px solid #f8717155;border-radius:16px;font-family:system-ui,sans-serif;color:#e5e7eb;text-align:center'>" +
@@ -3627,7 +3627,7 @@ function Login({
       letterSpacing: 2,
       textTransform: "uppercase"
     }
-  }, "version: v328"), /*#__PURE__*/React.createElement(React.Fragment, null,
+  }, "version: v329"), /*#__PURE__*/React.createElement(React.Fragment, null,
   /*#__PURE__*/React.createElement("label", {
     style: labelSt
   }, "Email"), /*#__PURE__*/React.createElement("input", {
@@ -17196,7 +17196,9 @@ function ImportExcel({
     style: { fontSize: 12, fontWeight: 800, color: "#f59e0b", textTransform: "uppercase", marginBottom: 4 }
   }, "🔤 " + instFix.names.length + " instrument name(s) not registered in the system"), /*#__PURE__*/React.createElement("div", {
     style: { fontSize: 11.5, color: "var(--c-text3)", marginBottom: 10 }
-  }, "For each name below: RENAME it to one of the registered instruments (Settings → Models), ADD it to the system as a new registered instrument, or IGNORE it to exclude its rows from this import — so every machine that enters iBase carries exactly a registered name."), instFix.names.map(nm => /*#__PURE__*/React.createElement("div", {
+  }, "For each name below: RENAME it to one of the registered instruments (Settings → Models), ADD it to the system as a new registered instrument, or IGNORE it to exclude its rows from this import — so every machine that enters iBase carries exactly a registered name."), /*#__PURE__*/React.createElement("div", {
+    style: { maxHeight: 340, overflowY: "auto", border: "1px solid var(--c-border2)", borderRadius: 8, padding: "8px 8px 2px", marginBottom: 4 }
+  }, instFix.names.map(nm => /*#__PURE__*/React.createElement("div", {
     key: nm,
     style: { display: "flex", alignItems: "center", gap: 10, marginBottom: 6, flexWrap: "wrap" }
   }, /*#__PURE__*/React.createElement("span", {
@@ -17244,7 +17246,7 @@ function ImportExcel({
     value: b
   }, b)), /*#__PURE__*/React.createElement("option", {
     value: "__none__"
-  }, "— no brand yet (fill later in Settings) —")))), /*#__PURE__*/React.createElement("div", {
+  }, "— no brand yet (fill later in Settings) —"))))), /*#__PURE__*/React.createElement("div", {
     style: { display: "flex", gap: 8, marginTop: 10 }
   }, /*#__PURE__*/React.createElement("button", {
     style: btnSt("var(--c-key)", "var(--c-bg)"),
