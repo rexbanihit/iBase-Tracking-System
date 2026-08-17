@@ -529,7 +529,7 @@
 (function () {
   var okLibs = (typeof firebase !== "undefined") && (typeof React !== "undefined") && (typeof ReactDOM !== "undefined") && (typeof XLSX !== "undefined");
   window.__IBASE_LIBS_OK = okLibs;
-  window.__IBASE_BUILD = "v327";
+  window.__IBASE_BUILD = "v328";
   if (!okLibs) {
     document.getElementById("root").innerHTML =
       "<div style='max-width:520px;margin:90px auto;padding:30px;background:#16181d;border:1px solid #f8717155;border-radius:16px;font-family:system-ui,sans-serif;color:#e5e7eb;text-align:center'>" +
@@ -2522,7 +2522,18 @@ function statusFromVisits(m, fallback) {
   }
   return fallback != null ? fallback : m && m.status || "Active";
 }
+const __pmNextCache = typeof WeakMap !== "undefined" ? new WeakMap() : null;
 function pmComputedNext(m) {
+  // Machine objects are immutable between Firestore snapshots, so the visit-
+  // history scan runs ONCE per machine per data change instead of on every
+  // render of every tab — with 14k+ imported visits this is the difference
+  // between instant clicks and a visible lag.
+  if (m && __pmNextCache && __pmNextCache.has(m)) return __pmNextCache.get(m);
+  const r0 = pmComputedNextUncached(m);
+  if (m && __pmNextCache) __pmNextCache.set(m, r0);
+  return r0;
+}
+function pmComputedNextUncached(m) {
   if (!m) return "";
   // Pulled-out / Scrapped / Decommissioned / "Instrument is ready for pull-out"
   // (and Inactive/Released) FORFEIT the schedule: no Next PM is shown anywhere.
@@ -2550,7 +2561,14 @@ function pmComputedNext(m) {
 function retiredStatus(s) {
   return /inactive|scrapped|pulled|released/i.test(String(s || ""));
 }
+const __pmFlagCache = typeof WeakMap !== "undefined" ? new WeakMap() : null;
 function pmFlag(m) {
+  if (m && __pmFlagCache && __pmFlagCache.has(m)) return __pmFlagCache.get(m);
+  const r0 = pmFlagUncached(m);
+  if (m && __pmFlagCache) __pmFlagCache.set(m, r0);
+  return r0;
+}
+function pmFlagUncached(m) {
   // v127 getPMFlag, faithfully: retirement silences reminders; weekly is
   // day-level; every other interval is decided PURELY by calendar month —
   // the day of the month is never used (a PM due on the 5th is still
@@ -2593,11 +2611,13 @@ function machineInstaller(m) {
   return "-";
 }
 const FLAG_COLORS = {
+  // ONE palette for every tab — identical to the dashboard's, so "Due This
+  // Month", "Due Next Month" and the rest can never disagree between views.
   "Overdue": "#ef4444",
-  "Due This Week": "#f97316",
+  "Due This Week": "#fb923c",
   "Due This Month": "#f97316",
-  "Due Next Month": "#f59e0b",
-  "OK": "#38bdf8",
+  "Due Next Month": "#eab308",
+  "OK": "#10b981",
   "Pulled-out": "#6b7280"
 };
 function labNameNorm(n) {
@@ -3607,7 +3627,7 @@ function Login({
       letterSpacing: 2,
       textTransform: "uppercase"
     }
-  }, "version: v327"), /*#__PURE__*/React.createElement(React.Fragment, null,
+  }, "version: v328"), /*#__PURE__*/React.createElement(React.Fragment, null,
   /*#__PURE__*/React.createElement("label", {
     style: labelSt
   }, "Email"), /*#__PURE__*/React.createElement("input", {
@@ -14953,6 +14973,22 @@ function impPreferDataColumns(grid, hi, map) {
   }
   return out;
 }
+function impCellText(v) {
+  // XLSX (cellDates: true) hands date-FORMATTED cells over as Date OBJECTS;
+  // a raw String() of one is the giant "Sat Mar 02 2024 07:44:35 GMT+0800
+  // (Singapore Standard Time)" — which is how dates ended up stored as
+  // machine SERIALS. Text fields (serial, ISR, remarks …) now get a compact
+  // readable form instead. The date/time FIELDS never pass through here —
+  // they read the raw cell via impDT / impDate as before.
+  if (v instanceof Date) {
+    if (isNaN(v)) return ""; // a broken date cell yields a clean blank
+    const p2 = n => String(n).padStart(2, "0");
+    const base = v.getFullYear() + "-" + p2(v.getMonth() + 1) + "-" + p2(v.getDate());
+    const hm = p2(v.getHours()) + ":" + p2(v.getMinutes());
+    return hm === "00:00" ? base : base + " " + hm;
+  }
+  return String(v == null ? "" : v);
+}
 function impRowsFromGrid(grid, hi, map, opts) {
   map = impPreferDataColumns(grid, hi, map); // duplicate headers: the twin WITH DATA wins
   const keepNoSerial = !!(opts && opts.keepNoSerial);
@@ -14986,7 +15022,7 @@ function impRowsFromGrid(grid, hi, map, opts) {
   for (let i = hi + 1; i < grid.length; i++) {
     const r = grid[i] || [];
     if (!r.some(x => String(x == null ? "" : x).trim())) continue;
-    const g = k => map[k] === undefined ? "" : String(r[map[k]] == null ? "" : r[map[k]]).trim();
+    const g = k => map[k] === undefined ? "" : impCellText(r[map[k]]).trim();
     // "Preventive Maintenance" (any spelling) equals the system's "PM".
     const normType = t => {
       const s = String(t || "").trim();
@@ -14994,7 +15030,7 @@ function impRowsFromGrid(grid, hi, map, opts) {
       return s;
     };
     const date = impDate(map.date !== undefined ? r[map.date] : "");
-    const lab = g("lab") || "(Unassigned imports)";
+    let lab = g("lab");
     let serial = g("serial");
     // A rule only applies when its COLUMN is actually mapped — a sheet with
     // no Serial column at all imports fine instead of silently losing rows.
@@ -15024,6 +15060,10 @@ function impRowsFromGrid(grid, hi, map, opts) {
     const gdt = k => map[k] === undefined ? "" : impDT(r[map[k]]);
     // no Date column? derive the visit date from the Timestamp or Departure
     const dateF = date || (gdt("srcTimestamp") || "").slice(0, 10) || (gdt("dtDeparture") || "").slice(0, 10);
+    // Rows with no Account shard into YEARLY holding labs — thousands of
+    // visits in ONE "(Unassigned imports)" document would brush Firestore's
+    // hard 1 MB per-document ceiling and make every snapshot heavy.
+    if (!lab) lab = "(Unassigned imports " + (dateF ? dateF.slice(0, 4) : "undated") + ")";
     rows.push({
       date: dateF,
       lab,
@@ -15667,7 +15707,7 @@ function impParseInventory(wb) {
     for (let i = hi + 1; i < grid.length; i++) {
       const r = grid[i] || [];
       if (!r.some(x => String(x == null ? "" : x).trim())) continue;
-      const g = k => map[k] === undefined ? "" : String(r[map[k]] == null ? "" : r[map[k]]).trim();
+      const g = k => map[k] === undefined ? "" : impCellText(r[map[k]]).trim();
       const gd = k => map[k] === undefined ? "" : impDate(r[map[k]]);
       rows.push({
         brand: g("brand"),
