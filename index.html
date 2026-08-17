@@ -529,7 +529,7 @@
 (function () {
   var okLibs = (typeof firebase !== "undefined") && (typeof React !== "undefined") && (typeof ReactDOM !== "undefined") && (typeof XLSX !== "undefined");
   window.__IBASE_LIBS_OK = okLibs;
-  window.__IBASE_BUILD = "v333";
+  window.__IBASE_BUILD = "v334";
   if (!okLibs) {
     document.getElementById("root").innerHTML =
       "<div style='max-width:520px;margin:90px auto;padding:30px;background:#16181d;border:1px solid #f8717155;border-radius:16px;font-family:system-ui,sans-serif;color:#e5e7eb;text-align:center'>" +
@@ -3627,7 +3627,7 @@ function Login({
       letterSpacing: 2,
       textTransform: "uppercase"
     }
-  }, "version: v333"), /*#__PURE__*/React.createElement(React.Fragment, null,
+  }, "version: v334"), /*#__PURE__*/React.createElement(React.Fragment, null,
   /*#__PURE__*/React.createElement("label", {
     style: labelSt
   }, "Email"), /*#__PURE__*/React.createElement("input", {
@@ -3881,6 +3881,7 @@ function ITable({
   const hidden = st.hidden || {};
   const visOrder = order.filter(cid => !hidden[cid]);
   const [colsOpen, setColsOpen] = useState(false);
+  const [rowCap, setRowCap] = useState(150); // first paint stays light; one click reveals every row
   const laidOut = st.order && st.order.length || st.w && Object.keys(st.w).length || st.sort || Object.keys(hidden).some(k => hidden[k]);
   return /*#__PURE__*/React.createElement("div", null, (filter !== false || laidOut || cols.length > 1 || headerNode) && /*#__PURE__*/React.createElement("div", {
     style: {
@@ -4069,7 +4070,7 @@ function ITable({
         transition: "opacity .1s"
       }
     }));
-  }))), /*#__PURE__*/React.createElement("tbody", null, shown.map((r, i) => {
+  }))), /*#__PURE__*/React.createElement("tbody", null, shown.slice(0, rowCap).map((r, i) => {
     const k = rowKey ? rowKey(r) : i;
     return /*#__PURE__*/React.createElement("tr", {
       key: k,
@@ -4096,7 +4097,27 @@ function ITable({
         }
       }, c.render ? c.render(r) : String(c.sv ? c.sv(r) : ""));
     }));
-  }), shown.length === 0 && /*#__PURE__*/React.createElement("tr", null, /*#__PURE__*/React.createElement("td", {
+  }), shown.length > rowCap && /*#__PURE__*/React.createElement("tr", {
+    key: "__cap"
+  }, /*#__PURE__*/React.createElement("td", {
+    colSpan: 99,
+    style: {
+      padding: 0,
+      border: "1px solid var(--c-border2)"
+    }
+  }, /*#__PURE__*/React.createElement("button", {
+    style: {
+      width: "100%",
+      border: "none",
+      background: "var(--c-card2)",
+      color: "var(--c-key)",
+      cursor: "pointer",
+      fontSize: 11.5,
+      fontWeight: 700,
+      padding: "7px 0"
+    },
+    onClick: () => setRowCap(Infinity)
+  }, "⤵ Show all " + shown.length + " rows (" + (shown.length - rowCap) + " more)"))), shown.length === 0 && /*#__PURE__*/React.createElement("tr", null, /*#__PURE__*/React.createElement("td", {
     colSpan: order.length,
     style: {
       ...tdSt,
@@ -5000,7 +5021,7 @@ function LabsTab({
         maxHeight: 132,
         overflowY: "auto"
       }
-    }, (instF || flagF ? (lab.machines || []).filter(matchesFilters) : lab.machines || []).map(m => {
+    }, (instF || flagF ? (lab.machines || []).filter(matchesFilters) : lab.machines || []).slice(0, 8).map(m => {
       const f = pmFlag(m);
       return /*#__PURE__*/React.createElement("div", {
         key: m.id,
@@ -5039,7 +5060,20 @@ function LabsTab({
           flexShrink: 0
         }
       }, m.serialNo));
-    }), (lab.machines || []).length === 0 && /*#__PURE__*/React.createElement("div", {
+    }), (() => {
+      // The card strip scrolls at ~7 visible rows anyway; building DOM for
+      // EVERY machine (2,700+ across all cards) was the tab-entry stall.
+      const __mn = (instF || flagF ? (lab.machines || []).filter(matchesFilters) : lab.machines || []).length;
+      return __mn > 8 ? /*#__PURE__*/React.createElement("div", {
+        key: "__more",
+        style: {
+          fontSize: 10.5,
+          color: "var(--c-text5)",
+          padding: "4px 0 1px",
+          fontStyle: "italic"
+        }
+      }, "+ " + (__mn - 8) + " more machine(s) — open the laboratory to see all") : null;
+    })(), (lab.machines || []).length === 0 && /*#__PURE__*/React.createElement("div", {
       style: {
         fontSize: 11,
         color: "var(--c-text5)"
@@ -10265,7 +10299,7 @@ function VisitsTab({
     setDelMode(false);
   }, [typeF, engF, from, to, q]); // per-row Excel-style overrides
   const [bulkBusy, setBulkBusy] = useState(false);
-  const [limit, setLimit] = useState(200); // rows shown; expandable to ALL
+  const [limit, setLimit] = useState(100); // rows shown; expandable to ALL (first paint stays light)
   const dragCol = useRef(null);
 
   // model → registered brand (Settings → Models). "Capillarys 3 Octa" → "Sebia".
