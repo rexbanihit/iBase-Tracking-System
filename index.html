@@ -529,7 +529,7 @@
 (function () {
   var okLibs = (typeof firebase !== "undefined") && (typeof React !== "undefined") && (typeof ReactDOM !== "undefined") && (typeof XLSX !== "undefined");
   window.__IBASE_LIBS_OK = okLibs;
-  window.__IBASE_BUILD = "v331";
+  window.__IBASE_BUILD = "v333";
   if (!okLibs) {
     document.getElementById("root").innerHTML =
       "<div style='max-width:520px;margin:90px auto;padding:30px;background:#16181d;border:1px solid #f8717155;border-radius:16px;font-family:system-ui,sans-serif;color:#e5e7eb;text-align:center'>" +
@@ -3627,7 +3627,7 @@ function Login({
       letterSpacing: 2,
       textTransform: "uppercase"
     }
-  }, "version: v331"), /*#__PURE__*/React.createElement(React.Fragment, null,
+  }, "version: v333"), /*#__PURE__*/React.createElement(React.Fragment, null,
   /*#__PURE__*/React.createElement("label", {
     style: labelSt
   }, "Email"), /*#__PURE__*/React.createElement("input", {
@@ -10135,6 +10135,7 @@ function vgridSave(key, val) {
   } catch (e) {}
 }
 const __visitRowsCache = typeof WeakMap !== "undefined" ? new WeakMap() : null;
+const __visitSortCache = typeof WeakMap !== "undefined" ? new WeakMap() : null;
 function VisitsTab({
   labs,
   profile,
@@ -10325,27 +10326,58 @@ function VisitsTab({
     // time so imported rows in other date formats still order correctly. This is the
     // default view for every user: the latest work-started visit is ALWAYS on top.
     // NOTE: this is intentionally NOT the source timestamp — only the work-started value.
+    // PERFORMANCE: (1) each row's work-started time is parsed ONCE and carried
+    // through the sort (decorate–sort–undecorate) instead of re-parsed inside
+    // every comparison; (2) the finished order is cached module-level, keyed by
+    // the labs-derived rows identity plus the exact filter + sort signature, so
+    // re-entering the tab with the same view costs nothing.
+    const sig = JSON.stringify([labF, brandF, machineF, typeF, engF, from, to, q, sort && sort.col, sort && sort.dir]);
+    let bag = __visitSortCache ? __visitSortCache.get(all) : null;
+    if (bag) {
+      const hit = bag.get(sig);
+      if (hit) return hit;
+    }
     const workTs = v => {
       const t = Date.parse(String((v && v.dtWorkStarted) || ""));
       return isNaN(t) ? -Infinity : t; // no work-started time → sinks to the bottom
     };
+    let out;
     // The default "date" view (and any click on the work-started column) sorts by work-started.
     if (sort.col === "date" || sort.col === "wstart") {
-      return [...filtered].sort((a, b) => {
-        const d2 = workTs(b) - workTs(a); // newest first when dir = -1
-        return (sort.dir === -1 ? d2 : -d2) || String(b.dtWorkStarted || "").localeCompare(String(a.dtWorkStarted || ""));
+      const deco = filtered.map(v => [workTs(v), v]);
+      deco.sort((a, b) => {
+        const d2 = b[0] - a[0]; // newest first when dir = -1
+        return (sort.dir === -1 ? d2 : -d2) || String(b[1].dtWorkStarted || "").localeCompare(String(a[1].dtWorkStarted || ""));
       });
+      out = deco.map(x => x[1]);
+    } else {
+      const c = colDef(sort.col);
+      if (!c) {
+        const deco = filtered.map(v => [workTs(v), v]);
+        deco.sort((a, b) => b[0] - a[0]); // unknown col → still newest work-started first
+        out = deco.map(x => x[1]);
+      } else {
+        const deco = filtered.map(v => [String(c.sv(v)), workTs(v), v]);
+        deco.sort((a, b) => {
+          const p = sort.dir * a[0].localeCompare(b[0], undefined, {
+            numeric: true,
+            sensitivity: "base"
+          });
+          if (p !== 0) return p;
+          return b[1] - a[1]; // tie-break: newest work-started first
+        });
+        out = deco.map(x => x[2]);
+      }
     }
-    const c = colDef(sort.col);
-    if (!c) return [...filtered].sort((a, b) => workTs(b) - workTs(a)); // unknown col → still newest work-started first
-    return [...filtered].sort((a, b) => {
-      const p = sort.dir * String(c.sv(a)).localeCompare(String(c.sv(b)), undefined, {
-        numeric: true,
-        sensitivity: "base"
-      });
-      if (p !== 0) return p;
-      return workTs(b) - workTs(a); // tie-break: newest work-started first
-    });
+    if (__visitSortCache) {
+      if (!bag) {
+        bag = new Map();
+        __visitSortCache.set(all, bag);
+      }
+      bag.set(sig, out);
+      if (bag.size > 8) bag.delete(bag.keys().next().value); // keep the 8 most recent views
+    }
+    return out;
   }, [filtered, sort]);
   function clickSort(id) {
     setSort(s => s.col === id ? {
@@ -12362,7 +12394,7 @@ function SmerTab({ profile, labs, notify }) {
     // height so the report never looks shrunken on paper or in Excel.
     const padRowsN = Math.max(0, 20 - f.rows.length);
     const bodyP = body + ("<tr>" + SMER_COLS.map(() => "<td>&nbsp;</td>").join("") + "</tr>").repeat(padRowsN);
-    const html = "<!doctype html><html><head><title>SMER</title><style>@page{size:A4 landscape;margin:8mm}@media print{html,body{width:297mm}}body{font-family:Arial,Helvetica,sans-serif;color:#000;margin:0;padding:4px 6px}.logo{display:flex;align-items:center;gap:10px}.sq{display:grid;grid-template-columns:repeat(3,11px);grid-auto-rows:11px}.sq i{display:block}.sq i.b{background:#1a1a1a}.brand{border-left:1pt solid #000;padding-left:10px}.fas{font-weight:900;font-size:24px;letter-spacing:2px;line-height:1}.sub{font-size:9.5px;line-height:1.1}h1{font-size:13px;text-align:center;margin:-18px 0 8px;font-weight:800}.meta{font-size:11.5px;font-weight:700;margin:1px 0;display:flex}.meta em{font-style:normal;width:64px;flex-shrink:0}.meta span{font-weight:400;border-bottom:.5pt solid #000;display:inline-block;min-width:420px;padding:0 4px}.note{font-size:9.5px;font-style:italic;margin:2px 0 4px}table{width:100%;border-collapse:collapse;table-layout:fixed}table.main th,table.main td{border:.5pt solid #000;mso-border-alt:solid #000 .5pt;font-size:9.8px;padding:1px 3px;height:15.5px;overflow:hidden;white-space:nowrap}table.main th{font-weight:700;text-align:center}.y{background:#ffff00 !important;-webkit-print-color-adjust:exact;print-color-adjust:exact}.tot td{font-weight:700}.foot{width:100%;margin-top:10px;border-collapse:collapse}.foot td{border:none}.foot>tr>td{vertical-align:bottom}.sums{font-size:11px;border-collapse:collapse}.sums td{padding:1px 6px 1px 0;border:none}.sums .lbl{text-align:left;white-space:nowrap}.sums .u{border-bottom:.5pt solid #000;text-align:right;min-width:80px;padding-left:16px}.sums .n{text-align:right;min-width:80px;padding-left:16px}.sums .g td{font-weight:800;padding-top:2px}.sums .g .u{border-top:.5pt solid #000}.sums .g .lbl{border-top:none}.foot td.sigspace{height:26pt;mso-height-source:userset;text-align:center;vertical-align:bottom;border:none;overflow:hidden}.foot td.siggap{height:30pt;mso-height-source:userset;border:none}.foot td.sigline{border-top:.5pt solid #000;border-left:none;border-right:none;border-bottom:none;text-align:center;padding-top:2px;font-size:10.5px}</style></head><body>" +
+    const html = "<!doctype html><html><head><title>SMER</title><style>@page{size:A4 landscape;margin:8mm}@media print{html,body{width:297mm}}body{font-family:Arial,Helvetica,sans-serif;color:#000;margin:0;padding:4px 6px}.logo{display:flex;align-items:center;gap:10px}.sq{display:grid;grid-template-columns:repeat(3,11px);grid-auto-rows:11px}.sq i{display:block}.sq i.b{background:#1a1a1a}.brand{border-left:1pt solid #000;padding-left:10px}.fas{font-weight:900;font-size:18pt;letter-spacing:2px;line-height:1}.sub{font-size:7.5pt;line-height:1.1}h1{font-size:14pt;text-align:center;margin:-18px 0 8px;font-weight:800}.meta{font-size:11pt;font-weight:700;margin:1px 0;display:flex}.meta em{font-style:normal;width:64px;flex-shrink:0}.meta span{font-weight:400;border-bottom:.5pt solid #000;display:inline-block;min-width:420px;padding:0 4px}.note{font-size:8.5pt;font-style:italic;margin:2px 0 4px}table{width:100%;border-collapse:collapse;table-layout:fixed}table.main th,table.main td{border:.5pt solid #000;mso-border-alt:solid #000 .5pt;font-size:10pt;padding:2px 4px;height:20px;overflow:hidden;white-space:nowrap}table.main th{font-weight:700;text-align:center}.y{background:#ffff00 !important;-webkit-print-color-adjust:exact;print-color-adjust:exact}.tot td{font-weight:700}.foot{width:100%;margin-top:10px;border-collapse:collapse}.foot td{border:none}.foot>tr>td{vertical-align:bottom}.sums{font-size:10.5pt;border-collapse:collapse}.sums td{padding:1px 6px 1px 0;border:none}.sums .lbl{text-align:left;white-space:nowrap}.sums .u{border-bottom:.5pt solid #000;text-align:right;min-width:80px;padding-left:16px}.sums .n{text-align:right;min-width:80px;padding-left:16px}.sums .g td{font-weight:800;padding-top:2px}.sums .g .u{border-top:.5pt solid #000}.sums .g .lbl{border-top:none}.foot td.sigspace{height:26pt;mso-height-source:userset;text-align:center;vertical-align:bottom;border:none;overflow:hidden}.foot td.siggap{height:30pt;mso-height-source:userset;border:none}.foot td.sigline{border-top:.5pt solid #000;border-left:none;border-right:none;border-bottom:none;text-align:center;padding-top:2px;font-size:10pt}</style></head><body>" +
       '<div class="logo">' + (logo ? '<img src="' + logo + '" width="' + logoW + '" style="width:' + logoW + 'px;height:auto">' : '') + '</div>' +
       "<h1>SEMI-MONTHLY EXPENSE REPORT(SMER)</h1>" +
       '<div class="meta"><em>Name:</em><span>' + esc(f.name) + '</span></div><div class="meta"><em>Position:</em><span>' + esc(f.position) + '</span></div>' +
