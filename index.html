@@ -334,6 +334,11 @@
         z-index: 1;
       }
       body.ib-anim-content-default .ib-mainarea button:active { transform: scale(1.02); }
+      /* Right-edge buttons (↺ Reset lives right-most on every table): the
+         hover zoom expands INWARD (leftward), never past the container's
+         right edge — a scaled box extends scrollable overflow, which was
+         flashing a scrollbar on hover. */
+      .ib-btn-edge { transform-origin: right center; }
 
       /* ── Table header cells (Institutions, inventories, audit, …) ── */
       body.ib-anim-content-default .ib-mainarea th {
@@ -395,6 +400,9 @@
         z-index: 1;
       }
       body.ib-anim-content-default .ib-labcard:active { transform: scale(1.008); }
+  /* v335: cards outside the viewport skip style/layout/paint entirely —
+     scrolling renders them just-in-time. Big commit cut on Institutions. */
+  .ib-labcard { content-visibility: auto; contain-intrinsic-size: auto 620px; }
     }
 
     /* ═══ 📱 SMARTPHONES (≤ 700px) — layout adaptations ONLY.
@@ -529,7 +537,7 @@
 (function () {
   var okLibs = (typeof firebase !== "undefined") && (typeof React !== "undefined") && (typeof ReactDOM !== "undefined") && (typeof XLSX !== "undefined");
   window.__IBASE_LIBS_OK = okLibs;
-  window.__IBASE_BUILD = "v334";
+  window.__IBASE_BUILD = "v344";
   if (!okLibs) {
     document.getElementById("root").innerHTML =
       "<div style='max-width:520px;margin:90px auto;padding:30px;background:#16181d;border:1px solid #f8717155;border-radius:16px;font-family:system-ui,sans-serif;color:#e5e7eb;text-align:center'>" +
@@ -2617,7 +2625,7 @@ const FLAG_COLORS = {
   "Due This Week": "#fb923c",
   "Due This Month": "#f97316",
   "Due Next Month": "#eab308",
-  "OK": "#10b981",
+  "OK": "#38bdf8",
   "Pulled-out": "#6b7280"
 };
 function labNameNorm(n) {
@@ -2710,10 +2718,25 @@ function useCol(path, enabled, notify) {
       setDocs([]);
       return;
     }
-    const unsub = db.collection(path).onSnapshot(s => setDocs(s.docs.map(d => ({
-      id: d.id,
-      ...d.data()
-    }))), e => notify && notify(path + ": " + e.message, "error"));
+    // Incremental materialization (v339). d.data() — the expensive
+    // deserialization of an entire document — now runs ONLY for documents
+    // that actually changed (docChanges). Unchanged documents keep their
+    // EXACT previous object identity, so every WeakMap cache built on them
+    // (PM flags, next-PM dates) keeps its hits. At 147 embedded-array
+    // institution docs this turns the ~1s whole-collection rebuild on every
+    // teammate's write into a few ms for the one changed document.
+    const byId = new Map();
+    const unsub = db.collection(path).onSnapshot(s => {
+      s.docChanges().forEach(ch => {
+        if (ch.type === "removed") byId.delete(ch.doc.id);else byId.set(ch.doc.id, {
+          id: ch.doc.id,
+          ...ch.doc.data()
+        });
+      });
+      const next = s.docs.map(d => byId.get(d.id)).filter(Boolean);
+      // Non-urgent: a background data refresh must never block a click.
+      if (React.startTransition) React.startTransition(() => setDocs(next));else setDocs(next);
+    }, e => notify && notify(path + ": " + e.message, "error"));
     return () => unsub();
   }, [path, enabled]);
   return docs;
@@ -2725,7 +2748,10 @@ function useDoc(path, enabled) {
       setData(null);
       return;
     }
-    const unsub = db.doc(path).onSnapshot(d => setData(d.exists ? d.data() : null), () => setData(null));
+    const unsub = db.doc(path).onSnapshot(d => {
+      const v = d.exists ? d.data() : null;
+      if (React.startTransition) React.startTransition(() => setData(v));else setData(v);
+    }, () => setData(null));
     return () => unsub();
   }, [path, enabled]);
   return data;
@@ -3627,7 +3653,7 @@ function Login({
       letterSpacing: 2,
       textTransform: "uppercase"
     }
-  }, "version: v334"), /*#__PURE__*/React.createElement(React.Fragment, null,
+  }, "version: v344"), /*#__PURE__*/React.createElement(React.Fragment, null,
   /*#__PURE__*/React.createElement("label", {
     style: labelSt
   }, "Email"), /*#__PURE__*/React.createElement("input", {
@@ -3922,6 +3948,7 @@ function ITable({
     },
     onClick: () => setColsOpen(o => !o)
   }, "🧩 Show/Hide Columns", Object.keys(hidden).filter(k => hidden[k]).length ? " (" + visOrder.length + "/" + order.length + ")" : ""), /*#__PURE__*/React.createElement("button", {
+    className: "ib-btn-edge",
     title: "Restore default column order, widths, visibility and sorting (your view only)",
     style: {
       ...btnSt("var(--c-border)", "var(--c-text2)"),
@@ -4123,14 +4150,21 @@ function ITable({
       ...tdSt,
       color: "var(--c-text4)"
     }
-  }, empty || "No rows."))))));
+  }, empty || "No rows."))))), /*#__PURE__*/React.createElement("div", {
+    style: {
+      fontSize: 10.5,
+      color: "var(--c-text5)",
+      textAlign: "right",
+      padding: "4px 2px 0"
+    }
+  }, "Showing " + Math.min(rowCap, shown.length) + " of " + shown.length + " row" + (shown.length === 1 ? "" : "s")));
 }
 const DASH_FLAG_COLORS = {
   Overdue: "#ef4444",
   "Due This Week": "#fb923c",
   "Due This Month": "#f97316",
   "Due Next Month": "#eab308",
-  OK: "#10b981"
+  OK: "#38bdf8"
 };
 const DASH_FLAG_ORDER = {
   Overdue: 0,
@@ -4349,7 +4383,7 @@ function DashboardTab({
       }
     }, "🚨 Maintenance Alerts — ", urgent.length, " unit(s) requiring attention"),
     id: "dash-alerts",
-    maxH: 400,
+    maxH: 640,
     initSort: {
       col: "flag",
       dir: 1
@@ -4849,6 +4883,7 @@ function LabsTab({
     }
   }, [["cards", "🃏 Cards"], ["table", "☰ Table"]].map(([id, lbl]) => /*#__PURE__*/React.createElement("button", {
     key: id,
+    className: "ib-subtab",
     onClick: () => setView(id),
     style: {
       border: "none",
@@ -4907,7 +4942,10 @@ function LabsTab({
       dir: 1
     },
     filter: false,
-    maxH: "calc(100vh - 320px)",
+    maxH: "none",
+    // The page's own scrollbar does the vertical work here — an inner
+    // vertical scrollbar on top of it was redundant. Horizontal scrolling
+    // for wide tables still works (the wrapper keeps overflow: auto).
     onRowClick: m => setOpenLab(m._labId),
     empty: "No instruments match."
   })), view === "table" && showEmpty && emptyLabs.length > 0 && /*#__PURE__*/React.createElement("div", {
@@ -7278,12 +7316,15 @@ function InventoryTab({
       marginBottom: 14
     }
   }, canViewM && /*#__PURE__*/React.createElement("button", {
+    className: "ib-subtab",
     style: btnSt(sub === "machines" ? "var(--c-key)" : "var(--c-border)", sub === "machines" ? "var(--c-bg)" : "var(--c-text2)"),
     onClick: () => setSub("machines")
   }, subLabel(tabsCfg, "machines", "🔬 Machine Inventory")), canViewS && /*#__PURE__*/React.createElement("button", {
+    className: "ib-subtab",
     style: btnSt(sub === "spares" ? "var(--c-key)" : "var(--c-border)", sub === "spares" ? "var(--c-bg)" : "var(--c-text2)"),
     onClick: () => setSub("spares")
   }, subLabel(tabsCfg, "spares", "🔧 Spare Parts")), canViewR && /*#__PURE__*/React.createElement("button", {
+    className: "ib-subtab",
     style: btnSt(sub === "reagents" ? "var(--c-key)" : "var(--c-border)", sub === "reagents" ? "var(--c-bg)" : "var(--c-text2)"),
     onClick: () => setSub("reagents")
   }, subLabel(tabsCfg, "reagents", "🧪 Reagents"))), sub === "reagents" && canViewR && /*#__PURE__*/React.createElement(ReagentsTab, {
@@ -7438,7 +7479,7 @@ function MachineInv({
     onClick: () => setEditing("new")
   }, "+ New Record")),
     id: "inv-machines",
-    maxH: "calc(100vh - 340px)",
+    maxH: "calc(100vh - 260px)",
     filter: false,
     initSort: {
       col: "brand",
@@ -8173,7 +8214,7 @@ function SpareParts({
       dir: 1
     },
     filter: false,
-    maxH: "calc(100vh - 360px)",
+    maxH: "calc(100vh - 280px)",
     empty: "No spare parts" + (q ? " match the search." : " yet.")
   }), editing && /*#__PURE__*/React.createElement(Modal, {
     title: editing === "new" ? "New Spare Part" : "Edit Spare Part",
@@ -8493,8 +8534,8 @@ function BinTab({
     ? /*#__PURE__*/React.createElement("div", { style: { marginTop: 18, paddingTop: 14, borderTop: "1px solid var(--c-border2)" } },
         /*#__PURE__*/React.createElement("div", { style: { fontWeight: 800, fontSize: 13, marginBottom: 2 } }, tier === "ownerBin" ? "\ud83d\udd12 Owner vault \u2014 final safety net" : "\u267b Admin recycle"),
         iOwn ? /*#__PURE__*/React.createElement("div", { style: { display: "flex", gap: 6, marginBottom: 8 } },
-          /*#__PURE__*/React.createElement("button", { onClick: () => setVaultTier("adminBin"), style: { ...btnSt(tier === "adminBin" ? "var(--c-key)" : "var(--c-border)", tier === "adminBin" ? "var(--c-bg)" : "var(--c-text2)"), padding: "4px 10px", fontSize: 11 } }, "\u267b Admin recycle"),
-          /*#__PURE__*/React.createElement("button", { onClick: () => setVaultTier("ownerBin"), style: { ...btnSt(tier === "ownerBin" ? "var(--c-key)" : "var(--c-border)", tier === "ownerBin" ? "var(--c-bg)" : "var(--c-text2)"), padding: "4px 10px", fontSize: 11 } }, "\ud83d\udd12 Owner vault")) : null,
+          /*#__PURE__*/React.createElement("button", { className: "ib-subtab", onClick: () => setVaultTier("adminBin"), style: { ...btnSt(tier === "adminBin" ? "var(--c-key)" : "var(--c-border)", tier === "adminBin" ? "var(--c-bg)" : "var(--c-text2)"), padding: "4px 10px", fontSize: 11 } }, "\u267b Admin recycle"),
+          /*#__PURE__*/React.createElement("button", { className: "ib-subtab", onClick: () => setVaultTier("ownerBin"), style: { ...btnSt(tier === "ownerBin" ? "var(--c-key)" : "var(--c-border)", tier === "ownerBin" ? "var(--c-bg)" : "var(--c-text2)"), padding: "4px 10px", fontSize: 11 } }, "\ud83d\udd12 Owner vault")) : null,
         /*#__PURE__*/React.createElement("div", { style: { fontSize: 11.5, color: "var(--c-text4)", marginBottom: 10 } }, tier === "ownerBin" ? "The deepest net \u2014 items removed even from the admin recycle land here. Restore returns an item to the Bin." : "Items purged from the Bin are kept here so administrators can still recover them. Restore returns an item to the Bin; deleting here moves it one step deeper, where it can still be recovered."),
         vault.length > 0 ? /*#__PURE__*/React.createElement("div", { style: { display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center", marginBottom: 8 } },
           /*#__PURE__*/React.createElement("button", { disabled: vBusy || !Object.values(vSel).filter(Boolean).length, style: btnSt("#10b981", "#fff"), onClick: () => vaultRestoreMany(vault.filter(x => vSel[x.id])) }, vBusy ? "Working\u2026" : "\u21a9 Return selected to Bin (" + Object.values(vSel).filter(Boolean).length + ")"),
@@ -9177,6 +9218,7 @@ function ChartToggle({
     }
   }, opts.map(([id, label]) => /*#__PURE__*/React.createElement("button", {
     key: id,
+    className: "ib-subtab",
     onClick: () => onChange(id),
     style: {
       border: "none",
@@ -9585,7 +9627,11 @@ function AnalyticsTab({
     // the brand / instrument narrowing runs on the cached base just below.
     if (__anaRowsCache) {
       const hit = __anaRowsCache.get(labs);
-      if (hit) return hit;
+      if (hit) {
+        __ibCacheStats.aHit++;
+        return hit;
+      }
+      __ibCacheStats.aMiss++;
     }
     const rows0 = labs.flatMap(l => (l.machines || []).flatMap(m => (m.visits || []).filter(v => !isNonAnalyticsVisit(v)).map(v => ({
       ...v,
@@ -10168,6 +10214,8 @@ function vgridSave(key, val) {
     localStorage.setItem(key, JSON.stringify(val));
   } catch (e) {}
 }
+const __ibCacheStats = { vHit: 0, vMiss: 0, aHit: 0, aMiss: 0, sHit: 0, sMiss: 0 };
+if (typeof window !== "undefined") window.__ibCacheStats = __ibCacheStats;
 const __visitRowsCache = typeof WeakMap !== "undefined" ? new WeakMap() : null;
 const __visitSortCache = typeof WeakMap !== "undefined" ? new WeakMap() : null;
 function VisitsTab({
@@ -10318,9 +10366,18 @@ function VisitsTab({
     // kills useMemo. This module-level cache (keyed by the labs array, which
     // is stable between Firestore snapshots) makes re-entering the tab
     // instant; a data change naturally produces a new array and a rebuild.
+    // Key the brand side by the CATALOG'S OWN machines array — a stable
+    // Firestore-doc identity that survives component remounts. (The previous
+    // check compared the per-mount modelBrand memo object, which was a fresh
+    // identity on every mount: the cache could never hit across entries.)
+    const __mbSrc = catalog && Array.isArray(catalog.machines) ? catalog.machines : null;
     if (__visitRowsCache) {
       const hit = __visitRowsCache.get(labs);
-      if (hit && hit.mb === modelBrand) return hit.rows;
+      if (hit && hit.mbSrc === __mbSrc) {
+        __ibCacheStats.vHit++;
+        return hit.rows;
+      }
+      __ibCacheStats.vMiss++;
     }
     const rows0 = labs.flatMap(l => (l.machines || []).flatMap(m => (m.visits || []).map(v => ({
       ...v,
@@ -10332,7 +10389,7 @@ function VisitsTab({
       _brand: brandOf(l, m)
     }))));
     if (__visitRowsCache) __visitRowsCache.set(labs, {
-      mb: modelBrand,
+      mbSrc: __mbSrc,
       rows: rows0
     });
     return rows0;
@@ -10369,8 +10426,12 @@ function VisitsTab({
     let bag = __visitSortCache ? __visitSortCache.get(all) : null;
     if (bag) {
       const hit = bag.get(sig);
-      if (hit) return hit;
+      if (hit) {
+        __ibCacheStats.sHit++;
+        return hit;
+      }
     }
+    __ibCacheStats.sMiss++;
     const workTs = v => {
       const t = Date.parse(String((v && v.dtWorkStarted) || ""));
       return isNaN(t) ? -Infinity : t; // no work-started time → sinks to the bottom
@@ -10877,6 +10938,7 @@ function VisitsTab({
     },
     onClick: () => setColMenu(m => !m)
   }, "🧩 Show/Hide Columns", hiddenCols.length ? " (" + (VGRID_COLS.length - hiddenCols.length) + "/" + VGRID_COLS.length + ")" : ""), /*#__PURE__*/React.createElement("button", {
+    className: "ib-btn-edge",
     title: "Restore the default view \u2014 column order, widths, visibility, sorting, row height, and clear every filter: search, laboratory, brand, machine, type, engineer, date range (your view only)",
     style: {
       ...btnSt("var(--c-border)", "var(--c-text2)"),
@@ -10957,7 +11019,7 @@ function VisitsTab({
   }, "↺ Show all") : null))), /*#__PURE__*/React.createElement("div", {
     style: {
       overflow: "auto",
-      maxHeight: "calc(100vh - 330px)"
+      maxHeight: "calc(100vh - 250px)"
     }
   }, /*#__PURE__*/React.createElement("table", {
     className: "ibzv",
@@ -11828,6 +11890,7 @@ function WpoaTab({ profile, notify }) {
     style: { display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap", marginBottom: 10 }
   }, PERIODS.map(p => /*#__PURE__*/React.createElement("button", {
     key: p.id,
+    className: "ib-subtab",
     style: btnSt(periodId === p.id ? "var(--c-key)" : "var(--c-border)", periodId === p.id ? "var(--c-bg)" : "var(--c-text2)"),
     onClick: () => setPeriodId(p.id)
   }, p.label)), /*#__PURE__*/React.createElement("div", {
@@ -11836,6 +11899,7 @@ function WpoaTab({ profile, notify }) {
     const act = w2 === week;
     return /*#__PURE__*/React.createElement("button", {
       key: w2,
+      className: "ib-subtab",
       ref: act ? tabRef : null,
       onClick: () => setWeek(w2),
       title: weekLabel(w2) + " \u2014 opening a sheet changes only YOUR view; teammates are not moved.",
@@ -13829,6 +13893,7 @@ function OvertimeTab({
       style: { ...btnSt(otColsOpen ? "var(--c-key)" : "var(--c-border)", otColsOpen ? "var(--c-bg)" : "var(--c-text2)"), padding: "5px 6px", fontSize: 10.5, width: 162, whiteSpace: "nowrap", textAlign: "center", boxSizing: "border-box" },
       onClick: () => setOtColsOpen(o => !o)
     }, "\ud83e\udde9 Show/Hide Columns" + (otOrder.some(cid => otHidden[cid]) ? " (" + otVis.length + "/" + otOrder.length + ")" : "")), /*#__PURE__*/React.createElement("button", {
+      className: "ib-btn-edge",
       title: "Restore default column order, widths, visibility and sorting (your view only)",
       style: { ...btnSt("var(--c-border)", "var(--c-text2)"), padding: "5px 6px", fontSize: 10.5, width: 162, whiteSpace: "nowrap", textAlign: "center", boxSizing: "border-box" },
       onClick: () => {
@@ -13944,6 +14009,7 @@ function OvertimeTab({
     }, /*#__PURE__*/React.createElement("div", {
       style: { fontWeight: 800, fontSize: 16 }
     }, "🕒 Overtime — 📖 General Rules"), /*#__PURE__*/React.createElement("button", {
+      className: "ib-subtab",
       style: { ...btnSt("var(--c-border)", "var(--c-text2)"), padding: "7px 12px" },
       onClick: () => setOtView("main")
     }, "🕒 Back to Overtime")), /*#__PURE__*/React.createElement("div", {
@@ -13979,6 +14045,7 @@ function OvertimeTab({
     style: { ...btnSt("var(--c-key)", "var(--c-bg)"), padding: "7px 12px" },
     onClick: () => setOtForm({ standalone: true, id: "", f: blankOtF() })
   }, "📄 Overtime Form"), /*#__PURE__*/React.createElement("button", {
+    className: "ib-subtab",
     title: "How overtime is computed, holiday rules, exceptions, filing and approval",
     style: { ...btnSt(otView === "rules" ? "var(--c-key)" : "var(--c-border)", otView === "rules" ? "var(--c-bg)" : "var(--c-text2)"), padding: "7px 12px" },
     onClick: () => setOtView(v2 => v2 === "rules" ? "main" : "rules")
@@ -14370,6 +14437,7 @@ function OvertimeTab({
     style: { ...btnSt(otmColsOpen ? "var(--c-key)" : "var(--c-border)", otmColsOpen ? "var(--c-bg)" : "var(--c-text2)"), padding: "5px 6px", fontSize: 10.5, width: 162, whiteSpace: "nowrap", textAlign: "center", boxSizing: "border-box" },
     onClick: () => setOtmColsOpen(o => !o)
   }, "\ud83e\udde9 Show/Hide Columns" + (otmOrder.some(cid => otmHidden[cid]) ? " (" + otmVis.length + "/" + otmOrder.length + ")" : "")), /*#__PURE__*/React.createElement("button", {
+    className: "ib-btn-edge",
     title: "Restore default column order, widths, visibility and sorting (your view only)",
     style: { ...btnSt("var(--c-border)", "var(--c-text2)"), padding: "5px 6px", fontSize: 10.5, width: 162, whiteSpace: "nowrap", textAlign: "center", boxSizing: "border-box" },
     onClick: () => {
@@ -18682,6 +18750,7 @@ function SettingsTab({
   const eff = visibleSubs.some(s => s.id === sub) ? sub : visibleSubs[0] ? visibleSubs[0].id : "employees";
   const subBtn = s => /*#__PURE__*/React.createElement("button", {
     key: s.id,
+    className: "ib-subtab",
     onClick: () => setSub(s.id),
     style: {
       ...btnSt(eff === s.id ? s.danger ? "#7f1d1d" : "var(--c-key)" : "var(--c-border)", eff === s.id ? s.danger ? "#fecaca" : "var(--c-bg)" : s.danger ? "#f87171" : "var(--c-text2)"),
@@ -18694,6 +18763,7 @@ function SettingsTab({
     style: { display: "flex", gap: 8, marginBottom: 14, flexWrap: "wrap" }
   }, setTabs.map(v2 => /*#__PURE__*/React.createElement("button", {
     key: v2,
+    className: "ib-subtab",
     onClick: () => setSetView(v2),
     style: btnSt(setView === v2 ? "var(--c-key)" : "var(--c-border)", setView === v2 ? "var(--c-bg)" : "var(--c-text2)")
   }, v2 === "general" ? "⚙ General" : v2 === "themes" ? "🎨 Theme Studio" : "🛡 Backup & Restore"))) : null;
@@ -20678,20 +20748,20 @@ function ReagentsTab({ profile, labs, catalog, notify }) {
   const logRows = logKind === "reagents" ? reagentLog : logKind === "spares" ? sparesLog : machineLog;
   return RG_h("div", null,
     RG_h("div", { style: { display: "flex", gap: 8, marginBottom: 14, flexWrap: "wrap" } },
-      RG_h("button", { style: btnSt(sub === "stock" ? "var(--c-key)" : "var(--c-border)", sub === "stock" ? "var(--c-bg)" : "var(--c-text2)"), onClick: () => setSub("stock") }, "🧪 Reagents & Consumables"),
-      RG_h("button", { style: btnSt(sub === "logs" ? "var(--c-key)" : "var(--c-border)", sub === "logs" ? "var(--c-bg)" : "var(--c-text2)"), onClick: () => setSub("logs") }, "🧾 Transaction Logs"),
+      RG_h("button", { className: "ib-subtab", style: btnSt(sub === "stock" ? "var(--c-key)" : "var(--c-border)", sub === "stock" ? "var(--c-bg)" : "var(--c-text2)"), onClick: () => setSub("stock") }, "🧪 Reagents & Consumables"),
+      RG_h("button", { className: "ib-subtab", style: btnSt(sub === "logs" ? "var(--c-key)" : "var(--c-border)", sub === "logs" ? "var(--c-bg)" : "var(--c-text2)"), onClick: () => setSub("logs") }, "🧾 Transaction Logs"),
       sub === "stock" && canEdit ? RG_h("button", { style: { ...btnSt("var(--c-key)", "var(--c-bg)"), marginLeft: "auto" }, onClick: () => setEditing("new") }, "+ New Item") : null),
     sub === "stock" ? RG_h("div", null,
       items === null ? RG_h("div", { style: { color: "var(--c-text4)", fontSize: 13 } }, "Loading…") : RG_h(React.Fragment, null, rgLow.length ? RG_h("div", { style: { display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap", border: "1px solid #f9731655", background: "#f9731614", borderRadius: 10, padding: "8px 12px", marginBottom: 10, fontSize: 12.5 } },
     RG_h("span", { style: { fontWeight: 800, color: "#f97316" } }, "⚠ ", rgLow.length, " reagent(s) at or below minimum stock — place an order."),
     RG_h("button", { style: { ...btnSt(rgLowOnly ? "#f97316" : "var(--c-border)", rgLowOnly ? "#1a1a1a" : "var(--c-text2)"), padding: "3px 10px", fontSize: 11.5 }, onClick: () => setRgLowOnly(v => !v) }, rgLowOnly ? "Showing low stock — show all" : "Show low stock only")) : null,
-      RG_h(ITable, { id: "reagents", cols: RCOLS, rows: rgLowOnly ? (items || []).filter(it => stockLevel(onHand(it), it.minQty)) : items, rowKey: it => it.id, initSort: { col: "itemId", dir: 1 }, filterPlaceholder: "🔍 Filter items…", maxH: "calc(100vh - 300px)", empty: "No reagents / consumables yet — add the first item.", onRowClick: it => setHistFor(it) }))) :
+      RG_h(ITable, { id: "reagents", cols: RCOLS, rows: rgLowOnly ? (items || []).filter(it => stockLevel(onHand(it), it.minQty)) : items, rowKey: it => it.id, initSort: { col: "itemId", dir: 1 }, filterPlaceholder: "🔍 Filter items…", maxH: "calc(100vh - 240px)", empty: "No reagents / consumables yet — add the first item.", onRowClick: it => setHistFor(it) }))) :
     RG_h("div", null,
       RG_h("div", { style: { display: "flex", gap: 8, marginBottom: 10, flexWrap: "wrap" } },
         [["machines", "🔬 Machine Logs"], ["spares", "🔧 Spare Parts Logs"], ["reagents", "🧪 Reagents / Consumables Logs"]].map(p =>
-          RG_h("button", { key: p[0], style: btnSt(logKind === p[0] ? "var(--c-key)" : "var(--c-border)", logKind === p[0] ? "var(--c-bg)" : "var(--c-text2)"), onClick: () => setLogKind(p[0]) }, p[1]))),
+          RG_h("button", { key: p[0], className: "ib-subtab", style: btnSt(logKind === p[0] ? "var(--c-key)" : "var(--c-border)", logKind === p[0] ? "var(--c-bg)" : "var(--c-text2)"), onClick: () => setLogKind(p[0]) }, p[1]))),
       RG_h("div", { style: { fontSize: 11, color: "var(--c-text5)", marginBottom: 8 } }, "Each log is independent — its own search, sort, column layout and export scope."),
-      RG_h(ITable, { id: "log-" + logKind, cols: LOGCOLS[logKind], rows: logRows, rowKey: r => r._k, initSort: null, filterPlaceholder: "🔍 Search this log…", maxH: "calc(100vh - 340px)", empty: "No entries in this log yet." })),
+      RG_h(ITable, { id: "log-" + logKind, cols: LOGCOLS[logKind], rows: logRows, rowKey: r => r._k, initSort: null, filterPlaceholder: "🔍 Search this log…", maxH: "calc(100vh - 280px)", empty: "No entries in this log yet." })),
     editing ? RG_h(ReagentItemModal, { initial: editing === "new" ? null : editing, onClose: () => setEditing(null), onSave: async f => {
       try {
         if (editing === "new") { await db.collection("reagents").add({ ...f, movements: [], createdAt: auditNow() }); notify("Item added.", "ok"); }
@@ -20711,6 +20781,101 @@ function ReagentsTab({ profile, labs, catalog, notify }) {
 }
 function notifyG(msg, kind) { if (window.__rgNotify) window.__rgNotify(msg, kind); }
 // ═══════════════ SALES PERFORMANCE TRACKER ═══════════════
+// ─── Owner-only tab-switch performance tracer (v335) ───
+// Measures, for every tab click: click → UI response (urgent dock paint),
+// click → CONTENT painted (deferred panel committed + painted), and how much
+// of that window the main thread was actually BLOCKED (browser long tasks).
+// The chip renders ONLY for the owner account, bottom-right above the dock;
+// clicking it copies the last 10 records as JSON for reporting back.
+function PerfTracer({ user, tab, panelTab }) {
+  const [rec, setRec] = React.useState(null);
+  const histRef = React.useRef([]);
+  const ltRef = React.useRef({ n: 0, ms: 0 });
+  React.useEffect(() => {
+    if (!isOwnerAcct(user)) return;
+    if (typeof PerformanceObserver === "undefined") return;
+    try {
+      const obs = new PerformanceObserver(list => {
+        for (const e of list.getEntries()) {
+          ltRef.current.n += 1;
+          ltRef.current.ms += e.duration;
+        }
+      });
+      obs.observe({ entryTypes: ["longtask"] });
+      return () => obs.disconnect();
+    } catch (e) {}
+  }, [user]);
+  React.useEffect(() => {
+    // urgent phase: fires right after the new dock highlight committed
+    if (!isOwnerAcct(user) || window.__ibClickT == null) return;
+    const t0 = window.__ibClickT;
+    requestAnimationFrame(() => requestAnimationFrame(() => {
+      window.__ibUiT = performance.now() - t0;
+    }));
+  }, [tab, user]);
+  React.useEffect(() => {
+    // deferred phase: fires after the ENTIRE new tab content committed
+    if (!isOwnerAcct(user) || window.__ibClickT == null) return;
+    const t0 = window.__ibClickT;
+    const tgt = window.__ibClickTab;
+    requestAnimationFrame(() => requestAnimationFrame(() => {
+      const content = performance.now() - t0;
+      const cs = window.__ibCacheStats || {};
+      const r = {
+        tab: tgt,
+        ui: Math.round(window.__ibUiT || 0),
+        content: Math.round(content),
+        blockedMs: Math.round(ltRef.current.ms),
+        longTasks: ltRef.current.n,
+        scale: window.__ibScale || "",
+        cv: (cs.vHit || 0) + "/" + (cs.vMiss || 0),
+        ca: (cs.aHit || 0) + "/" + (cs.aMiss || 0),
+        cs: (cs.sHit || 0) + "/" + (cs.sMiss || 0),
+        at: new Date().toISOString().slice(11, 19)
+      };
+      ltRef.current = { n: 0, ms: 0 };
+      window.__ibClickT = null;
+      histRef.current = [r, ...histRef.current].slice(0, 10);
+      setRec(r);
+    }));
+  }, [panelTab, user]);
+  if (!isOwnerAcct(user) || !rec) return null;
+  return /*#__PURE__*/React.createElement("div", {
+    onClick: () => {
+      try {
+        navigator.clipboard.writeText(JSON.stringify(histRef.current, null, 2));
+      } catch (e) {}
+    },
+    title: "Tab-switch timings (owner only). Click to copy the last 10 records.",
+    style: {
+      position: "fixed",
+      right: 10,
+      bottom: 64,
+      zIndex: 200,
+      background: "color-mix(in srgb, var(--c-bg2) 88%, transparent)",
+      border: "1px solid var(--c-border)",
+      borderRadius: 10,
+      padding: "5px 9px",
+      fontSize: 10.5,
+      color: "var(--c-text3)",
+      cursor: "pointer",
+      fontFamily: "monospace",
+      lineHeight: 1.5
+    }
+  }, /*#__PURE__*/React.createElement("div", null, "⏱ " + rec.tab + ": ui " + rec.ui + "ms · content " + rec.content + "ms · blocked " + rec.blockedMs + "ms/" + rec.longTasks), /*#__PURE__*/React.createElement("div", {
+    style: { opacity: 0.75 }
+  }, rec.scale + " · cache v:" + rec.cv + " a:" + rec.ca + " s:" + rec.cs));
+}
+// ─── Frozen keep-alive shell (v337) ───
+// While INACTIVE the memo comparator reports "equal", so React NEVER
+// re-renders the hidden tab — its DOM simply persists under display:none.
+// On activation the comparator reports "changed" and the tab re-renders
+// ONCE with fresh props. Hidden tabs therefore cost zero work on every
+// switch, snapshot, toast, or any other App re-render — the redundancy
+// that made rapid tab-to-tab clicking feel blocked.
+const KeepAliveTab = React.memo(function KeepAliveTab({ active, children }) {
+  return children;
+}, (prev, next) => !next.active);
 function App() {
   const [user, setUser] = useState(undefined);
   const [profile, setProfile] = useState(undefined);
@@ -20758,9 +20923,34 @@ function App() {
   const dockMagnify = (bar, mx) => {
     if (!document.body.classList.contains("ib-anim-tabs-default")) return;
     if (window.innerWidth <= 700) return;
-    bar.querySelectorAll(".ib-nav-btn").forEach(b => {
-      const r2 = b.getBoundingClientRect();
-      const d2 = Math.abs(mx - (r2.left + r2.width / 2));
+    // RESPONSIVENESS FIX (v342): the old loop called getBoundingClientRect
+    // per button BETWEEN transform writes — every read after a write forces
+    // a synchronous reflow (≈10 layouts per mouse move), and the rects were
+    // measured POST-transform, so the wave's own scaling shifted the very
+    // centres it was aiming at. Now the untransformed centres (offsetLeft-
+    // based) are cached per geometry and each move is pure math + writes:
+    // zero forced reflows, zero drift — the wave tracks the pointer
+    // instantly, like the real macOS dock.
+    let c = bar.__ibDock;
+    const btns = bar.querySelectorAll(".ib-nav-btn");
+    const barR = bar.getBoundingClientRect(); // the ONE read, before any write
+    if (!c || c.n !== btns.length || c.w !== barR.width) {
+      const arr = [],
+        off = [];
+      btns.forEach(b => {
+        arr.push(b);
+        off.push(b.offsetLeft + b.offsetWidth / 2); // transform-independent
+      });
+      c = bar.__ibDock = {
+        n: btns.length,
+        w: barR.width,
+        arr,
+        off
+      };
+    }
+    for (let i = 0; i < c.arr.length; i++) {
+      const b = c.arr[i];
+      const d2 = Math.abs(mx - (barR.left + c.off[i]));
       // THREE icons ride the wave: centre ~1.45x, one neighbour each side
       // ~1.17x, everything further sits still. Direct tracking, no
       // transition while applying, so icons and text stay crisp.
@@ -20770,7 +20960,7 @@ function App() {
       b.style.transform = "translateY(-" + lift.toFixed(1) + "px) scale(" + sc.toFixed(3) + ")";
       b.style.zIndex = sc > 1.3 ? "3" : "1";
       b.style.setProperty("--sc", sc.toFixed(3));
-    });
+    }
   };
   const [toast, setToast] = useState(null);
   const [theme, setTheme] = useState(() => {
@@ -21077,6 +21267,24 @@ function App() {
   // DEFERRED value in a non-blocking pass — the slight freeze on tab clicks
   // was the panel remount running synchronously inside the click.
   const panelTab = React.useDeferredValue ? React.useDeferredValue(tab) : tab;
+  // Keep-alive (v336): every tab visited in this session STAYS MOUNTED —
+  // hidden with display:none, never unmounted. Returning to a visited tab is
+  // a pure display flip: no re-render, no rebuild, no commit, no animation.
+  // The "opening a folder" feel. First visits still build once, deferred.
+  const visitedRef = React.useRef(new Set());
+  visitedRef.current.add(panelTab);
+  // Data-scale line for the tracer chip: counted ONCE per labs identity.
+  React.useEffect(() => {
+    try {
+      let M = 0, V = 0;
+      for (const l of labs || []) {
+        const ms = l.machines || [];
+        M += ms.length;
+        for (const m of ms) V += (m.visits || []).length;
+      }
+      window.__ibScale = (labs || []).length + " labs · " + M + " machines · " + V + " visits";
+    } catch (e) {}
+  }, [labs]);
   useEffect(() => {
     if (TABS.length && !TABS.find(t => t.id === tab)) setTab(TABS[0].id);
   }, [TABS.map(t => t.id).join("|")]);
@@ -21155,6 +21363,8 @@ function App() {
         // buttons' inline styles, so the wave is RE-APPLIED on the very
         // next frame, before paint: the dock never visibly snaps flat.
         e.currentTarget.classList.add("ib-nav-clicked");
+        window.__ibClickT = performance.now(); // tracer: the true click instant
+        window.__ibClickTab = t.id;
         const bar = e.currentTarget.parentElement;
         setTab(t.id);
         requestAnimationFrame(() => {
@@ -21355,49 +21565,119 @@ function App() {
   }, "This usually means the connection dropped. Check your internet connection — this page keeps retrying automatically. If you're online and this message stays, ask your administrator to check your account's access.")), signedProfile && /*#__PURE__*/React.createElement(TabBoundary, {
     tabId: panelTab
   }, /*#__PURE__*/React.createElement("div", {
-    key: panelTab,
-    className: "ibase-tab-panel ib-tab-" + panelTab + (tabAnimStyle(uiAnim, "content") !== "none" ? " anim-" + tabAnimStyle(uiAnim, "content") : "")
-  }, panelTab === "dashboard" && pCanTab(signedProfile, "dashboard", "view") && /*#__PURE__*/React.createElement(DashboardTab, {
+    key: "ibase-panel",
+    className: "ibase-tab-panel ib-tab-" + panelTab
+  }, visitedRef.current.has("dashboard") && /*#__PURE__*/React.createElement("div", {
+    key: "dashboard",
+    style: {
+      display: panelTab === "dashboard" ? "" : "none"
+    }
+  }, /*#__PURE__*/React.createElement(KeepAliveTab, {
+    active: panelTab === "dashboard"
+  }, pCanTab(signedProfile, "dashboard", "view") && /*#__PURE__*/React.createElement(DashboardTab, {
     labs: labs
-  }), panelTab === "labs" && pCanTab(signedProfile, "labs", "view") && /*#__PURE__*/React.createElement(LabsTab, {
+  }))), visitedRef.current.has("labs") && /*#__PURE__*/React.createElement("div", {
+    key: "labs",
+    style: {
+      display: panelTab === "labs" ? "" : "none"
+    }
+  }, /*#__PURE__*/React.createElement(KeepAliveTab, {
+    active: panelTab === "labs"
+  }, pCanTab(signedProfile, "labs", "view") && /*#__PURE__*/React.createElement(LabsTab, {
     labs: labs,
     profile: signedProfile,
     catalog: catalog,
     inventory: invForLabs,
     dl: dlCfg,
     notify: notify
-  }), panelTab === "analytics" && (signedProfile.isAdmin || pCanTab(signedProfile, "analytics", "view")) && /*#__PURE__*/React.createElement(AnalyticsTab, {
+  }))), visitedRef.current.has("analytics") && /*#__PURE__*/React.createElement("div", {
+    key: "analytics",
+    style: {
+      display: panelTab === "analytics" ? "" : "none"
+    }
+  }, /*#__PURE__*/React.createElement(KeepAliveTab, {
+    active: panelTab === "analytics"
+  }, (signedProfile.isAdmin || pCanTab(signedProfile, "analytics", "view")) && /*#__PURE__*/React.createElement(AnalyticsTab, {
     labs: labs,
     catalog: catalog
-  }), panelTab === "visits" && (signedProfile.isAdmin || pCanTab(signedProfile, "visits", "view")) && /*#__PURE__*/React.createElement(VisitsTab, {
+  }))), visitedRef.current.has("visits") && /*#__PURE__*/React.createElement("div", {
+    key: "visits",
+    style: {
+      display: panelTab === "visits" ? "" : "none"
+    }
+  }, /*#__PURE__*/React.createElement(KeepAliveTab, {
+    active: panelTab === "visits"
+  }, (signedProfile.isAdmin || pCanTab(signedProfile, "visits", "view")) && /*#__PURE__*/React.createElement(VisitsTab, {
     labs: labs,
     profile: signedProfile,
     catalog: catalog,
     dl: dlCfg,
     notify: notify
-  }), panelTab === "inventory" && pCanTab(signedProfile, "inventory", "view") && /*#__PURE__*/React.createElement(InventoryTab, {
+  }))), visitedRef.current.has("inventory") && /*#__PURE__*/React.createElement("div", {
+    key: "inventory",
+    style: {
+      display: panelTab === "inventory" ? "" : "none"
+    }
+  }, /*#__PURE__*/React.createElement(KeepAliveTab, {
+    active: panelTab === "inventory"
+  }, pCanTab(signedProfile, "inventory", "view") && /*#__PURE__*/React.createElement(InventoryTab, {
     profile: signedProfile,
     labs: labs,
     catalog: catalog,
     tabsCfg: tabsCfg,
     notify: notify
-  }), panelTab === "wpoa" && pCanTab(signedProfile, "wpoa", "view") && /*#__PURE__*/React.createElement(WpoaTab, {
+  }))), visitedRef.current.has("wpoa") && /*#__PURE__*/React.createElement("div", {
+    key: "wpoa",
+    style: {
+      display: panelTab === "wpoa" ? "" : "none"
+    }
+  }, /*#__PURE__*/React.createElement(KeepAliveTab, {
+    active: panelTab === "wpoa"
+  }, pCanTab(signedProfile, "wpoa", "view") && /*#__PURE__*/React.createElement(WpoaTab, {
     profile: signedProfile,
     notify: notify
-  }), panelTab === "smer" && /*#__PURE__*/React.createElement(SmerTab, {
+  }))), visitedRef.current.has("smer") && /*#__PURE__*/React.createElement("div", {
+    key: "smer",
+    style: {
+      display: panelTab === "smer" ? "" : "none"
+    }
+  }, /*#__PURE__*/React.createElement(KeepAliveTab, {
+    active: panelTab === "smer"
+  }, /*#__PURE__*/React.createElement(SmerTab, {
     profile: signedProfile,
     labs: labs,
     notify: notify
-  }), panelTab === "overtime" && pCanTab(signedProfile, "overtime", "view") && /*#__PURE__*/React.createElement(OvertimeTab, {
+  }))), visitedRef.current.has("overtime") && /*#__PURE__*/React.createElement("div", {
+    key: "overtime",
+    style: {
+      display: panelTab === "overtime" ? "" : "none"
+    }
+  }, /*#__PURE__*/React.createElement(KeepAliveTab, {
+    active: panelTab === "overtime"
+  }, pCanTab(signedProfile, "overtime", "view") && /*#__PURE__*/React.createElement(OvertimeTab, {
     profile: signedProfile,
     labs: labs,
     users: signedProfile.isAdmin ? users : [],
     notify: notify
-  }), panelTab === "bin" && signedProfile.isAdmin && /*#__PURE__*/React.createElement(BinTab, {
+  }))), visitedRef.current.has("bin") && /*#__PURE__*/React.createElement("div", {
+    key: "bin",
+    style: {
+      display: panelTab === "bin" ? "" : "none"
+    }
+  }, /*#__PURE__*/React.createElement(KeepAliveTab, {
+    active: panelTab === "bin"
+  }, signedProfile.isAdmin && /*#__PURE__*/React.createElement(BinTab, {
     profile: signedProfile,
     labs: labs,
     notify: notify
-  }), panelTab === "settings" && /*#__PURE__*/React.createElement(SettingsTab, {
+  }))), visitedRef.current.has("settings") && /*#__PURE__*/React.createElement("div", {
+    key: "settings",
+    style: {
+      display: panelTab === "settings" ? "" : "none"
+    }
+  }, /*#__PURE__*/React.createElement(KeepAliveTab, {
+    active: panelTab === "settings"
+  }, /*#__PURE__*/React.createElement(SettingsTab, {
     profile: signedProfile,
     users: users,
     catalog: catalog,
@@ -21407,7 +21687,11 @@ function App() {
     dlCfg: dlCfg,
     uiAnim: uiAnim,
     onUiAnim: onUiAnim
-  }))))), toast && /*#__PURE__*/React.createElement(Toast, {
+  }))))))), /*#__PURE__*/React.createElement(PerfTracer, {
+    user: user,
+    tab: tab,
+    panelTab: panelTab
+  }), toast && /*#__PURE__*/React.createElement(Toast, {
     ...toast,
     onClose: () => setToast(null)
   }));
