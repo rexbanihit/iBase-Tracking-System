@@ -537,7 +537,7 @@
 (function () {
   var okLibs = (typeof firebase !== "undefined") && (typeof React !== "undefined") && (typeof ReactDOM !== "undefined") && (typeof XLSX !== "undefined");
   window.__IBASE_LIBS_OK = okLibs;
-  window.__IBASE_BUILD = "v344";
+  window.__IBASE_BUILD = "v345";
   if (!okLibs) {
     document.getElementById("root").innerHTML =
       "<div style='max-width:520px;margin:90px auto;padding:30px;background:#16181d;border:1px solid #f8717155;border-radius:16px;font-family:system-ui,sans-serif;color:#e5e7eb;text-align:center'>" +
@@ -3653,7 +3653,7 @@ function Login({
       letterSpacing: 2,
       textTransform: "uppercase"
     }
-  }, "version: v344"), /*#__PURE__*/React.createElement(React.Fragment, null,
+  }, "version: v345"), /*#__PURE__*/React.createElement(React.Fragment, null,
   /*#__PURE__*/React.createElement("label", {
     style: labelSt
   }, "Email"), /*#__PURE__*/React.createElement("input", {
@@ -3908,6 +3908,20 @@ function ITable({
   const visOrder = order.filter(cid => !hidden[cid]);
   const [colsOpen, setColsOpen] = useState(false);
   const [rowCap, setRowCap] = useState(150); // first paint stays light; one click reveals every row
+  // Stretchable box (v345): the scroll container carries a native vertical
+  // resize grip (bottom-right). The height cap only limits the INITIAL view —
+  // the moment the user drags the grip, the cap is released so the box can be
+  // stretched (or shrunk) freely from then on.
+  const boxRef = React.useRef(null);
+  React.useEffect(() => {
+    const el = boxRef.current;
+    if (!el) return;
+    const onUp = () => {
+      if (el.style.height) el.style.maxHeight = "none";
+    };
+    el.addEventListener("mouseup", onUp);
+    return () => el.removeEventListener("mouseup", onUp);
+  }, []);
   const laidOut = st.order && st.order.length || st.w && Object.keys(st.w).length || st.sort || Object.keys(hidden).some(k => hidden[k]);
   return /*#__PURE__*/React.createElement("div", null, (filter !== false || laidOut || cols.length > 1 || headerNode) && /*#__PURE__*/React.createElement("div", {
     style: {
@@ -4015,9 +4029,12 @@ function ITable({
     }
   }, "drag a header to move a column · drag its right edge to resize")), /*#__PURE__*/React.createElement("div", {
     className: "ibt",
+    ref: boxRef,
     style: {
       maxHeight: maxH || 440,
       overflow: "auto",
+      resize: "vertical",
+      minHeight: 90,
       borderRadius: 8
     }
   }, /*#__PURE__*/React.createElement("table", {
@@ -4383,7 +4400,7 @@ function DashboardTab({
       }
     }, "🚨 Maintenance Alerts — ", urgent.length, " unit(s) requiring attention"),
     id: "dash-alerts",
-    maxH: 640,
+    maxH: "none",
     initSort: {
       col: "flag",
       dir: 1
