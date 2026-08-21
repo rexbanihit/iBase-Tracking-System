@@ -537,7 +537,7 @@
 (function () {
   var okLibs = (typeof firebase !== "undefined") && (typeof React !== "undefined") && (typeof ReactDOM !== "undefined") && (typeof XLSX !== "undefined");
   window.__IBASE_LIBS_OK = okLibs;
-  window.__IBASE_BUILD = "v345";
+  window.__IBASE_BUILD = "v346";
   if (!okLibs) {
     document.getElementById("root").innerHTML =
       "<div style='max-width:520px;margin:90px auto;padding:30px;background:#16181d;border:1px solid #f8717155;border-radius:16px;font-family:system-ui,sans-serif;color:#e5e7eb;text-align:center'>" +
@@ -3653,7 +3653,7 @@ function Login({
       letterSpacing: 2,
       textTransform: "uppercase"
     }
-  }, "version: v345"), /*#__PURE__*/React.createElement(React.Fragment, null,
+  }, "version: v346"), /*#__PURE__*/React.createElement(React.Fragment, null,
   /*#__PURE__*/React.createElement("label", {
     style: labelSt
   }, "Email"), /*#__PURE__*/React.createElement("input", {
@@ -16671,12 +16671,14 @@ function ImportExcel({
     // even when the file's machine names differed from the registered ones.
     let regEntries = [];
     let regBrandsLive = [];
+    let regAliases = {};
     if (dest === "logs") {
       try {
         const snap = await db.doc("config/catalog").get();
         const cat = snap.data() || {};
         regEntries = Array.isArray(cat.machines) ? cat.machines : [];
         regBrandsLive = (Array.isArray(cat.brands) ? cat.brands : []).map(b => String(b).trim()).filter(Boolean);
+        regAliases = cat.instAliases && typeof cat.instAliases === "object" ? cat.instAliases : {};
       } catch (e) {
         notify("Could not read the registered instruments — the machine-name check was skipped:\n" + e.message, "error");
         regEntries = [];
@@ -16690,6 +16692,25 @@ function ImportExcel({
         const key = String(n).trim().toLowerCase();
         if (key && regSet[key] === undefined) regSet[key] = String(n).trim();
       });
+      // 🧠 MEMORY (v346): mappings chosen in past imports are stored as
+      // aliases on config/catalog and auto-applied here — for BOTH file
+      // layouts, since resolution runs on the parsed instrument strings.
+      // A remembered RENAME only fires while its target is still a
+      // registered instrument; otherwise the name asks again.
+      const aliasRe = {};
+      const aliasIg = {};
+      Object.keys(regAliases || {}).forEach(k => {
+        const al = regAliases[k] || {};
+        const kk = String(k).trim().toLowerCase();
+        if (!kk) return;
+        if (al.a === "ignore") aliasIg[kk] = true;else if (al.a === "rename") {
+          const tgt = regSet[String(al.to || "").trim().toLowerCase()];
+          if (tgt) aliasRe[kk] = tgt;
+        }
+      });
+      let autoRenamed = 0;
+      let autoIgnoredRows = 0;
+      const autoNames = {};
       const counts = {};
       const fileBrands = {};
       rows.forEach(r => {
@@ -16699,10 +16720,30 @@ function ImportExcel({
         if (canon) {
           if (canon !== nm) r.instrument = canon; // case/spacing self-heals
         } else {
+          const low = nm.toLowerCase();
+          if (aliasRe[low]) {
+            r.instrument = aliasRe[low]; // 🧠 remembered rename
+            autoRenamed++;
+            autoNames[low] = 1;
+            return;
+          }
+          if (aliasIg[low]) {
+            r.__aliasDrop = true; // 🧠 remembered ignore
+            autoIgnoredRows++;
+            autoNames[low] = 1;
+            return;
+          }
           counts[nm] = (counts[nm] || 0) + 1;
           if (fileBrands[nm] === undefined && String(r.brand || "").trim()) fileBrands[nm] = String(r.brand || "").trim();
         }
       });
+      if (autoIgnoredRows) rows = rows.filter(r => !r.__aliasDrop);
+      const memNames = Object.keys(autoNames).length;
+      if (memNames) {
+        metaBase.autoResolvedNames = memNames;
+        metaBase.autoRenamedRows = autoRenamed;
+        metaBase.autoIgnoredRows = autoIgnoredRows;
+      }
       const names = Object.keys(counts).sort((a, b) => a.localeCompare(b));
       if (names.length) {
         setInstFix({ rows, metaBase, names, counts, fileBrands, choices: {}, brandChoices: {}, regNames: regInstruments, regEntries: regEntries, regBrands: regBrandsLive });
@@ -16788,6 +16829,44 @@ function ImportExcel({
       } catch (e) {
         notify("SERVER REFUSED saving the new instrument name(s):\n" + e.message, "error");
         return;
+      }
+    }
+    // 🧠 REMEMBER (v346): every RENAME / IGNORE decision is stored as an
+    // instrument alias on config/catalog, so the NEXT import — either file
+    // layout — resolves these names automatically and only genuinely NEW
+    // names pause the panel. (ADD needs no alias: the catalog itself is
+    // the memory for added instruments.)
+    const aliasPatch = {};
+    fx.names.forEach(n => {
+      const ch = fx.choices[n];
+      const key = String(n).trim().toLowerCase();
+      if (!key) return;
+      if (ch === "__ignore__") aliasPatch[key] = {
+        a: "ignore"
+      };else if (ch && ch !== "__add__") aliasPatch[key] = {
+        a: "rename",
+        to: ch
+      };
+    });
+    if (Object.keys(aliasPatch).length) {
+      try {
+        let baseAliases = {};
+        try {
+          const snapA = await db.doc("config/catalog").get();
+          const catA = snapA.data() || {};
+          if (catA.instAliases && typeof catA.instAliases === "object") baseAliases = catA.instAliases;
+        } catch (e) {}
+        await db.doc("config/catalog").set({
+          instAliases: {
+            ...baseAliases,
+            ...aliasPatch
+          }
+        }, {
+          merge: true
+        });
+        logAudit(profile, "catalog.instAliases", "import mapping remembered: " + Object.keys(aliasPatch).length + " name(s)");
+      } catch (e) {
+        notify("Could not save the mapping memory (this import still proceeds):\n" + e.message, "error");
       }
     }
     // IGNORE = exclude that machine's rows from this import entirely.
@@ -17386,7 +17465,7 @@ function ImportExcel({
     style: { fontSize: 12, fontWeight: 800, color: "#f59e0b", textTransform: "uppercase", marginBottom: 4 }
   }, "🔤 " + instFix.names.length + " instrument name(s) not registered in the system"), /*#__PURE__*/React.createElement("div", {
     style: { fontSize: 11.5, color: "var(--c-text3)", marginBottom: 10 }
-  }, "For each name below: RENAME it to one of the registered instruments (Settings → Models), ADD it to the system as a new registered instrument, or IGNORE it to exclude its rows from this import — so every machine that enters iBase carries exactly a registered name."), /*#__PURE__*/React.createElement("div", {
+  }, "For each name below: RENAME it to one of the registered instruments (Settings → Models), ADD it to the system as a new registered instrument, or IGNORE it to exclude its rows from this import — so every machine that enters iBase carries exactly a registered name. Your RENAME and IGNORE choices are REMEMBERED — the next import of either file version resolves them automatically."), /*#__PURE__*/React.createElement("div", {
     style: { maxHeight: 340, overflowY: "auto", border: "1px solid var(--c-border2)", borderRadius: 8, padding: "8px 8px 2px", marginBottom: 4 }
   }, instFix.names.map(nm => /*#__PURE__*/React.createElement("div", {
     key: nm,
@@ -17504,7 +17583,11 @@ function ImportExcel({
     }
   }, meta.skipped), " row(s) excluded by rule" + (meta.reasons ? " — " + [meta.reasons.serial ? meta.reasons.serial + " blank / placeholder Serial (tick the checkbox above to keep them)" : "", meta.reasons.account ? meta.reasons.account + " Office / FAS-Manila / N.A. accounts" : "", meta.reasons.isr ? meta.reasons.isr + " non-service ISR markers (leave / offset / travel …)" : ""].filter(Boolean).join(" · ") : " (placeholder serial, or Office / FAS - Manila / Not Applicable account)")) : null, meta && meta.reasons && meta.reasons.serialKept ? /*#__PURE__*/React.createElement("span", null, " · ", /*#__PURE__*/React.createElement("b", {
     style: { color: "#10b981" }
-  }, meta.reasons.serialKept), " serial-less visit(s) KEPT — identified by instrument name") : null, " — ", /*#__PURE__*/React.createElement("b", null, plan.tNewVisits, " + ", plan.tDupes, " = ", plan.tNewVisits + plan.tDupes), plan.tNewVisits + plan.tDupes === meta.rows ? " ✓ every row accounted for" : " (rows routed by serial to existing machines are counted where they land)", plan.tHealed ? /*#__PURE__*/React.createElement(React.Fragment, null, /*#__PURE__*/React.createElement("br", null), "🩹 ", /*#__PURE__*/React.createElement("b", null, plan.tHealed), " previously-imported visit(s) will be repaired — their dates filled from their Timestamps, so installation dates appear.") : null), /*#__PURE__*/React.createElement("div", {
+  }, meta.reasons.serialKept), " serial-less visit(s) KEPT — identified by instrument name") : null, meta && meta.autoResolvedNames ? /*#__PURE__*/React.createElement("span", null, " · ", /*#__PURE__*/React.createElement("b", {
+    style: {
+      color: "var(--c-key)"
+    }
+  }, "🧠 " + meta.autoResolvedNames), " machine name(s) auto-resolved from remembered mappings", meta.autoRenamedRows ? " — " + meta.autoRenamedRows + " row(s) renamed" : "", meta.autoIgnoredRows ? " · " + meta.autoIgnoredRows + " row(s) excluded by remembered Ignore" : "") : null, " — ", /*#__PURE__*/React.createElement("b", null, plan.tNewVisits, " + ", plan.tDupes, " = ", plan.tNewVisits + plan.tDupes), plan.tNewVisits + plan.tDupes === meta.rows ? " ✓ every row accounted for" : " (rows routed by serial to existing machines are counted where they land)", plan.tHealed ? /*#__PURE__*/React.createElement(React.Fragment, null, /*#__PURE__*/React.createElement("br", null), "🩹 ", /*#__PURE__*/React.createElement("b", null, plan.tHealed), " previously-imported visit(s) will be repaired — their dates filled from their Timestamps, so installation dates appear.") : null), /*#__PURE__*/React.createElement("div", {
     style: {
       maxHeight: 150,
       overflowY: "auto",
