@@ -537,7 +537,7 @@
 (function () {
   var okLibs = (typeof firebase !== "undefined") && (typeof React !== "undefined") && (typeof ReactDOM !== "undefined") && (typeof XLSX !== "undefined");
   window.__IBASE_LIBS_OK = okLibs;
-  window.__IBASE_BUILD = "v346";
+  window.__IBASE_BUILD = "v347";
   if (!okLibs) {
     document.getElementById("root").innerHTML =
       "<div style='max-width:520px;margin:90px auto;padding:30px;background:#16181d;border:1px solid #f8717155;border-radius:16px;font-family:system-ui,sans-serif;color:#e5e7eb;text-align:center'>" +
@@ -3653,7 +3653,7 @@ function Login({
       letterSpacing: 2,
       textTransform: "uppercase"
     }
-  }, "version: v346"), /*#__PURE__*/React.createElement(React.Fragment, null,
+  }, "version: v347"), /*#__PURE__*/React.createElement(React.Fragment, null,
   /*#__PURE__*/React.createElement("label", {
     style: labelSt
   }, "Email"), /*#__PURE__*/React.createElement("input", {
@@ -16692,24 +16692,26 @@ function ImportExcel({
         const key = String(n).trim().toLowerCase();
         if (key && regSet[key] === undefined) regSet[key] = String(n).trim();
       });
-      // 🧠 MEMORY (v346): mappings chosen in past imports are stored as
-      // aliases on config/catalog and auto-applied here — for BOTH file
+      // 🧠 MEMORY (v347): RENAME mappings chosen in past imports are stored
+      // as aliases on config/catalog and auto-applied here — for BOTH file
       // layouts, since resolution runs on the parsed instrument strings.
-      // A remembered RENAME only fires while its target is still a
-      // registered instrument; otherwise the name asks again.
+      // e.g. "mini cap FP" once mapped to "Minicap Flex Piercing" resolves
+      // silently forever after, and that machine's NEW visits import
+      // straight in. A remembered RENAME only fires while its target is
+      // still a registered instrument; otherwise the name asks again.
+      // IGNORE is deliberately NOT remembered — it means "not this import";
+      // an ignored name shows up again next time for reconsideration.
       const aliasRe = {};
-      const aliasIg = {};
       Object.keys(regAliases || {}).forEach(k => {
         const al = regAliases[k] || {};
         const kk = String(k).trim().toLowerCase();
         if (!kk) return;
-        if (al.a === "ignore") aliasIg[kk] = true;else if (al.a === "rename") {
+        if (al.a === "rename") {
           const tgt = regSet[String(al.to || "").trim().toLowerCase()];
           if (tgt) aliasRe[kk] = tgt;
         }
       });
       let autoRenamed = 0;
-      let autoIgnoredRows = 0;
       const autoNames = {};
       const counts = {};
       const fileBrands = {};
@@ -16727,22 +16729,14 @@ function ImportExcel({
             autoNames[low] = 1;
             return;
           }
-          if (aliasIg[low]) {
-            r.__aliasDrop = true; // 🧠 remembered ignore
-            autoIgnoredRows++;
-            autoNames[low] = 1;
-            return;
-          }
           counts[nm] = (counts[nm] || 0) + 1;
           if (fileBrands[nm] === undefined && String(r.brand || "").trim()) fileBrands[nm] = String(r.brand || "").trim();
         }
       });
-      if (autoIgnoredRows) rows = rows.filter(r => !r.__aliasDrop);
       const memNames = Object.keys(autoNames).length;
       if (memNames) {
         metaBase.autoResolvedNames = memNames;
         metaBase.autoRenamedRows = autoRenamed;
-        metaBase.autoIgnoredRows = autoIgnoredRows;
       }
       const names = Object.keys(counts).sort((a, b) => a.localeCompare(b));
       if (names.length) {
@@ -16831,19 +16825,18 @@ function ImportExcel({
         return;
       }
     }
-    // 🧠 REMEMBER (v346): every RENAME / IGNORE decision is stored as an
-    // instrument alias on config/catalog, so the NEXT import — either file
-    // layout — resolves these names automatically and only genuinely NEW
-    // names pause the panel. (ADD needs no alias: the catalog itself is
-    // the memory for added instruments.)
+    // 🧠 REMEMBER (v347): every RENAME decision is stored as an instrument
+    // alias on config/catalog, so the NEXT import — either file layout —
+    // resolves it automatically and that machine's new visits flow straight
+    // in. IGNORE is per-import BY DESIGN: an ignored name asks again next
+    // time. (ADD needs no alias: the catalog itself is the memory for
+    // added instruments.)
     const aliasPatch = {};
     fx.names.forEach(n => {
       const ch = fx.choices[n];
       const key = String(n).trim().toLowerCase();
       if (!key) return;
-      if (ch === "__ignore__") aliasPatch[key] = {
-        a: "ignore"
-      };else if (ch && ch !== "__add__") aliasPatch[key] = {
+      if (ch && ch !== "__add__" && ch !== "__ignore__") aliasPatch[key] = {
         a: "rename",
         to: ch
       };
@@ -17465,7 +17458,7 @@ function ImportExcel({
     style: { fontSize: 12, fontWeight: 800, color: "#f59e0b", textTransform: "uppercase", marginBottom: 4 }
   }, "🔤 " + instFix.names.length + " instrument name(s) not registered in the system"), /*#__PURE__*/React.createElement("div", {
     style: { fontSize: 11.5, color: "var(--c-text3)", marginBottom: 10 }
-  }, "For each name below: RENAME it to one of the registered instruments (Settings → Models), ADD it to the system as a new registered instrument, or IGNORE it to exclude its rows from this import — so every machine that enters iBase carries exactly a registered name. Your RENAME and IGNORE choices are REMEMBERED — the next import of either file version resolves them automatically."), /*#__PURE__*/React.createElement("div", {
+  }, "For each name below: RENAME it to one of the registered instruments (Settings → Models), ADD it to the system as a new registered instrument, or IGNORE it to exclude its rows from this import — so every machine that enters iBase carries exactly a registered name. Your RENAME choices are REMEMBERED — the next import of either file version resolves them automatically and brings in that machine's new visits. IGNORE applies to THIS import only, so ignored names will ask again."), /*#__PURE__*/React.createElement("div", {
     style: { maxHeight: 340, overflowY: "auto", border: "1px solid var(--c-border2)", borderRadius: 8, padding: "8px 8px 2px", marginBottom: 4 }
   }, instFix.names.map(nm => /*#__PURE__*/React.createElement("div", {
     key: nm,
@@ -17587,7 +17580,7 @@ function ImportExcel({
     style: {
       color: "var(--c-key)"
     }
-  }, "🧠 " + meta.autoResolvedNames), " machine name(s) auto-resolved from remembered mappings", meta.autoRenamedRows ? " — " + meta.autoRenamedRows + " row(s) renamed" : "", meta.autoIgnoredRows ? " · " + meta.autoIgnoredRows + " row(s) excluded by remembered Ignore" : "") : null, " — ", /*#__PURE__*/React.createElement("b", null, plan.tNewVisits, " + ", plan.tDupes, " = ", plan.tNewVisits + plan.tDupes), plan.tNewVisits + plan.tDupes === meta.rows ? " ✓ every row accounted for" : " (rows routed by serial to existing machines are counted where they land)", plan.tHealed ? /*#__PURE__*/React.createElement(React.Fragment, null, /*#__PURE__*/React.createElement("br", null), "🩹 ", /*#__PURE__*/React.createElement("b", null, plan.tHealed), " previously-imported visit(s) will be repaired — their dates filled from their Timestamps, so installation dates appear.") : null), /*#__PURE__*/React.createElement("div", {
+  }, "🧠 " + meta.autoResolvedNames), " machine name(s) auto-resolved from remembered mappings", meta.autoRenamedRows ? " — " + meta.autoRenamedRows + " row(s) renamed" : "") : null, " — ", /*#__PURE__*/React.createElement("b", null, plan.tNewVisits, " + ", plan.tDupes, " = ", plan.tNewVisits + plan.tDupes), plan.tNewVisits + plan.tDupes === meta.rows ? " ✓ every row accounted for" : " (rows routed by serial to existing machines are counted where they land)", plan.tHealed ? /*#__PURE__*/React.createElement(React.Fragment, null, /*#__PURE__*/React.createElement("br", null), "🩹 ", /*#__PURE__*/React.createElement("b", null, plan.tHealed), " previously-imported visit(s) will be repaired — their dates filled from their Timestamps, so installation dates appear.") : null), /*#__PURE__*/React.createElement("div", {
     style: {
       maxHeight: 150,
       overflowY: "auto",
