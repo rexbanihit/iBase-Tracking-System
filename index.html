@@ -537,7 +537,7 @@
 (function () {
   var okLibs = (typeof firebase !== "undefined") && (typeof React !== "undefined") && (typeof ReactDOM !== "undefined") && (typeof XLSX !== "undefined");
   window.__IBASE_LIBS_OK = okLibs;
-  window.__IBASE_BUILD = "v348";
+  window.__IBASE_BUILD = "v350";
   if (!okLibs) {
     document.getElementById("root").innerHTML =
       "<div style='max-width:520px;margin:90px auto;padding:30px;background:#16181d;border:1px solid #f8717155;border-radius:16px;font-family:system-ui,sans-serif;color:#e5e7eb;text-align:center'>" +
@@ -3653,7 +3653,7 @@ function Login({
       letterSpacing: 2,
       textTransform: "uppercase"
     }
-  }, "version: v348"), /*#__PURE__*/React.createElement(React.Fragment, null,
+  }, "version: v350"), /*#__PURE__*/React.createElement(React.Fragment, null,
   /*#__PURE__*/React.createElement("label", {
     style: labelSt
   }, "Email"), /*#__PURE__*/React.createElement("input", {
@@ -6689,6 +6689,99 @@ function visitContactDirectory(labs) {
   })));
   return dir;
 }
+// ─── 📷 Photo-to-form (v349): scan a paper service report ───
+// The photo is read ON THIS DEVICE with Tesseract.js (loaded on first use
+// from the same CDN family as the other libraries) — it is NEVER uploaded.
+// Extracted values only PREFILL EMPTY fields; the user verifies and saves.
+// Honest expectation: printed/typed reports read well; HANDWRITING is
+// hit-or-miss — that is exactly why nothing ever saves automatically.
+let __ocrLoadP = null;
+function ocrLoadTesseract() {
+  if (typeof Tesseract !== "undefined") return Promise.resolve();
+  if (__ocrLoadP) return __ocrLoadP;
+  const urls = ["https://cdnjs.cloudflare.com/ajax/libs/tesseract.js/5.1.0/tesseract.min.js", "https://cdnjs.cloudflare.com/ajax/libs/tesseract.js/4.0.2/tesseract.min.js"];
+  __ocrLoadP = new Promise((res, rej) => {
+    const tryAt = i => {
+      if (i >= urls.length) {
+        __ocrLoadP = null;
+        rej(new Error("Could not load the OCR engine (network blocked?)"));
+        return;
+      }
+      const sc = document.createElement("script");
+      sc.src = urls[i];
+      sc.onload = () => typeof Tesseract !== "undefined" ? res() : tryAt(i + 1);
+      sc.onerror = () => tryAt(i + 1);
+      document.head.appendChild(sc);
+    };
+    tryAt(0);
+  });
+  return __ocrLoadP;
+}
+function isrTimeTo24(t) {
+  const m = String(t || "").trim().match(/^([0-9]{1,2})[:.]([0-9]{2})\s*(am|pm)?$/i);
+  if (!m) return "";
+  let h = parseInt(m[1], 10);
+  const mi = m[2];
+  const ap = (m[3] || "").toLowerCase();
+  if (ap === "pm" && h < 12) h += 12;
+  if (ap === "am" && h === 12) h = 0;
+  if (h > 23 || parseInt(mi, 10) > 59) return "";
+  return String(h).padStart(2, "0") + ":" + mi;
+}
+function isrDateNorm(d) {
+  const t = String(d || "").trim();
+  let m = t.match(/^([0-9]{4})-([0-9]{1,2})-([0-9]{1,2})$/);
+  if (m) return m[1] + "-" + m[2].padStart(2, "0") + "-" + m[3].padStart(2, "0");
+  m = t.match(/^([0-9]{1,2})[\/\-]([0-9]{1,2})[\/\-]([0-9]{2,4})$/);
+  if (m) {
+    // Philippine forms write M/D/Y
+    let y = m[3].length === 2 ? "20" + m[3] : m[3];
+    const mo = parseInt(m[1], 10),
+      da = parseInt(m[2], 10);
+    if (mo < 1 || mo > 12 || da < 1 || da > 31) return "";
+    return y + "-" + String(mo).padStart(2, "0") + "-" + String(da).padStart(2, "0");
+  }
+  return "";
+}
+function isrParseText(text, machineSerial) {
+  const lines = String(text || "").split(/\r?\n/).map(x => x.trim()).filter(Boolean);
+  const f = {};
+  const warn = [];
+  const grab = (re, key, xform) => {
+    if (f[key]) return;
+    for (const ln of lines) {
+      const m = ln.match(re);
+      if (m && String(m[1] || "").trim()) {
+        const v = xform ? xform(String(m[1]).trim()) : String(m[1]).trim();
+        if (v) {
+          f[key] = v;
+          return;
+        }
+      }
+    }
+  };
+  grab(/date[^a-z0-9]{0,4}([0-9]{1,2}[\/\-][0-9]{1,2}[\/\-][0-9]{2,4}|[0-9]{4}-[0-9]{1,2}-[0-9]{1,2})/i, "date", isrDateNorm);
+  grab(/isr[^a-z0-9]{0,6}(?:no\.?|number|#)?[^a-z0-9]{0,4}([A-Z0-9][A-Z0-9\-\/]{2,})/i, "isrNo");
+  grab(/endorsed?\s*to[^a-z0-9]{0,4}(.+)/i, "endorsedTo");
+  grab(/(?:attended\s*by|engineer|fse)[^a-z0-9]{0,4}(.+)/i, "engineer");
+  grab(/(?:problem|complaint|work)\s*desc(?:ription)?[^a-z0-9]{0,4}(.+)/i, "problemDesc");
+  if (!f.problemDesc) grab(/description[^a-z0-9]{0,4}(.+)/i, "problemDesc");
+  grab(/recommendations?[^a-z0-9]{0,4}(.+)/i, "recommendation");
+  grab(/(?:system\s*)?condition[^a-z0-9]{0,4}(.+)/i, "systemCondition");
+  grab(/(?:contact|mobile|tel)[^0-9]{0,8}([0-9][0-9\s\-]{6,})/i, "contactNo", v => v.replace(/\s+/g, ""));
+  grab(/(?:time\s*in|work\s*started)[^0-9]{0,6}([0-9]{1,2}[:.][0-9]{2}\s*(?:am|pm)?)/i, "timeIn", isrTimeTo24);
+  grab(/(?:time\s*out|work\s*ended)[^0-9]{0,6}([0-9]{1,2}[:.][0-9]{2}\s*(?:am|pm)?)/i, "timeOut", isrTimeTo24);
+  const sm = String(text || "").match(/serial[^a-z0-9]{0,6}(?:no\.?|#)?[^a-z0-9]{0,4}([A-Z0-9\-]{3,})/i);
+  if (sm && machineSerial) {
+    const seen = sm[1].trim().toLowerCase();
+    const mine = String(machineSerial).trim().toLowerCase();
+    if (seen && mine && seen !== mine) warn.push("Serial on the paper reads \u201c" + sm[1].trim() + "\u201d but this machine is " + machineSerial + " \u2014 double-check you scanned the right report.");
+  }
+  return {
+    fields: f,
+    warnings: warn
+  };
+}
 function VisitModal({
   contacts,
   machine,
@@ -6702,6 +6795,107 @@ function VisitModal({
   onSave
 }) {
   const [engs, setEngs] = useState(initial ? [initial.engineer, initial.engineer2, initial.engineer3].map(x => String(x || "").trim()).filter(Boolean) : []);
+  const [scanBusy, setScanBusy] = useState(false);
+  const [scanMsg, setScanMsg] = useState("");
+  const [scanRes, setScanRes] = useState(null);
+  const scanFileRef = React.useRef(null);
+  const scanUploadRef = React.useRef(null);
+  async function runScan(file) {
+    if (!file) return;
+    const isImg2 = /^image\//.test(file.type || "");
+    const isPdf2 = /pdf$/i.test(file.type || "") || /\.pdf$/i.test(file.name || "");
+    setScanBusy(true);
+    setScanRes(null);
+    // 1) STORE the document copy FIRST — whatever happens with the reading,
+    //    the visit keeps the uploaded picture/file as its attached record
+    //    (same pipeline as every attachment: images auto-compress to fit
+    //    the free plan; the copy lives with this visit).
+    let stored = "";
+    let storedErr = "";
+    setScanMsg("Storing the document copy\u2026");
+    try {
+      const att = await fileToAttachment(file);
+      att.name = ("Service report \u2014 " + (file.name || "photo.jpg")).slice(0, 120);
+      stored = att.name + " (" + Math.round(att.size / 1024) + " KB)";
+      setF(prev => ({
+        ...prev,
+        attachments: [...(prev.attachments || []), att]
+      }));
+    } catch (e) {
+      storedErr = "Could not store the copy: " + e.message;
+    }
+    // 2) READ: photos/images go through the on-device reader; PDFs and other
+    //    files are kept as the document copy only.
+    if (!isImg2) {
+      setScanMsg("");
+      setScanRes({
+        filled: [],
+        skipped: [],
+        warnings: storedErr ? [storedErr] : [],
+        stored: stored,
+        note: isPdf2 ? "PDF stored as the document copy \u2014 text reading works on photos/images." : "File stored as the document copy \u2014 text reading works on photos/images."
+      });
+      setScanBusy(false);
+      return;
+    }
+    setScanMsg("Loading the reader\u2026");
+    try {
+      await ocrLoadTesseract();
+      setScanMsg("Reading the photo\u2026");
+      const r = await Tesseract.recognize(file, "eng", {
+        logger: m => {
+          if (m && m.status === "recognizing text" && m.progress) setScanMsg("Reading the photo\u2026 " + Math.round(m.progress * 100) + "%");
+        }
+      });
+      const parsed = isrParseText(r && r.data && r.data.text || "", machine && machine.serialNo);
+      const px = parsed.fields;
+      const filled = [];
+      const skipped = [];
+      setF(prev => {
+        const patch = {};
+        const put = (key, val, label) => {
+          if (!val) return;
+          if (String(prev[key] || "").trim()) {
+            skipped.push(label);
+            return;
+          }
+          patch[key] = val;
+          filled.push(label);
+        };
+        const baseDate = px.date || prev.date || today();
+        put("date", px.date, "Date");
+        put("isrNo", px.isrNo, "ISR No");
+        put("endorsedTo", px.endorsedTo, "Endorsed to");
+        put("engineer", px.engineer, "Engineer");
+        put("problemDesc", px.problemDesc, "Work / problem description");
+        put("recommendation", px.recommendation, "Recommendation");
+        put("systemCondition", px.systemCondition, "System condition");
+        put("contactNo", px.contactNo, "Contact No");
+        put("dtWorkStarted", px.timeIn ? baseDate + "T" + px.timeIn : "", "Time in (work started)");
+        put("dtWorkEnded", px.timeOut ? baseDate + "T" + px.timeOut : "", "Time out (work ended)");
+        return {
+          ...prev,
+          ...patch
+        };
+      });
+      setScanRes({
+        filled,
+        skipped,
+        warnings: storedErr ? parsed.warnings.concat([storedErr]) : parsed.warnings,
+        stored: stored
+      });
+      setScanMsg("");
+    } catch (e) {
+      setScanMsg("");
+      setScanRes({
+        filled: [],
+        skipped: [],
+        warnings: [storedErr, "Could not read the photo: " + e.message].filter(Boolean),
+        stored: stored
+      });
+    }
+    setScanBusy(false);
+  }
   const [f, setF] = useState(initial ? {
     date: initial.date || today(),
     type: initial.type || "PM",
@@ -6820,6 +7014,109 @@ function VisitModal({
     onClose: onClose,
     wide: true
   }, /*#__PURE__*/React.createElement("div", {
+    style: {
+      margin: "-2px 0 12px",
+      padding: "8px 12px",
+      borderRadius: 9,
+      border: "1px dashed var(--c-border)",
+      background: "var(--c-card2)",
+      fontSize: 12
+    }
+  }, /*#__PURE__*/React.createElement("div", {
+    style: {
+      display: "flex",
+      gap: 10,
+      alignItems: "center",
+      flexWrap: "wrap"
+    }
+  }, /*#__PURE__*/React.createElement("button", {
+    disabled: scanBusy,
+    style: {
+      ...btnSt("var(--c-key)", "var(--c-bg)"),
+      padding: "6px 12px",
+      fontSize: 12,
+      opacity: scanBusy ? 0.6 : 1
+    },
+    onClick: () => scanFileRef.current && scanFileRef.current.click()
+  }, "\ud83d\udcf7 Take photo"), /*#__PURE__*/React.createElement("button", {
+    disabled: scanBusy,
+    style: {
+      ...btnSt("var(--c-border)", "var(--c-text2)"),
+      padding: "6px 12px",
+      fontSize: 12,
+      opacity: scanBusy ? 0.6 : 1
+    },
+    onClick: () => scanUploadRef.current && scanUploadRef.current.click()
+  }, "\ud83d\uddbc Upload report"), /*#__PURE__*/React.createElement("input", {
+    ref: scanFileRef,
+    type: "file",
+    accept: "image/*",
+    capture: "environment",
+    style: {
+      display: "none"
+    },
+    onChange: e => {
+      const fl = e.target.files && e.target.files[0];
+      e.target.value = "";
+      runScan(fl);
+    }
+  }), /*#__PURE__*/React.createElement("input", {
+    ref: scanUploadRef,
+    type: "file",
+    accept: "image/*,application/pdf",
+    style: {
+      display: "none"
+    },
+    onChange: e => {
+      const fl = e.target.files && e.target.files[0];
+      e.target.value = "";
+      runScan(fl);
+    }
+  }), scanMsg ? /*#__PURE__*/React.createElement("span", {
+    style: {
+      color: "var(--c-key)",
+      fontWeight: 700
+    }
+  }, scanMsg) : /*#__PURE__*/React.createElement("span", {
+    style: {
+      color: "var(--c-text5)"
+    }
+  }, "Photograph the paper report or upload the file (photo or PDF). The picture is STORED with this visit as the document copy; recognized text prefills the EMPTY boxes below. Reading happens on this device only.")), scanRes && /*#__PURE__*/React.createElement("div", {
+    style: {
+      marginTop: 7,
+      lineHeight: 1.6
+    }
+  }, scanRes.stored ? /*#__PURE__*/React.createElement("div", {
+    style: {
+      color: "var(--c-key)"
+    }
+  }, "\ud83d\uddc2 Stored as attachment: " + scanRes.stored) : null, scanRes.note ? /*#__PURE__*/React.createElement("div", {
+    style: {
+      color: "var(--c-text4)"
+    }
+  }, scanRes.note) : null, scanRes.note ? null : scanRes.filled.length ? /*#__PURE__*/React.createElement("div", {
+    style: {
+      color: "#34d399"
+    }
+  }, "\u2705 Filled: " + scanRes.filled.join(", ")) : /*#__PURE__*/React.createElement("div", {
+    style: {
+      color: "var(--c-text4)"
+    }
+  }, "No fields were confidently recognized \u2014 typed reports read best; handwriting is often unreadable."), scanRes.skipped.length ? /*#__PURE__*/React.createElement("div", {
+    style: {
+      color: "var(--c-text5)"
+    }
+  }, "\u23e9 Left untouched (already filled): " + scanRes.skipped.join(", ")) : null, scanRes.warnings.map((w, i) => /*#__PURE__*/React.createElement("div", {
+    key: i,
+    style: {
+      color: "#fbbf24"
+    }
+  }, "\u26a0 " + w)), /*#__PURE__*/React.createElement("div", {
+    style: {
+      color: "var(--c-text5)",
+      fontStyle: "italic"
+    }
+  }, "Please verify every field against the paper before saving \u2014 nothing is saved automatically."))), /*#__PURE__*/React.createElement("div", {
     style: {
       margin: "-2px 0 14px",
       padding: "9px 13px",
