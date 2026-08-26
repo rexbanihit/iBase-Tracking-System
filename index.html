@@ -537,7 +537,7 @@
 (function () {
   var okLibs = (typeof firebase !== "undefined") && (typeof React !== "undefined") && (typeof ReactDOM !== "undefined") && (typeof XLSX !== "undefined");
   window.__IBASE_LIBS_OK = okLibs;
-  window.__IBASE_BUILD = "v350";
+  window.__IBASE_BUILD = "v351";
   if (!okLibs) {
     document.getElementById("root").innerHTML =
       "<div style='max-width:520px;margin:90px auto;padding:30px;background:#16181d;border:1px solid #f8717155;border-radius:16px;font-family:system-ui,sans-serif;color:#e5e7eb;text-align:center'>" +
@@ -3653,7 +3653,7 @@ function Login({
       letterSpacing: 2,
       textTransform: "uppercase"
     }
-  }, "version: v350"), /*#__PURE__*/React.createElement(React.Fragment, null,
+  }, "version: v351"), /*#__PURE__*/React.createElement(React.Fragment, null,
   /*#__PURE__*/React.createElement("label", {
     style: labelSt
   }, "Email"), /*#__PURE__*/React.createElement("input", {
@@ -6851,6 +6851,7 @@ function VisitModal({
       const px = parsed.fields;
       const filled = [];
       const skipped = [];
+      const filledKV = [];
       setF(prev => {
         const patch = {};
         const put = (key, val, label) => {
@@ -6861,6 +6862,7 @@ function VisitModal({
           }
           patch[key] = val;
           filled.push(label);
+          filledKV.push([key, label]);
         };
         const baseDate = px.date || prev.date || today();
         put("date", px.date, "Date");
@@ -6881,6 +6883,7 @@ function VisitModal({
       setScanRes({
         filled,
         skipped,
+        filledKV,
         warnings: storedErr ? parsed.warnings.concat([storedErr]) : parsed.warnings,
         stored: stored
       });
@@ -7116,7 +7119,7 @@ function VisitModal({
       color: "var(--c-text5)",
       fontStyle: "italic"
     }
-  }, "Please verify every field against the paper before saving \u2014 nothing is saved automatically."))), /*#__PURE__*/React.createElement("div", {
+  }, "Please verify every field against the paper \u2014 when you press Save, the system will ask you to CONFIRM the scanned values before anything is saved."))), /*#__PURE__*/React.createElement("div", {
     style: {
       margin: "-2px 0 14px",
       padding: "9px 13px",
@@ -7680,6 +7683,15 @@ function VisitModal({
       if (timeIssues.length) {
         notify("\u26a0 Invalid time sequence \u2014 a later step of the visit is EARLIER than the one before it:\n• " + timeIssues.join("\n• ") + "\n\nCorrect the highlighted date/time fields and save again.", "error");
         return;
+      }
+      // 🔍 SCAN CONFIRMATION (v351): when any field in this form was filled
+      // from an uploaded picture, saving pauses for an explicit human check.
+      // The list shows the CURRENT values — including any corrections the
+      // user typed after the scan — because those are what will be saved.
+      if (scanRes && scanRes.filledKV && scanRes.filledKV.length) {
+        const __lines = scanRes.filledKV.map(kv => "\u2022 " + kv[1] + ": " + (String(f[kv[0]] || "").trim() || "(empty)"));
+        const __okScan = window.confirm("\ud83d\udd0d CONFIRM THE SCANNED VALUES\n\nThese fields were filled from the uploaded picture \u2014 please check they match the paper report:\n\n" + __lines.join("\n") + "\n\nSave the visit with these values?");
+        if (!__okScan) return;
       }
       const dISO = String(f.dtWorkStarted || f.dtWorkEnded || f.dtArrivalAccount || f.dtDeparture || f.dtReported || f.dtArrivalHome || "").slice(0, 10);
       onSave({
