@@ -537,7 +537,7 @@
 (function () {
   var okLibs = (typeof firebase !== "undefined") && (typeof React !== "undefined") && (typeof ReactDOM !== "undefined") && (typeof XLSX !== "undefined");
   window.__IBASE_LIBS_OK = okLibs;
-  window.__IBASE_BUILD = "v351";
+  window.__IBASE_BUILD = "v353";
   if (!okLibs) {
     document.getElementById("root").innerHTML =
       "<div style='max-width:520px;margin:90px auto;padding:30px;background:#16181d;border:1px solid #f8717155;border-radius:16px;font-family:system-ui,sans-serif;color:#e5e7eb;text-align:center'>" +
@@ -3653,7 +3653,7 @@ function Login({
       letterSpacing: 2,
       textTransform: "uppercase"
     }
-  }, "version: v351"), /*#__PURE__*/React.createElement(React.Fragment, null,
+  }, "version: v353"), /*#__PURE__*/React.createElement(React.Fragment, null,
   /*#__PURE__*/React.createElement("label", {
     style: labelSt
   }, "Email"), /*#__PURE__*/React.createElement("input", {
@@ -6743,6 +6743,27 @@ function isrDateNorm(d) {
   }
   return "";
 }
+function isrQualOk(v) {
+  // Junk guard: OCR noise like "24C7_7" or stray tokens never enters a
+  // text field — a value needs at least 4 chars and 3 letters.
+  const t = String(v || "").trim();
+  return t.length >= 4 && (t.match(/[a-z]/gi) || []).length >= 3;
+}
+function isrMatchOpt(raw, opts, synonyms) {
+  // A SELECT only accepts its own options: map the paper's wording to a
+  // real option (exact / contains / synonym), or return "" and skip.
+  const n = x => String(x || "").toLowerCase().replace(/[^a-z]+/g, " ").trim();
+  const nr = n(raw);
+  if (!nr) return "";
+  for (const pair of synonyms || []) {
+    if (pair[0].test(nr)) return pair[1];
+  }
+  for (const o of opts || []) {
+    const no = n(o);
+    if (no === nr || no.indexOf(nr) !== -1 || nr.indexOf(no) !== -1) return o;
+  }
+  return "";
+}
 function isrParseText(text, machineSerial) {
   const lines = String(text || "").split(/\r?\n/).map(x => x.trim()).filter(Boolean);
   const f = {};
@@ -6760,17 +6781,28 @@ function isrParseText(text, machineSerial) {
       }
     }
   };
-  grab(/date[^a-z0-9]{0,4}([0-9]{1,2}[\/\-][0-9]{1,2}[\/\-][0-9]{2,4}|[0-9]{4}-[0-9]{1,2}-[0-9]{1,2})/i, "date", isrDateNorm);
-  grab(/isr[^a-z0-9]{0,6}(?:no\.?|number|#)?[^a-z0-9]{0,4}([A-Z0-9][A-Z0-9\-\/]{2,})/i, "isrNo");
-  grab(/endorsed?\s*to[^a-z0-9]{0,4}(.+)/i, "endorsedTo");
-  grab(/(?:attended\s*by|engineer|fse)[^a-z0-9]{0,4}(.+)/i, "engineer");
-  grab(/(?:problem|complaint|work)\s*desc(?:ription)?[^a-z0-9]{0,4}(.+)/i, "problemDesc");
-  if (!f.problemDesc) grab(/description[^a-z0-9]{0,4}(.+)/i, "problemDesc");
-  grab(/recommendations?[^a-z0-9]{0,4}(.+)/i, "recommendation");
-  grab(/(?:system\s*)?condition[^a-z0-9]{0,4}(.+)/i, "systemCondition");
-  grab(/(?:contact|mobile|tel)[^0-9]{0,8}([0-9][0-9\s\-]{6,})/i, "contactNo", v => v.replace(/\s+/g, ""));
-  grab(/(?:time\s*in|work\s*started)[^0-9]{0,6}([0-9]{1,2}[:.][0-9]{2}\s*(?:am|pm)?)/i, "timeIn", isrTimeTo24);
-  grab(/(?:time\s*out|work\s*ended)[^0-9]{0,6}([0-9]{1,2}[:.][0-9]{2}\s*(?:am|pm)?)/i, "timeOut", isrTimeTo24);
+  const qual = v => isrQualOk(v) ? String(v).trim() : "";
+  const timeRe = "([0-9]{1,2}[:.][0-9]{2}\\s*(?:am|pm)?)";
+  grab(/^date[^a-z0-9]{0,4}([0-9]{1,2}[\/\-][0-9]{1,2}[\/\-][0-9]{2,4}|[0-9]{4}-[0-9]{1,2}-[0-9]{1,2})/i, "date", isrDateNorm);
+  grab(/^isr[^a-z0-9]{0,6}(?:no\.?|number|#)?[^a-z0-9]{0,4}([A-Z0-9][A-Z0-9\-\/]{2,})/i, "isrNo");
+  grab(/^endorsed?\s*to[^a-z0-9]{0,4}(.+)/i, "endorsedTo", qual);
+  grab(/^(?:attended\s*by|engineer|fse|specialist)[^a-z0-9]{0,4}(.+)/i, "engineerRaw", qual);
+  // The FORM's required "Description of Work" (remarks) ← work/service done
+  grab(/^(?:description\s*of\s*work|work\s*(?:desc(?:ription)?|done|performed)|service\s*(?:performed|done)|action\s*taken)[^a-z0-9]{0,4}(.+)/i, "remarks", qual);
+  // Problem Description ← problem / complaint ONLY
+  grab(/^(?:problem|complaint)(?:\s*desc(?:ription)?)?[^a-z0-9]{0,4}(.+)/i, "problemDesc", qual);
+  grab(/^recommendations?[^a-z0-9]{0,4}(.+)/i, "recommendation", qual);
+  grab(/^(?:system\s*)?condition[^a-z0-9]{0,4}(.+)/i, "systemConditionRaw");
+  grab(/^support\s*type[^a-z0-9]{0,4}(.+)/i, "supportTypeRaw");
+  grab(/^priority[^a-z0-9]{0,4}(.+)/i, "priorityRaw");
+  grab(/^(?:contact|mobile|tel)[^0-9]{0,8}([0-9][0-9\s\-]{6,})/i, "contactNo", v => v.replace(/\s+/g, ""));
+  grab(new RegExp("^(?:time\\s*in|work\\s*started)[^0-9]{0,8}" + timeRe, "i"), "timeIn", isrTimeTo24);
+  grab(new RegExp("^(?:time\\s*out|work\\s*ended)[^0-9]{0,8}" + timeRe, "i"), "timeOut", isrTimeTo24);
+  grab(new RegExp("^(?:time\\s*(?:and\\s*date\\s*)?|date\\s*)?reported[^0-9]{0,10}" + timeRe, "i"), "timeReported", isrTimeTo24);
+  grab(new RegExp("^(?:time\\s*of\\s*)?departure[^0-9]{0,10}" + timeRe, "i"), "timeDeparture", isrTimeTo24);
+  grab(new RegExp("^arrival(?:\\s*(?:at|to)\\s*(?:account|site|client|customer))?[^0-9]{0,10}" + timeRe, "i"), "timeArrival", isrTimeTo24);
+  grab(/^software\s*ver(?:sion)?[^a-z0-9]{0,4}([A-Za-z0-9._\-\/ ]{2,})/i, "softwareVersion");
+  grab(/^firmware\s*ver(?:sion)?[^a-z0-9]{0,4}([A-Za-z0-9._\-\/ ]{2,})/i, "firmwareVersion");
   const sm = String(text || "").match(/serial[^a-z0-9]{0,6}(?:no\.?|#)?[^a-z0-9]{0,4}([A-Z0-9\-]{3,})/i);
   if (sm && machineSerial) {
     const seen = sm[1].trim().toLowerCase();
@@ -6782,6 +6814,7 @@ function isrParseText(text, machineSerial) {
     warnings: warn
   };
 }
+
 function VisitModal({
   contacts,
   machine,
@@ -6800,6 +6833,96 @@ function VisitModal({
   const [scanRes, setScanRes] = useState(null);
   const scanFileRef = React.useRef(null);
   const scanUploadRef = React.useRef(null);
+  // ─── 📝 DRAFTS (v353): if the user leaves WITHOUT saving, everything —
+  // typed fields, engineer chips, the scan results AND the stored photo
+  // copy — persists on this device, keyed to THIS instrument. Reopening the
+  // same laboratory + instrument restores it, until Save or Clear draft.
+  // Editing an EXISTING visit never touches drafts.
+  const __draftKey = "ibase_visitdraft_" + (auth.currentUser && auth.currentUser.uid || "anon") + "_" + (machine && machine.id || "m");
+  const fRef = React.useRef(null);
+  fRef.current = f;
+  const engsRef = React.useRef(null);
+  engsRef.current = engs;
+  const blankRef = React.useRef(null);
+  const draftTimerRef = React.useRef(null);
+  const [draftTs, setDraftTs] = useState(null);
+  React.useEffect(() => {
+    if (initial) return;
+    blankRef.current = {
+      f: fRef.current,
+      engs: []
+    };
+    try {
+      const raw = localStorage.getItem(__draftKey);
+      if (!raw) return;
+      const d = JSON.parse(raw);
+      if (!d || !d.f) return;
+      setF(d.f);
+      setEngs(Array.isArray(d.engs) ? d.engs : []);
+      if (d.scanRes) setScanRes(d.scanRes);
+      setDraftTs(d.ts || Date.now());
+    } catch (e) {}
+  }, []);
+  React.useEffect(() => {
+    if (initial || !blankRef.current) return;
+    if (draftTimerRef.current) clearTimeout(draftTimerRef.current);
+    draftTimerRef.current = setTimeout(() => {
+      try {
+        const pristine = JSON.stringify({
+          f: blankRef.current.f,
+          engs: []
+        }) === JSON.stringify({
+          f: fRef.current,
+          engs: engsRef.current
+        });
+        if (pristine) {
+          localStorage.removeItem(__draftKey);
+          setDraftTs(null);
+          return;
+        }
+        const cur = {
+          f: fRef.current,
+          engs: engsRef.current,
+          scanRes: scanRes ? {
+            filled: scanRes.filled,
+            skipped: scanRes.skipped,
+            filledKV: scanRes.filledKV || [],
+            warnings: scanRes.warnings,
+            stored: scanRes.stored,
+            note: scanRes.note
+          } : null,
+          ts: Date.now()
+        };
+        try {
+          localStorage.setItem(__draftKey, JSON.stringify(cur));
+        } catch (eq) {
+          // Storage quota: keep the draft, drop only the photo copy from it.
+          const slim = {
+            ...cur,
+            f: {
+              ...cur.f,
+              attachments: []
+            },
+            slim: true
+          };
+          localStorage.setItem(__draftKey, JSON.stringify(slim));
+        }
+        setDraftTs(cur.ts);
+      } catch (e) {}
+    }, 500);
+    return () => draftTimerRef.current && clearTimeout(draftTimerRef.current);
+  }, [f, engs, scanRes]);
+  const clearDraft = () => {
+    try {
+      localStorage.removeItem(__draftKey);
+    } catch (e) {}
+    if (blankRef.current) {
+      setF(blankRef.current.f);
+      setEngs([]);
+    }
+    setScanRes(null);
+    setDraftTs(null);
+  };
   async function runScan(file) {
     if (!file) return;
     const isImg2 = /^image\//.test(file.type || "");
@@ -6838,6 +6961,40 @@ function VisitModal({
       setScanBusy(false);
       return;
     }
+    // Some formats (HEIC/HEIF from iPhones) can only be DECODED by Safari.
+    // The copy is already stored above; if this browser cannot decode the
+    // image, reading is skipped with an honest note instead of a cryptic
+    // failure.
+    const isHeic = /\.hei[cf]$/i.test(file.name || "") || /image\/hei[cf]/i.test(file.type || "");
+    const canDecode = await new Promise(res => {
+      try {
+        const u = URL.createObjectURL(file);
+        const im = new Image();
+        im.onload = () => {
+          URL.revokeObjectURL(u);
+          res(true);
+        };
+        im.onerror = () => {
+          URL.revokeObjectURL(u);
+          res(false);
+        };
+        im.src = u;
+      } catch (e) {
+        res(false);
+      }
+    });
+    if (!canDecode) {
+      setScanMsg("");
+      setScanRes({
+        filled: [],
+        skipped: [],
+        warnings: storedErr ? [storedErr] : [],
+        stored: stored,
+        note: isHeic ? "HEIC/HEIF photo: the copy is stored, but this browser cannot decode HEIC for reading \u2014 on iPhone use Safari, or retake/export as JPEG/PNG." : "This image could not be decoded \u2014 the copy is stored as-is."
+      });
+      setScanBusy(false);
+      return;
+    }
     setScanMsg("Loading the reader\u2026");
     try {
       await ocrLoadTesseract();
@@ -6852,6 +7009,11 @@ function VisitModal({
       const filled = [];
       const skipped = [];
       const filledKV = [];
+      // Selects only accept their own options — the paper's wording maps to
+      // a real option or the field is left for the user.
+      const condVal = isrMatchOpt(px.systemConditionRaw, ["Not applicable", "Up/Working", "Partially down", "Fully down", "Scheduled Service"], [[/(operational|up|working|ok|good)/, "Up/Working"], [/partial/, "Partially down"], [/(fully\s*down|not\s*working|down|dead)/, "Fully down"], [/schedul/, "Scheduled Service"], [/^n\s*a$|not\s*applicable/, "Not applicable"]]);
+      const supVal = isrMatchOpt(px.supportTypeRaw, ["Onsite support", "Phone support"], [[/(on\s*site|onsite|visit|field)/, "Onsite support"], [/(phone|call|remote|tele)/, "Phone support"]]);
+      const priVal = isrMatchOpt(px.priorityRaw, ["Not applicable", "High", "Medium", "Low"], [[/high|urgent/, "High"], [/med/, "Medium"], [/low/, "Low"], [/^n\s*a$|not\s*applicable/, "Not applicable"]]);
       setF(prev => {
         const patch = {};
         const put = (key, val, label) => {
@@ -6866,20 +7028,54 @@ function VisitModal({
         };
         const baseDate = px.date || prev.date || today();
         put("date", px.date, "Date");
-        put("isrNo", px.isrNo, "ISR No");
+        put("isrNo", px.isrNo, "ISR Number");
         put("endorsedTo", px.endorsedTo, "Endorsed to");
-        put("engineer", px.engineer, "Engineer");
-        put("problemDesc", px.problemDesc, "Work / problem description");
+        put("remarks", px.remarks, "Description of Work");
+        put("problemDesc", px.problemDesc, "Problem Description");
         put("recommendation", px.recommendation, "Recommendation");
-        put("systemCondition", px.systemCondition, "System condition");
+        put("systemCondition", condVal, "System Condition");
+        put("supportType", supVal, "Support Type");
+        put("priority", priVal, "Priority");
         put("contactNo", px.contactNo, "Contact No");
-        put("dtWorkStarted", px.timeIn ? baseDate + "T" + px.timeIn : "", "Time in (work started)");
-        put("dtWorkEnded", px.timeOut ? baseDate + "T" + px.timeOut : "", "Time out (work ended)");
+        put("softwareVersion", px.softwareVersion, "Software Version");
+        put("firmwareVersion", px.firmwareVersion, "Firmware Version");
+        put("dtReported", px.timeReported ? baseDate + "T" + px.timeReported : "", "Time & Date Reported");
+        put("dtDeparture", px.timeDeparture ? baseDate + "T" + px.timeDeparture : "", "Date & Time of Departure");
+        put("dtArrivalAccount", px.timeArrival ? baseDate + "T" + px.timeArrival : "", "Arrival to Account");
+        put("dtWorkStarted", px.timeIn ? baseDate + "T" + px.timeIn : "", "Work Started");
+        put("dtWorkEnded", px.timeOut ? baseDate + "T" + px.timeOut : "", "Work Ended");
         return {
           ...prev,
           ...patch
         };
       });
+      // Engineers are a chip list fed from the REGISTERED options — the
+      // paper's names only land when they match a registered engineer.
+      if (!engs.length && px.engineerRaw && Array.isArray(engineerOptions) && engineerOptions.length) {
+        const norm2 = x => String(x || "").toLowerCase().replace(/[^a-z]+/g, " ").trim();
+        const raws = String(px.engineerRaw).split(/[,\/&+]| and /i).map(x => x.trim()).filter(Boolean);
+        const hits = [];
+        raws.forEach(nm => {
+          const nn = norm2(nm);
+          if (nn.length < 3) return;
+          const rt = nn.split(" ").filter(Boolean);
+          const hit = engineerOptions.find(o => {
+            const ot = norm2(o).split(" ").filter(Boolean);
+            // Every written token must match a name token — a single letter
+            // counts as an INITIAL ("J." matches "Juan") — and at least one
+            // full word (the surname) must anchor the match.
+            const everyTok = rt.every(t2 => ot.some(o2 => o2 === t2 || t2.length === 1 && o2.charAt(0) === t2));
+            const anchor = rt.some(t2 => t2.length > 1 && ot.indexOf(t2) !== -1);
+            return everyTok && anchor;
+          });
+          if (hit && hits.indexOf(hit) === -1) hits.push(hit);
+        });
+        if (hits.length) {
+          setEngs(hits.slice(0, 3));
+          filled.push("Engineer(s): " + hits.slice(0, 3).join(" \u00b7 "));
+          filledKV.push(["__engs", "Engineer(s)"]);
+        }
+      }
       setScanRes({
         filled,
         skipped,
@@ -7016,7 +7212,27 @@ function VisitModal({
     title: (initial ? "Edit Visit — " : "Log Visit — ") + (labName ? labName + " · " : "") + machine.instrument + " (SN " + machine.serialNo + ")",
     onClose: onClose,
     wide: true
-  }, /*#__PURE__*/React.createElement("div", {
+  }, !initial && draftTs ? /*#__PURE__*/React.createElement("div", {
+    style: {
+      margin: "-2px 0 10px",
+      padding: "7px 12px",
+      borderRadius: 9,
+      border: "1px solid #b4530955",
+      background: "#f59e0b14",
+      fontSize: 12,
+      display: "flex",
+      alignItems: "center",
+      gap: 10,
+      flexWrap: "wrap"
+    }
+  }, /*#__PURE__*/React.createElement("span", null, "\ud83d\udcdd Unsaved draft for this instrument \u2014 restored and kept until you Save or clear it (last edit " + new Date(draftTs).toLocaleString() + ")."), /*#__PURE__*/React.createElement("button", {
+    style: {
+      ...btnSt("var(--c-border)", "var(--c-text2)"),
+      padding: "4px 10px",
+      fontSize: 11.5
+    },
+    onClick: clearDraft
+  }, "\ud83d\uddd1 Clear draft")) : null, /*#__PURE__*/React.createElement("div", {
     style: {
       margin: "-2px 0 12px",
       padding: "8px 12px",
@@ -7066,7 +7282,7 @@ function VisitModal({
   }), /*#__PURE__*/React.createElement("input", {
     ref: scanUploadRef,
     type: "file",
-    accept: "image/*,application/pdf",
+    accept: "image/*,.heic,.heif,application/pdf",
     style: {
       display: "none"
     },
@@ -7084,7 +7300,7 @@ function VisitModal({
     style: {
       color: "var(--c-text5)"
     }
-  }, "Photograph the paper report or upload the file (photo or PDF). The picture is STORED with this visit as the document copy; recognized text prefills the EMPTY boxes below. Reading happens on this device only.")), scanRes && /*#__PURE__*/React.createElement("div", {
+  }, "Photograph the paper report or upload the file (JPG / PNG / HEIC / PDF). The picture is STORED with this visit as the document copy; recognized text prefills the EMPTY boxes below. Reading happens on this device only.")), scanRes && /*#__PURE__*/React.createElement("div", {
     style: {
       marginTop: 7,
       lineHeight: 1.6
@@ -7689,7 +7905,7 @@ function VisitModal({
       // The list shows the CURRENT values — including any corrections the
       // user typed after the scan — because those are what will be saved.
       if (scanRes && scanRes.filledKV && scanRes.filledKV.length) {
-        const __lines = scanRes.filledKV.map(kv => "\u2022 " + kv[1] + ": " + (String(f[kv[0]] || "").trim() || "(empty)"));
+        const __lines = scanRes.filledKV.map(kv => "\u2022 " + kv[1] + ": " + ((kv[0] === "__engs" ? engs.join(" \u00b7 ") : String(f[kv[0]] || "").trim()) || "(empty)"));
         const __okScan = window.confirm("\ud83d\udd0d CONFIRM THE SCANNED VALUES\n\nThese fields were filled from the uploaded picture \u2014 please check they match the paper report:\n\n" + __lines.join("\n") + "\n\nSave the visit with these values?");
         if (!__okScan) return;
       }
@@ -7708,6 +7924,9 @@ function VisitModal({
         engineer3: engs[2] || "",
         engineers: engs
       }, f.machineStatus, pending);
+      try {
+        localStorage.removeItem(__draftKey);
+      } catch (e2) {}
     }
   }, "Save visit"), /*#__PURE__*/React.createElement("div", {
     style: {
