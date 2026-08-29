@@ -406,7 +406,15 @@
       /* v354: small screens — modals fill the phone, two-column form grids
          collapse to one, inputs at 16px (stops iOS zoom-on-focus), tables
          tighten. Applies to phones and portrait tablets alike. */
+      html { -webkit-text-size-adjust: 100%; text-size-adjust: 100%; }
       @media (max-width: 760px) {
+        /* v356: the PAGE never grows wider than the phone — wide tables pan
+           inside their own wrappers; long toolbars/summaries wrap instead of
+           stretching the body (the "everything too small" zoom-out cause). */
+        html, body { max-width: 100vw; overflow-x: hidden; }
+        .ib-mainarea div[style*="display: flex"] { flex-wrap: wrap; }
+        /* the Analytics Brand/Instrument bar must not pin on small screens */
+        .ib-ana-ctl { position: static !important; box-shadow: none !important; top: auto !important; }
         .ib-modal-card { width: calc(100vw - 12px) !important; max-width: calc(100vw - 12px) !important; max-height: calc(100dvh - 20px) !important; padding: 14px !important; }
         .ib-modal-card input, .ib-modal-card select, .ib-modal-card textarea { font-size: 16px !important; }
         .ib-modal-card div[style*="1fr 1fr"] { grid-template-columns: 1fr !important; }
@@ -546,7 +554,7 @@
 (function () {
   var okLibs = (typeof firebase !== "undefined") && (typeof React !== "undefined") && (typeof ReactDOM !== "undefined") && (typeof XLSX !== "undefined");
   window.__IBASE_LIBS_OK = okLibs;
-  window.__IBASE_BUILD = "v355";
+  window.__IBASE_BUILD = "v356";
   if (!okLibs) {
     document.getElementById("root").innerHTML =
       "<div style='max-width:520px;margin:90px auto;padding:30px;background:#16181d;border:1px solid #f8717155;border-radius:16px;font-family:system-ui,sans-serif;color:#e5e7eb;text-align:center'>" +
@@ -3662,7 +3670,7 @@ function Login({
       letterSpacing: 2,
       textTransform: "uppercase"
     }
-  }, "version: v355"), /*#__PURE__*/React.createElement(React.Fragment, null,
+  }, "version: v356"), /*#__PURE__*/React.createElement(React.Fragment, null,
   /*#__PURE__*/React.createElement("label", {
     style: labelSt
   }, "Email"), /*#__PURE__*/React.createElement("input", {
@@ -6084,6 +6092,96 @@ function MachineModal({
     software: "",
     firmware: ""
   });
+    // ─── 📝 DRAFTS (v353, relocated v356): if the user leaves WITHOUT saving, everything —
+  // typed fields, engineer chips, the scan results AND the stored photo
+  // copy — persists on this device, keyed to THIS instrument. Reopening the
+  // same laboratory + instrument restores it, until Save or Clear draft.
+  // Editing an EXISTING visit never touches drafts.
+  const __draftKey = "ibase_visitdraft_" + (auth.currentUser && auth.currentUser.uid || "anon") + "_" + (machine && machine.id || "m");
+  // (v356) This block MUST live BELOW the `const [f, setF]` declaration:
+  // the effect DEPENDENCY ARRAYS [f, engs, scanRes] are evaluated at
+  // RENDER time, so at the old position (above f) they threw the TDZ
+  // ReferenceError the moment + Visit opened.
+  const blankRef = React.useRef(null);
+  const draftTimerRef = React.useRef(null);
+  const [draftTs, setDraftTs] = useState(null);
+  React.useEffect(() => {
+    if (initial) return;
+    blankRef.current = {
+      f: f,
+      engs: []
+    };
+    try {
+      const raw = localStorage.getItem(__draftKey);
+      if (!raw) return;
+      const d = JSON.parse(raw);
+      if (!d || !d.f) return;
+      setF(d.f);
+      setEngs(Array.isArray(d.engs) ? d.engs : []);
+      if (d.scanRes) setScanRes(d.scanRes);
+      setDraftTs(d.ts || Date.now());
+    } catch (e) {}
+  }, []);
+  React.useEffect(() => {
+    if (initial || !blankRef.current) return;
+    if (draftTimerRef.current) clearTimeout(draftTimerRef.current);
+    draftTimerRef.current = setTimeout(() => {
+      try {
+        const pristine = JSON.stringify({
+          f: blankRef.current.f,
+          engs: []
+        }) === JSON.stringify({
+          f: f,
+          engs: engs
+        });
+        if (pristine) {
+          localStorage.removeItem(__draftKey);
+          setDraftTs(null);
+          return;
+        }
+        const cur = {
+          f: f,
+          engs: engs,
+          scanRes: scanRes ? {
+            filled: scanRes.filled,
+            skipped: scanRes.skipped,
+            filledKV: scanRes.filledKV || [],
+            warnings: scanRes.warnings,
+            stored: scanRes.stored,
+            note: scanRes.note
+          } : null,
+          ts: Date.now()
+        };
+        try {
+          localStorage.setItem(__draftKey, JSON.stringify(cur));
+        } catch (eq) {
+          // Storage quota: keep the draft, drop only the photo copy from it.
+          const slim = {
+            ...cur,
+            f: {
+              ...cur.f,
+              attachments: []
+            },
+            slim: true
+          };
+          localStorage.setItem(__draftKey, JSON.stringify(slim));
+        }
+        setDraftTs(cur.ts);
+      } catch (e) {}
+    }, 500);
+    return () => draftTimerRef.current && clearTimeout(draftTimerRef.current);
+  }, [f, engs, scanRes]);
+  const clearDraft = () => {
+    try {
+      localStorage.removeItem(__draftKey);
+    } catch (e) {}
+    if (blankRef.current) {
+      setF(blankRef.current.f);
+      setEngs([]);
+    }
+    setScanRes(null);
+    setDraftTs(null);
+  };
   const set = (k, v) => setF(x => {
     const n = { ...x, [k]: v };
     // Auto-fill Next PM whenever Last PM + PM interval give a basis. The field
@@ -6740,97 +6838,6 @@ function VisitModal({
   const [scanRes, setScanRes] = useState(null);
   const scanFileRef = React.useRef(null);
   const scanUploadRef = React.useRef(null);
-  // ─── 📝 DRAFTS (v353): if the user leaves WITHOUT saving, everything —
-  // typed fields, engineer chips, the scan results AND the stored photo
-  // copy — persists on this device, keyed to THIS instrument. Reopening the
-  // same laboratory + instrument restores it, until Save or Clear draft.
-  // Editing an EXISTING visit never touches drafts.
-  const __draftKey = "ibase_visitdraft_" + (auth.currentUser && auth.currentUser.uid || "anon") + "_" + (machine && machine.id || "m");
-  // (v354) No render-time reads of `f` here: its const lives further down
-  // the component, so touching it at this position threw a temporal-dead-
-  // zone ReferenceError — "This tab hit an error" on opening + Visit. The
-  // effects below reference f/engs through their closures instead, which
-  // run only after everything is initialized.
-  const blankRef = React.useRef(null);
-  const draftTimerRef = React.useRef(null);
-  const [draftTs, setDraftTs] = useState(null);
-  React.useEffect(() => {
-    if (initial) return;
-    blankRef.current = {
-      f: f,
-      engs: []
-    };
-    try {
-      const raw = localStorage.getItem(__draftKey);
-      if (!raw) return;
-      const d = JSON.parse(raw);
-      if (!d || !d.f) return;
-      setF(d.f);
-      setEngs(Array.isArray(d.engs) ? d.engs : []);
-      if (d.scanRes) setScanRes(d.scanRes);
-      setDraftTs(d.ts || Date.now());
-    } catch (e) {}
-  }, []);
-  React.useEffect(() => {
-    if (initial || !blankRef.current) return;
-    if (draftTimerRef.current) clearTimeout(draftTimerRef.current);
-    draftTimerRef.current = setTimeout(() => {
-      try {
-        const pristine = JSON.stringify({
-          f: blankRef.current.f,
-          engs: []
-        }) === JSON.stringify({
-          f: f,
-          engs: engs
-        });
-        if (pristine) {
-          localStorage.removeItem(__draftKey);
-          setDraftTs(null);
-          return;
-        }
-        const cur = {
-          f: f,
-          engs: engs,
-          scanRes: scanRes ? {
-            filled: scanRes.filled,
-            skipped: scanRes.skipped,
-            filledKV: scanRes.filledKV || [],
-            warnings: scanRes.warnings,
-            stored: scanRes.stored,
-            note: scanRes.note
-          } : null,
-          ts: Date.now()
-        };
-        try {
-          localStorage.setItem(__draftKey, JSON.stringify(cur));
-        } catch (eq) {
-          // Storage quota: keep the draft, drop only the photo copy from it.
-          const slim = {
-            ...cur,
-            f: {
-              ...cur.f,
-              attachments: []
-            },
-            slim: true
-          };
-          localStorage.setItem(__draftKey, JSON.stringify(slim));
-        }
-        setDraftTs(cur.ts);
-      } catch (e) {}
-    }, 500);
-    return () => draftTimerRef.current && clearTimeout(draftTimerRef.current);
-  }, [f, engs, scanRes]);
-  const clearDraft = () => {
-    try {
-      localStorage.removeItem(__draftKey);
-    } catch (e) {}
-    if (blankRef.current) {
-      setF(blankRef.current.f);
-      setEngs([]);
-    }
-    setScanRes(null);
-    setDraftTs(null);
-  };
   async function runScan(file) {
     if (!file) return;
     const isImg2 = /^image\//.test(file.type || "");
@@ -10394,7 +10401,8 @@ function AnalyticsTab({
       top: 62,
       zIndex: 40,
       boxShadow: "0 8px 20px rgba(0,0,0,.35)"
-    }
+    },
+    className: "ib-ana-ctl"
   }, /*#__PURE__*/React.createElement("div", {
     style: {
       fontSize: 12,
