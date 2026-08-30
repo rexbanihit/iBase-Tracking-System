@@ -428,6 +428,11 @@
           -webkit-overflow-scrolling: touch;
         }
         .ib-ana-ctl { position: static !important; box-shadow: none !important; top: auto !important; }
+        /* v358: long helper/summary texts DISAPPEAR on phones/tablets so
+           every tab presents the same clean width — nothing left to
+           stretch or shrink the view. */
+        .ib-hide-sm { display: none !important; }
+        .ibase-tab-panel { max-width: 100vw; overflow-x: clip; }
       }
       /* phones only */
       @media (max-width: 760px) {
@@ -570,7 +575,7 @@
 (function () {
   var okLibs = (typeof firebase !== "undefined") && (typeof React !== "undefined") && (typeof ReactDOM !== "undefined") && (typeof XLSX !== "undefined");
   window.__IBASE_LIBS_OK = okLibs;
-  window.__IBASE_BUILD = "v357";
+  window.__IBASE_BUILD = "v358";
   if (!okLibs) {
     document.getElementById("root").innerHTML =
       "<div style='max-width:520px;margin:90px auto;padding:30px;background:#16181d;border:1px solid #f8717155;border-radius:16px;font-family:system-ui,sans-serif;color:#e5e7eb;text-align:center'>" +
@@ -3686,7 +3691,7 @@ function Login({
       letterSpacing: 2,
       textTransform: "uppercase"
     }
-  }, "version: v357"), /*#__PURE__*/React.createElement(React.Fragment, null,
+  }, "version: v358"), /*#__PURE__*/React.createElement(React.Fragment, null,
   /*#__PURE__*/React.createElement("label", {
     style: labelSt
   }, "Email"), /*#__PURE__*/React.createElement("input", {
@@ -4055,6 +4060,7 @@ function ITable({
       }))
     }), c.label || cid);
   }), /*#__PURE__*/React.createElement("span", {
+    className: "ib-hide-sm",
     style: {
       fontSize: 10.5,
       color: "var(--c-text5)",
@@ -11500,6 +11506,7 @@ function VisitsTab({
   })() : null, /*#__PURE__*/React.createElement("div", {
     style: { marginLeft: "auto", display: "flex", justifyContent: "flex-end", alignItems: "center", gap: 8, flexShrink: 0 }
   }, /*#__PURE__*/React.createElement("div", {
+    className: "ib-hide-sm",
     style: {
       fontSize: 11.5,
       color: "var(--c-text4)"
@@ -13270,7 +13277,7 @@ function SmerTab({ profile, labs, notify }) {
     const vs = visitsForPeriod(per);
     const withDcr = vs.filter(r => r.dcr && r.dcr.replace(/[\s-]/g, "")).length;
     if (!vs.length) return /*#__PURE__*/React.createElement("div", { style: { fontSize: 10.5, color: "#b45309", background: "rgba(245,158,11,.10)", border: "1px solid rgba(245,158,11,.4)", borderRadius: 6, padding: "4px 8px", margin: "2px 0 5px" } }, "No service visits found for you (" + (myName || "unmatched name") + ") in this period. If you expect some, check that your account name matches the engineer named on those visits.");
-    if (withDcr < vs.length) return /*#__PURE__*/React.createElement("div", { style: { fontSize: 10.5, color: "#6b7280", margin: "2px 0 5px" } }, "DCR auto-filled for " + withDcr + " of " + vs.length + " visit(s). The rest have no \u201cDate & time\u201d values recorded on the visit (only a date) \u2014 open those visits and add the reported/departure/work-started & work-ended/arrival-home times, then press \u21bb Refresh from visits.");
+    if (withDcr < vs.length) return /*#__PURE__*/React.createElement("div", { className: "ib-hide-sm", style: { fontSize: 10.5, color: "#6b7280", margin: "2px 0 5px" } }, "DCR auto-filled for " + withDcr + " of " + vs.length + " visit(s). The rest have no \u201cDate & time\u201d values recorded on the visit (only a date) \u2014 open those visits and add the reported/departure/work-started & work-ended/arrival-home times, then press \u21bb Refresh from visits.");
     return null;
   })(), /*#__PURE__*/React.createElement("table", {
     style: { width: "100%", borderCollapse: "collapse", tableLayout: "fixed", minWidth: 1050 }
@@ -21476,6 +21483,29 @@ function PerfTracer({ user, tab, panelTab }) {
     requestAnimationFrame(() => requestAnimationFrame(() => {
       const content = performance.now() - t0;
       const cs = window.__ibCacheStats || {};
+      // v358 WIDTH DETECTIVE: if the page is wider than the screen (the
+      // cause of shrunken mobile views), name the single widest element.
+      let fit = "";
+      try {
+        const docW = document.documentElement.scrollWidth;
+        const winW = window.innerWidth;
+        if (docW > winW + 2) {
+          let worst = null;
+          let worstW = 0;
+          const els = document.querySelectorAll("body *");
+          const n = Math.min(els.length, 4000);
+          for (let i = 0; i < n; i++) {
+            const w = els[i].scrollWidth;
+            if (w > worstW && w > winW) {
+              worstW = w;
+              worst = els[i];
+            }
+          }
+          fit = "\u26a0 page " + docW + "px > screen " + winW + "px \u00b7 widest: " + (worst ? worst.tagName + (worst.className ? "." + String(worst.className).split(" ")[0] : "") + " " + worstW + "px" : "?");
+        } else {
+          fit = "page fits \u2713 " + docW + "/" + winW + "px";
+        }
+      } catch (e) {}
       const r = {
         tab: tgt,
         ui: Math.round(window.__ibUiT || 0),
@@ -21486,6 +21516,7 @@ function PerfTracer({ user, tab, panelTab }) {
         cv: (cs.vHit || 0) + "/" + (cs.vMiss || 0),
         ca: (cs.aHit || 0) + "/" + (cs.aMiss || 0),
         cs: (cs.sHit || 0) + "/" + (cs.sMiss || 0),
+        fit: fit,
         at: new Date().toISOString().slice(11, 19)
       };
       ltRef.current = { n: 0, ms: 0 };
@@ -21519,7 +21550,11 @@ function PerfTracer({ user, tab, panelTab }) {
     }
   }, /*#__PURE__*/React.createElement("div", null, "⏱ " + rec.tab + ": ui " + rec.ui + "ms · content " + rec.content + "ms · blocked " + rec.blockedMs + "ms/" + rec.longTasks), /*#__PURE__*/React.createElement("div", {
     style: { opacity: 0.75 }
-  }, rec.scale + " · cache v:" + rec.cv + " a:" + rec.ca + " s:" + rec.cs));
+  }, rec.scale + " · cache v:" + rec.cv + " a:" + rec.ca + " s:" + rec.cs), rec.fit ? /*#__PURE__*/React.createElement("div", {
+    style: {
+      opacity: 0.75
+    }
+  }, rec.fit) : null);
 }
 // ─── Frozen keep-alive shell (v337) ───
 // While INACTIVE the memo comparator reports "equal", so React NEVER
