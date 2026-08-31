@@ -418,7 +418,7 @@
             themselves. ── */
       @media (max-width: 1024px) {
         html, body { max-width: 100vw; overflow-x: hidden; }
-        .ib-mainarea div[style*="display: flex"] { flex-wrap: wrap; }
+        .ib-mainarea div[style*="display: flex"] { flex-wrap: wrap !important; }
         .ibt { max-width: 100%; }
         table[style*="min-width:1050"], table[style*="min-width: 1050"],
         table[style*="min-width:1000"], table[style*="min-width: 1000"] {
@@ -450,7 +450,7 @@
       body.ib-small,
       body.ib-small .ib-mainarea,
       body.ib-small .ibase-tab-panel { max-width: 100vw !important; overflow-x: hidden !important; }
-      body.ib-small .ib-mainarea div[style*="display: flex"] { flex-wrap: wrap; }
+      body.ib-small .ib-mainarea div[style*="display: flex"] { flex-wrap: wrap !important; }
       body.ib-small .ibt { max-width: calc(100vw - 16px) !important; overflow-x: auto !important; }
       body.ib-small table[style*="min-width"] {
         display: block !important;
@@ -466,6 +466,21 @@
       }
       body.ib-small .ib-modal-card { width: calc(100vw - 12px) !important; max-width: calc(100vw - 12px) !important; }
       body.ib-small .ibt table { font-size: 11px; }
+      /* ── v360: TOOLBARS ARE SEPARATE PANES above their tables — on every
+            tab and sub-tab. A pane wraps at any width, never scrolls
+            sideways, never stretches the page; only the TABLE pans, inside
+            its own frame below the pane. ── */
+      .ib-tbltools {
+        display: flex !important;
+        flex-wrap: wrap !important;
+        overflow: visible !important;
+        max-width: 100%;
+        row-gap: 6px;
+        box-sizing: border-box;
+      }
+      body.ib-small .ib-tbltools button { width: auto !important; max-width: 100%; }
+      body.ib-small .ib-tbltools input { flex: 1 1 150px; min-width: 120px; max-width: 100%; }
+      body.ib-small .ib-tbltools select { max-width: 100%; }
     }
 
     /* ═══ 📱 SMARTPHONES (≤ 700px) — layout adaptations ONLY.
@@ -600,7 +615,7 @@
 (function () {
   var okLibs = (typeof firebase !== "undefined") && (typeof React !== "undefined") && (typeof ReactDOM !== "undefined") && (typeof XLSX !== "undefined");
   window.__IBASE_LIBS_OK = okLibs;
-  window.__IBASE_BUILD = "v359";
+  window.__IBASE_BUILD = "v360";
   if (!okLibs) {
     document.getElementById("root").innerHTML =
       "<div style='max-width:520px;margin:90px auto;padding:30px;background:#16181d;border:1px solid #f8717155;border-radius:16px;font-family:system-ui,sans-serif;color:#e5e7eb;text-align:center'>" +
@@ -3716,7 +3731,7 @@ function Login({
       letterSpacing: 2,
       textTransform: "uppercase"
     }
-  }, "version: v359"), /*#__PURE__*/React.createElement(React.Fragment, null,
+  }, "version: v360"), /*#__PURE__*/React.createElement(React.Fragment, null,
   /*#__PURE__*/React.createElement("label", {
     style: labelSt
   }, "Email"), /*#__PURE__*/React.createElement("input", {
@@ -3987,18 +4002,18 @@ function ITable({
   }, []);
   const laidOut = st.order && st.order.length || st.w && Object.keys(st.w).length || st.sort || Object.keys(hidden).some(k => hidden[k]);
   return /*#__PURE__*/React.createElement("div", null, (filter !== false || laidOut || cols.length > 1 || headerNode) && /*#__PURE__*/React.createElement("div", {
+    className: "ib-tbltools",
     style: {
       display: "flex",
       gap: 8,
       alignItems: "center",
       marginBottom: 8,
-      flexWrap: "nowrap",
-      overflowX: "auto"
+      flexWrap: "wrap"
     }
   }, headerNode ? /*#__PURE__*/React.createElement("div", {
     style: { flexShrink: 0, whiteSpace: "nowrap" }
   }, headerNode) : null, /*#__PURE__*/React.createElement("div", {
-    style: { flex: 1, minWidth: 0, display: "flex", gap: 8, alignItems: "center", justifyContent: "flex-start" }
+    style: { flex: 1, minWidth: 0, display: "flex", flexWrap: "wrap", gap: 8, alignItems: "center", justifyContent: "flex-start" }
   }, filter !== false && /*#__PURE__*/React.createElement("input", {
     style: {
       ...inputSt(),
@@ -11415,6 +11430,7 @@ function VisitsTab({
       padding: 14
     }
   }, /*#__PURE__*/React.createElement("div", {
+    className: "ib-tbltools",
     style: {
       display: "flex",
       alignItems: "center",
