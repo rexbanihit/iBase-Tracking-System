@@ -615,7 +615,7 @@
 (function () {
   var okLibs = (typeof firebase !== "undefined") && (typeof React !== "undefined") && (typeof ReactDOM !== "undefined") && (typeof XLSX !== "undefined");
   window.__IBASE_LIBS_OK = okLibs;
-  window.__IBASE_BUILD = "v360";
+  window.__IBASE_BUILD = "v361";
   if (!okLibs) {
     document.getElementById("root").innerHTML =
       "<div style='max-width:520px;margin:90px auto;padding:30px;background:#16181d;border:1px solid #f8717155;border-radius:16px;font-family:system-ui,sans-serif;color:#e5e7eb;text-align:center'>" +
@@ -3731,7 +3731,7 @@ function Login({
       letterSpacing: 2,
       textTransform: "uppercase"
     }
-  }, "version: v360"), /*#__PURE__*/React.createElement(React.Fragment, null,
+  }, "version: v361"), /*#__PURE__*/React.createElement(React.Fragment, null,
   /*#__PURE__*/React.createElement("label", {
     style: labelSt
   }, "Email"), /*#__PURE__*/React.createElement("input", {
@@ -5776,6 +5776,9 @@ function LabDetail({
     contacts: visitContactDirectory([lab]),
     canDlAtt: canDL(profile, "attachments", dl),
     labName: lab.name,
+    labs: labs,
+    labId: lab.id,
+    profile: profile,
     statusOptions: statusOptions,
     machine: editVisit.machine,
     engineerOptions: engineerOptions,
@@ -6882,10 +6885,45 @@ function isrParseText(text, machineSerial) {
   };
 }
 
+// ─── 📦 Move a visit between laboratories (v361) ───
+// Pure transform over the two lab documents: removes the visit from its
+// source instrument and appends it to the target instrument, stamped with
+// where it came from. Throws (nothing written) on any inconsistency.
+function visitMoveTransform(fromLab, toLab, machineId, visitId, toMachineId, fromLabName) {
+  const fm = (fromLab.machines || []).find(m => m.id === machineId);
+  if (!fm) throw new Error("source instrument not found");
+  const visit = (fm.visits || []).find(v => v.id === visitId);
+  if (!visit) throw new Error("visit not found on the source instrument (already moved?)");
+  const tm = (toLab.machines || []).find(m => m.id === toMachineId);
+  if (!tm) throw new Error("target instrument not found");
+  if ((tm.visits || []).some(v => v.id === visitId)) throw new Error("the target instrument already holds this visit");
+  const moved = {
+    ...visit,
+    movedFrom: fromLabName || "",
+    movedAt: new Date().toISOString()
+  };
+  const fromMachines = (fromLab.machines || []).map(m => m.id === machineId ? {
+    ...m,
+    visits: (m.visits || []).filter(v => v.id !== visitId)
+  } : m);
+  const toMachines = (toLab.machines || []).map(m => m.id === toMachineId ? {
+    ...m,
+    visits: [...(m.visits || []), moved]
+  } : m);
+  return {
+    fromMachines,
+    toMachines,
+    visit: moved,
+    toMachine: tm
+  };
+}
 function VisitModal({
   contacts,
   machine,
   labName,
+  labs,
+  labId,
+  profile,
   engineerOptions,
   statusOptions,
   canDlAtt,
@@ -6900,6 +6938,54 @@ function VisitModal({
   const [scanRes, setScanRes] = useState(null);
   const scanFileRef = React.useRef(null);
   const scanUploadRef = React.useRef(null);
+  // 📦 Move-to-laboratory (editing existing visits only)
+  const [mvLab, setMvLab] = useState("");
+  const [mvMach, setMvMach] = useState("");
+  const [mvBusy, setMvBusy] = useState(false);
+  React.useEffect(() => {
+    // auto-suggest the target instrument with the SAME serial, if it exists there
+    if (!mvLab || !Array.isArray(labs)) {
+      setMvMach("");
+      return;
+    }
+    const tl = labs.find(l => l.id === mvLab);
+    const sn = String(machine && machine.serialNo || "").trim().toLowerCase();
+    const same = tl && sn ? (tl.machines || []).find(m => String(m.serialNo || "").trim().toLowerCase() === sn) : null;
+    setMvMach(same ? same.id : "");
+  }, [mvLab]);
+  async function moveVisitNow() {
+    if (!initial || !mvLab || !mvMach || !Array.isArray(labs) || !labId) return;
+    if (typeof canEditVisitBy === "function" && profile && !canEditVisitBy(profile, initial)) {
+      notify("Only the account that logged this visit (or an admin) can move it.", "error");
+      return;
+    }
+    const toLab = labs.find(l => l.id === mvLab);
+    const toM = toLab && (toLab.machines || []).find(m => m.id === mvMach);
+    if (!toLab || !toM) return;
+    const ok = window.confirm("\ud83d\udce6 MOVE THIS VISIT?\n\n" + (initial.isrNo ? "ISR " + initial.isrNo + " \u00b7 " : "") + (initial.date || "") + "\nFROM: " + (labName || "?") + " \u2014 " + (machine && machine.instrument || "") + " " + (machine && machine.serialNo || "") + "\nTO: " + toLab.name + " \u2014 " + (toM.instrument || "") + " " + (toM.serialNo || "") + "\n\nThe visit is moved AS CURRENTLY SAVED (unsaved edits in this form are not carried).");
+    if (!ok) return;
+    setMvBusy(true);
+    try {
+      const fromRef = db.doc("labs/" + labId);
+      const toRef = db.doc("labs/" + mvLab);
+      const [fs, ts] = await Promise.all([fromRef.get(), toRef.get()]);
+      const r = visitMoveTransform(fs.data() || {}, ts.data() || {}, machine.id, initial.id, mvMach, labName);
+      const batch = db.batch();
+      batch.update(fromRef, {
+        machines: r.fromMachines
+      });
+      batch.update(toRef, {
+        machines: r.toMachines
+      });
+      await batch.commit();
+      logAudit(profile, "visit.move", (initial.isrNo ? "ISR " + initial.isrNo + " " : "visit ") + "moved from " + (labName || "?") + " to " + toLab.name + " (" + (toM.instrument || "") + " " + (toM.serialNo || "") + ")");
+      notify("\ud83d\udce6 Visit moved to " + toLab.name + ".");
+      onClose();
+    } catch (e) {
+      notify("Move failed \u2014 nothing was changed: " + e.message, "error");
+    }
+    setMvBusy(false);
+  }
   async function runScan(file) {
     if (!file) return;
     const isImg2 = /^image\//.test(file.type || "");
@@ -7312,7 +7398,68 @@ function VisitModal({
       color: "var(--c-text5)",
       fontStyle: "italic"
     }
-  }, "Please verify every field against the paper \u2014 when you press Save, the system will ask you to CONFIRM the scanned values before anything is saved."))), /*#__PURE__*/React.createElement("div", {
+  }, "Please verify every field against the paper \u2014 when you press Save, the system will ask you to CONFIRM the scanned values before anything is saved."))), /*#__PURE__*/initial && Array.isArray(labs) && labId ? /*#__PURE__*/React.createElement("div", {
+    style: {
+      margin: "-2px 0 12px",
+      padding: "9px 12px",
+      borderRadius: 9,
+      border: "1px dashed #38bdf866",
+      background: "#38bdf80f",
+      fontSize: 12
+    }
+  }, /*#__PURE__*/React.createElement("div", {
+    style: {
+      fontWeight: 700,
+      marginBottom: 4
+    }
+  }, "\ud83d\udce6 Move this visit to another laboratory"), /*#__PURE__*/React.createElement("div", {
+    style: {
+      color: "var(--c-text5)",
+      marginBottom: 8
+    }
+  }, "Logged under the wrong institution? Pick the correct laboratory and instrument. If that laboratory has the same serial number, it is pre-selected. The visit moves as currently saved \u2014 save any edits first."), /*#__PURE__*/React.createElement("div", {
+    style: {
+      display: "flex",
+      gap: 8,
+      flexWrap: "wrap",
+      alignItems: "center"
+    }
+  }, /*#__PURE__*/React.createElement("select", {
+    style: {
+      ...inputSt(),
+      minWidth: 200,
+      cursor: "pointer"
+    },
+    value: mvLab,
+    onChange: e => setMvLab(e.target.value)
+  }, /*#__PURE__*/React.createElement("option", {
+    value: ""
+  }, "\u2014 target laboratory \u2014"), labs.filter(l => l.id !== labId).slice().sort((a, b) => String(a.name || "").localeCompare(String(b.name || ""))).map(l => /*#__PURE__*/React.createElement("option", {
+    key: l.id,
+    value: l.id
+  }, l.name))), /*#__PURE__*/React.createElement("select", {
+    style: {
+      ...inputSt(),
+      minWidth: 220,
+      cursor: "pointer"
+    },
+    disabled: !mvLab,
+    value: mvMach,
+    onChange: e => setMvMach(e.target.value)
+  }, /*#__PURE__*/React.createElement("option", {
+    value: ""
+  }, mvLab ? "\u2014 target instrument \u2014" : "pick a laboratory first"), mvLab ? ((labs.find(l => l.id === mvLab) || {}).machines || []).map(m => /*#__PURE__*/React.createElement("option", {
+    key: m.id,
+    value: m.id
+  }, (m.instrument || "?") + " \u00b7 " + (m.serialNo || "no serial") + (machine && machine.serialNo && String(m.serialNo || "").trim().toLowerCase() === String(machine.serialNo).trim().toLowerCase() ? " \u2713 same serial" : ""))) : null), /*#__PURE__*/React.createElement("button", {
+    disabled: !mvLab || !mvMach || mvBusy,
+    style: {
+      ...btnSt("var(--c-key)", "var(--c-bg)"),
+      padding: "6px 12px",
+      opacity: !mvLab || !mvMach || mvBusy ? 0.5 : 1
+    },
+    onClick: moveVisitNow
+  }, mvBusy ? "Moving\u2026" : "\ud83d\udce6 Move visit"))) : null, /*#__PURE__*/React.createElement("div", {
     style: {
       margin: "-2px 0 14px",
       padding: "9px 13px",
@@ -11258,6 +11405,9 @@ function VisitsTab({
   }, histBody(histFor)) : null, editV && /*#__PURE__*/React.createElement(VisitModal, {
     canDlAtt: canDL(profile, "attachments", dl),
     labName: editV._lab,
+    labs: labs,
+    labId: editV._labId,
+    profile: profile,
     statusOptions: statusOptionsV,
     machine: {
       id: editV._mId,
