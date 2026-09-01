@@ -615,7 +615,7 @@
 (function () {
   var okLibs = (typeof firebase !== "undefined") && (typeof React !== "undefined") && (typeof ReactDOM !== "undefined") && (typeof XLSX !== "undefined");
   window.__IBASE_LIBS_OK = okLibs;
-  window.__IBASE_BUILD = "v361";
+  window.__IBASE_BUILD = "v362";
   if (!okLibs) {
     document.getElementById("root").innerHTML =
       "<div style='max-width:520px;margin:90px auto;padding:30px;background:#16181d;border:1px solid #f8717155;border-radius:16px;font-family:system-ui,sans-serif;color:#e5e7eb;text-align:center'>" +
@@ -3731,7 +3731,7 @@ function Login({
       letterSpacing: 2,
       textTransform: "uppercase"
     }
-  }, "version: v361"), /*#__PURE__*/React.createElement(React.Fragment, null,
+  }, "version: v362"), /*#__PURE__*/React.createElement(React.Fragment, null,
   /*#__PURE__*/React.createElement("label", {
     style: labelSt
   }, "Email"), /*#__PURE__*/React.createElement("input", {
@@ -12758,6 +12758,67 @@ function WpoaTab({ profile, notify }) {
   })), /*#__PURE__*/React.createElement("span", null, /*#__PURE__*/React.createElement("b", { style: { marginRight: 8 } }, "Approved by:"), "Ma. Leelyn Arellano"))))));
 }
 // ─── SMER: Semi-Monthly Expense Report (replica of the company form; A4) ────
+// ─── 📗 SMER → genuine Excel Workbook (.xlsx) (v362) ───
+// The report table becomes a real worksheet (values + merged cells) via
+// SheetJS; column widths and row heights are set natively; the workbook's
+// default font is patched to Calibri Light 14 by rewriting styles.xml
+// inside the .xlsx zip (JSZip loaded on first use from the app's CDN).
+let __jszipP = null;
+function smerLoadJSZip() {
+  if (typeof JSZip !== "undefined") return Promise.resolve();
+  if (__jszipP) return __jszipP;
+  __jszipP = new Promise((res, rej) => {
+    const sc = document.createElement("script");
+    sc.src = "https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js";
+    sc.onload = () => typeof JSZip !== "undefined" ? res() : rej(new Error("JSZip missing"));
+    sc.onerror = () => {
+      __jszipP = null;
+      rej(new Error("Could not load the workbook writer"));
+    };
+    document.head.appendChild(sc);
+  });
+  return __jszipP;
+}
+const SMER_XLSX_COL_WIDTHS = [30, 35, 35, 35, 35, 35, 20, 25, 15, 15]; // A..J
+const SMER_XLSX_ROW_HEIGHT = 21;
+function smerPatchFonts(stylesXml) {
+  // Every font in the workbook becomes Calibri Light 14 — uniform, as specified.
+  return stylesXml.replace(/<font>[\s\S]*?<\/font>/g, '<font><sz val="14"/><name val="Calibri Light"/><family val="2"/></font>');
+}
+async function smerSaveXlsx(html, fileName) {
+  const doc = new DOMParser().parseFromString(html, "text/html");
+  const tbl = doc.querySelector("table");
+  if (!tbl) throw new Error("no report table to export");
+  const ws = XLSX.utils.table_to_sheet(tbl, { raw: true });
+  ws["!cols"] = SMER_XLSX_COL_WIDTHS.map(w => ({ wch: w }));
+  const range = XLSX.utils.decode_range(ws["!ref"] || "A1");
+  ws["!rows"] = [];
+  for (let r = 0; r <= range.e.r; r++) ws["!rows"].push({ hpt: SMER_XLSX_ROW_HEIGHT });
+  const wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, ws, "SMER");
+  const buf = XLSX.write(wb, { bookType: "xlsx", type: "array" });
+  let out = buf;
+  let fontOk = false;
+  try {
+    await smerLoadJSZip();
+    const zip = await JSZip.loadAsync(buf);
+    const xml = await zip.file("xl/styles.xml").async("string");
+    const patched = smerPatchFonts(xml);
+    zip.file("xl/styles.xml", patched);
+    out = await zip.generateAsync({ type: "arraybuffer" });
+    fontOk = patched !== xml;
+  } catch (e) {}
+  const blob = new Blob([out], { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = fileName;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  setTimeout(() => URL.revokeObjectURL(url), 1500);
+  return fontOk;
+}
 function SmerTab({ profile, labs, notify }) {
   const uid = auth.currentUser && auth.currentUser.uid || "";
   // Which employee's visits feed this SMER — resolve the logged-in user's name.
@@ -13297,6 +13358,13 @@ function SmerTab({ profile, labs, notify }) {
       .replace("<html>", '<html xmlns:o="urn:schemas-microsoft-com:office:office" xmlns:x="urn:schemas-microsoft-com:office:excel" xmlns="http://www.w3.org/TR/REC-html40">')
       .replace("</head>", '<!--[if gte mso 9]><xml><x:ExcelWorkbook><x:ExcelWorksheets><x:ExcelWorksheet><x:Name>SMER</x:Name><x:WorksheetOptions><x:DisplayGridlines/></x:WorksheetOptions></x:ExcelWorksheet></x:ExcelWorksheets></x:ExcelWorkbook></xml><![endif]--></head>');
     try {
+      if (typeof XLSX !== "undefined" && XLSX.utils && XLSX.utils.table_to_sheet && typeof DOMParser !== "undefined") {
+        // v362: genuine Excel Workbook (.xlsx) — Calibri Light 14, row height
+        // 21, column widths A30 B35 C–F35 G20 H25 I–J15.
+        const fontOk = await smerSaveXlsx(html, "SMER_" + (f.name || "sheet").replace(/[^A-Za-z0-9]+/g, "_") + ".xlsx");
+        notify(fontOk ? "SMER exported as Excel Workbook (.xlsx) \u2014 Calibri Light 14, row height 21, column widths applied." : "SMER exported as Excel Workbook (.xlsx) \u2014 widths and heights applied; the font override could not be loaded (Excel default font used).");
+        return;
+      }
       const blob = new Blob(["\ufeff" + xlsHtml], { type: "application/vnd.ms-excel;charset=utf-8" });
       const url = URL.createObjectURL(blob);
       const a = document.createElement("a");
