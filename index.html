@@ -615,7 +615,7 @@
 (function () {
   var okLibs = (typeof firebase !== "undefined") && (typeof React !== "undefined") && (typeof ReactDOM !== "undefined") && (typeof XLSX !== "undefined");
   window.__IBASE_LIBS_OK = okLibs;
-  window.__IBASE_BUILD = "v362";
+  window.__IBASE_BUILD = "v366";
   if (!okLibs) {
     document.getElementById("root").innerHTML =
       "<div style='max-width:520px;margin:90px auto;padding:30px;background:#16181d;border:1px solid #f8717155;border-radius:16px;font-family:system-ui,sans-serif;color:#e5e7eb;text-align:center'>" +
@@ -3731,7 +3731,7 @@ function Login({
       letterSpacing: 2,
       textTransform: "uppercase"
     }
-  }, "version: v362"), /*#__PURE__*/React.createElement(React.Fragment, null,
+  }, "version: v366"), /*#__PURE__*/React.createElement(React.Fragment, null,
   /*#__PURE__*/React.createElement("label", {
     style: labelSt
   }, "Email"), /*#__PURE__*/React.createElement("input", {
@@ -5402,6 +5402,80 @@ function UpdatePMModal({
     onClick: () => onSave(d)
   }, "Save Last PM"));
 }
+// ─── 🔗 Combined units (v363) ───
+// Two machines of the same brand can be combined into ONE composite record
+// (e.g. Atellica UAS 800 + Clinitek Novus → "Atellica 1500"). The composite is
+// a real machine — it logs visits, carries a PM schedule, can be pulled out,
+// replaced or removed AS ONE — while both members stay their own records,
+// tagged partOf, so each can still be serviced or removed INDIVIDUALLY.
+function combineMachinesTransform(machines, ids, name, serial, newId, who, now, itemCode) {
+  // ids: two OR MORE member machine ids. The composite's name/itemCode come
+  // from a REGISTERED model of the same brand.
+  const list = machines || [];
+  const uniq = Array.from(new Set((ids || []).filter(Boolean)));
+  if (uniq.length < 2) throw new Error("pick at least two different instruments");
+  const members = uniq.map(id => list.find(m => m.id === id));
+  if (members.some(m => !m)) throw new Error("an instrument could not be found");
+  if (members.some(m => m.members)) throw new Error("a combined unit cannot be combined again");
+  if (members.some(m => m.partOf)) throw new Error("one of them is already part of a combined unit");
+  const nm = String(name || "").trim();
+  if (!nm) throw new Error("choose the combined unit's registered model name");
+  const dates = members.map(m => m.installDate).filter(Boolean).sort();
+  const A = members[0];
+  const comp = {
+    id: newId,
+    instrument: nm,
+    itemCode: String(itemCode || "").trim(),
+    serialNo: String(serial || "").trim() || members.map(m => String(m.serialNo || "")).join("+"),
+    installDate: dates[0] || "",
+    installedBy: A.installedBy || "",
+    lastPM: A.lastPM || "",
+    pmInterval: A.pmInterval || "",
+    nextPM: A.nextPM || "",
+    status: "Active",
+    software: "",
+    firmware: "",
+    visits: [],
+    members: uniq.slice(),
+    memberNames: members.map(m => String(m.instrument || "") + " (" + String(m.serialNo || "") + ")"),
+    combinedAt: now,
+    combinedBy: who || ""
+  };
+  const tagged = list.map(m => uniq.indexOf(m.id) !== -1 ? {
+    ...m,
+    partOf: newId,
+    partOfName: nm
+  } : m);
+  return [...tagged, comp];
+}
+function uncombineTransform(machines, compId) {
+  const list = machines || [];
+  const C = list.find(m => m.id === compId);
+  if (!C || !Array.isArray(C.members)) throw new Error("not a combined unit");
+  if ((C.visits || []).length) throw new Error("this combined unit has " + C.visits.length + " visit(s) \u2014 move or delete them first (Move visit), then uncombine");
+  return list.filter(m => m.id !== compId).map(m => C.members.indexOf(m.id) !== -1 ? {
+    ...m,
+    partOf: "",
+    partOfName: ""
+  } : m);
+}
+function binCascadeTransform(machines, m, alsoMembers) {
+  // Removing a composite: optionally its members go too; otherwise they are
+  // released. Removing a member individually detaches it from its composite.
+  let rest = (machines || []).filter(x => x.id !== m.id);
+  if (Array.isArray(m.members)) {
+    rest = alsoMembers ? rest.filter(x => m.members.indexOf(x.id) === -1) : rest.map(x => m.members.indexOf(x.id) !== -1 ? {
+      ...x,
+      partOf: "",
+      partOfName: ""
+    } : x);
+  }
+  if (m.partOf) rest = rest.map(x => x.id === m.partOf ? {
+    ...x,
+    members: (x.members || []).filter(id => id !== m.id)
+  } : x);
+  return rest;
+}
 function LabDetail({
   lab,
   labs,
@@ -5431,7 +5505,98 @@ function LabDetail({
   const [visitFor, setVisitFor] = useState(null);
   const [editingLab, setEditingLab] = useState(false);
   const [pmFor, setPmFor] = useState(null);
-  const [editVisit, setEditVisit] = useState(null); // { machine, visit } being corrected
+  const [editVisit, setEditVisit] = useState(null);
+  // 🔗 combined units (v365: N members; name = a REGISTERED model of the brand)
+  const [combineFor, setCombineFor] = useState(null);
+  const [cbPartners, setCbPartners] = useState([]);
+  const [cbName, setCbName] = useState("");
+  const [cbSerial, setCbSerial] = useState("");
+  const [addCombo, setAddCombo] = useState(false);
+  const [acBrand, setAcBrand] = useState("");
+  const [acRows, setAcRows] = useState([{ model: "", serial: "" }, { model: "", serial: "" }]);
+  const [acName, setAcName] = useState("");
+  const [acSerial, setAcSerial] = useState("");
+  const [acDate, setAcDate] = useState("");
+  const catList = catalog && Array.isArray(catalog.machines) ? catalog.machines : [];
+  const catBrands = Array.from(new Set(catList.map(mm => String(mm.brand || "").trim()).filter(Boolean))).sort();
+  const catModelsOf = b => catList.filter(mm => String(mm.brand || "").trim().toLowerCase() === String(b || "").trim().toLowerCase()).map(mm => ({ model: String(mm.model || "").trim(), itemCode: String(mm.itemCode || "").trim() })).filter(x => x.model).sort((x, y) => x.model.localeCompare(y.model));
+  const catCodeOf = model => {
+    const hit = catList.find(mm => String(mm.model || "").trim().toLowerCase() === String(model || "").trim().toLowerCase());
+    return hit ? String(hit.itemCode || "").trim() : "";
+  };
+  const brandOfM = m => {
+    const key = String(m && m.instrument || "").trim().toLowerCase();
+    const hit = catList.find(mm => String(mm.model || "").trim().toLowerCase() === key);
+    return hit && hit.brand ? String(hit.brand).trim() : "";
+  };
+  const openCombine = m => {
+    setCombineFor(m);
+    setCbPartners([]);
+    setCbName("");
+    setCbSerial("");
+  };
+  const openAddCombo = () => {
+    setAddCombo(true);
+    setAcBrand("");
+    setAcRows([{ model: "", serial: "" }, { model: "", serial: "" }]);
+    setAcName("");
+    setAcSerial("");
+    setAcDate("");
+  };
+  async function doCombine() {
+    if (!combineFor || !cbPartners.length || !cbName) return;
+    try {
+      const ids = [combineFor.id, ...cbPartners];
+      const next = combineMachinesTransform(lab.machines || [], ids, cbName, cbSerial, uid(), meEmail(profile), auditNow(), catCodeOf(cbName));
+      const names = ids.map(id => { const x = (lab.machines || []).find(y => y.id === id) || {}; return (x.instrument || "?") + " (" + (x.serialNo || "") + ")"; });
+      if (!window.confirm("🔗 COMBINE " + ids.length + " UNITS?\n\n" + names.join("\n+ ") + "\n\u2192 " + cbName + "\n\nAll members stay individually serviceable; the combined unit logs its own visits and PM.")) return;
+      if (await saveMachines(next, "🔗 Combined into " + cbName + ".")) {
+        logAudit(profile, "machine.combine", names.join(" + ") + " \u2192 " + cbName + " @ " + lab.name);
+        setCombineFor(null);
+      }
+    } catch (e) {
+      notify(e.message, "error");
+    }
+  }
+  async function doAddCombo() {
+    const rows = acRows.filter(r => r.model);
+    if (rows.length < 2 || !acName) return;
+    const mk = r => ({
+      id: uid(),
+      instrument: r.model,
+      itemCode: catCodeOf(r.model),
+      serialNo: String(r.serial || "").trim(),
+      installDate: acDate || "",
+      installedBy: "",
+      lastPM: "",
+      pmInterval: "",
+      nextPM: "",
+      status: "Active",
+      software: "",
+      firmware: "",
+      visits: []
+    });
+    const created = rows.map(mk);
+    try {
+      const next = combineMachinesTransform([...(lab.machines || []), ...created], created.map(m => m.id), acName, acSerial, uid(), meEmail(profile), auditNow(), catCodeOf(acName));
+      if (!window.confirm("🔗 REGISTER COMBINED UNIT?\n\n" + created.map(m => m.instrument + " (" + (m.serialNo || "no serial") + ")").join("\n+ ") + "\n\u2192 " + acName + (catCodeOf(acName) ? " [" + catCodeOf(acName) + "]" : "") + "\n\nVisits logged on " + acName + " count as ONE machine; each member stays individually serviceable.")) return;
+      if (await saveMachines(next, "🔗 " + acName + " registered (combined unit + " + created.length + " members).")) {
+        logAudit(profile, "machine.combine", "registered " + created.map(m => m.instrument).join(" + ") + " \u2192 " + acName + " @ " + lab.name);
+        setAddCombo(false);
+      }
+    } catch (e) {
+      notify(e.message, "error");
+    }
+  }
+  async function doUncombine(m) {
+    try {
+      const next = uncombineTransform(lab.machines || [], m.id);
+      if (!window.confirm("🔓 Uncombine " + m.instrument + "?\n\nIts member units stay as they are; the combined record is removed.")) return;
+      if (await saveMachines(next, "🔓 " + m.instrument + " uncombined.")) logAudit(profile, "machine.uncombine", m.instrument + " @ " + lab.name);
+    } catch (e) {
+      notify(e.message, "error");
+    }
+  } // { machine, visit } being corrected
   const [attView, setAttView] = useState(null); // attachments being viewed
   // Upload the freshly-picked files to the shared attachments store; returns metadata.
   const uploadAtts = (pending, machineId, visitId) => uploadVisitAtts(pending, lab.id, machineId, visitId, meEmail(profile));
@@ -5514,6 +5679,10 @@ function LabDetail({
     style: btnSt("var(--c-key)", "var(--c-bg)"),
     onClick: () => setAddingM(true)
   }, "+ Add Machine"), canManage && /*#__PURE__*/React.createElement("button", {
+    title: "Register two models of one brand as a single combined unit (e.g. Atellica UAS 800 + Clinitek Novus \u2192 Atellica 1500)",
+    style: btnSt("var(--c-border)", "var(--c-text2)"),
+    onClick: openAddCombo
+  }, "🔗 Add combined unit"), canManage && /*#__PURE__*/React.createElement("button", {
     style: btnSt("#3a1d1d", "#fca5a5"),
     onClick: async () => {
       if (!confirm("Move the ENTIRE laboratory \"" + lab.name + "\" (with its " + (lab.machines || []).length + " machine record(s)) to the Bin?")) return;
@@ -5553,7 +5722,17 @@ function LabDetail({
       title: "Click to view this machine's service-visit history",
       style: { background: "none", border: "none", padding: 0, cursor: "pointer", color: "var(--c-key)", textDecoration: "underline", font: "inherit", textAlign: "left" },
       onClick: () => setMachVisits(m)
-    }, m.instrument)), /*#__PURE__*/React.createElement("td", {
+    }, m.instrument), m.members ? /*#__PURE__*/React.createElement("div", {
+      style: {
+        fontSize: 10.5,
+        color: "var(--c-key)"
+      }
+    }, "\ud83d\udd17 combined unit: " + (m.memberNames || []).join(" + ")) : m.partOf ? /*#__PURE__*/React.createElement("div", {
+      style: {
+        fontSize: 10.5,
+        color: "var(--c-text5)"
+      }
+    }, "\u21b3 part of " + (m.partOfName || "a combined unit")) : null), /*#__PURE__*/React.createElement("td", {
       style: {
         ...tdSt,
         fontFamily: "monospace",
@@ -5649,7 +5828,23 @@ function LabDetail({
         fontSize: 11
       },
       onClick: () => setPmEditM(m)
-    }, "📅 PM"), " ", canManage && /*#__PURE__*/React.createElement("button", {
+    }, "📅 PM"), " ", canManage && !m.partOf && !m.members && /*#__PURE__*/React.createElement("button", {
+      title: "Combine this instrument with another of the same brand into one unit",
+      style: {
+        ...btnSt("var(--c-border)", "var(--c-text2)"),
+        padding: "4px 9px",
+        fontSize: 11
+      },
+      onClick: () => openCombine(m)
+    }, "\ud83d\udd17"), canManage && m.members && /*#__PURE__*/React.createElement("button", {
+      title: "Uncombine \u2014 release the member units (the combined record must have no visits)",
+      style: {
+        ...btnSt("var(--c-border)", "var(--c-text2)"),
+        padding: "4px 9px",
+        fontSize: 11
+      },
+      onClick: () => doUncombine(m)
+    }, "\ud83d\udd13"), " ", canManage && /*#__PURE__*/React.createElement("button", {
       title: "Edit machine",
       style: {
         ...btnSt("var(--c-border)", "var(--c-text2)"),
@@ -5676,7 +5871,20 @@ function LabDetail({
           notify("Bin write refused: " + e.message, "error");
           return;
         }
-        saveMachines((lab.machines || []).filter(x => x.id !== m.id), "🗑 Machine moved to the Bin.", "bin");
+        {
+        let alsoMembers = false;
+        if (Array.isArray(m.members) && m.members.length && confirm("\ud83d\udd17 " + m.instrument + " is a combined unit. ALSO move its member units to the Bin? (Cancel keeps them as individual instruments.)")) {
+          alsoMembers = true;
+          for (const mid of m.members) {
+            const mm = (lab.machines || []).find(x => x.id === mid);
+            if (!mm) continue;
+            try {
+              await binIt("machine", mm.instrument + " \u00b7 " + mm.serialNo + " @ " + lab.name, { labId: lab.id, labName: lab.name, machine: mm }, profile.email);
+            } catch (e) {}
+          }
+        }
+        saveMachines(binCascadeTransform(lab.machines || [], m, alsoMembers), "\ud83d\uddd1 Machine moved to the Bin.", "bin");
+      }
       }
     }, "🗑")));
   }), (lab.machines || []).length === 0 && /*#__PURE__*/React.createElement("tr", null, /*#__PURE__*/React.createElement("td", {
@@ -5770,9 +5978,13 @@ function LabDetail({
         at: auditNow(),
         changes
       }];
-      if (await saveMachines((lab.machines || []).map(x => x.id === nm.id ? nm : x), "Machine updated.")) setEditingM(null);
+      {
+      let nextMachines = (lab.machines || []).map(x => x.id === nm.id ? nm : x);
+      if (Array.isArray(nm.members) && nm.members.length && String(nm.status) !== String(editingM.status) && window.confirm("\ud83d\udd17 " + nm.instrument + " is a combined unit. Apply status \"" + nm.status + "\" to its member units too? (Cancel changes only the combined unit.)")) nextMachines = nextMachines.map(x => nm.members.indexOf(x.id) !== -1 ? { ...x, status: nm.status } : x);
+      if (await saveMachines(nextMachines, "Machine updated.")) setEditingM(null);
     }
-  }), editVisit && /*#__PURE__*/React.createElement(VisitModal, {
+    }
+  }), addCombo && /*#__PURE__*/React.createElement("div", { style: { position: "fixed", inset: 0, background: "rgba(0,0,0,.55)", zIndex: 300, display: "flex", alignItems: "center", justifyContent: "center", padding: 12 }, onClick: () => setAddCombo(false) }, /*#__PURE__*/React.createElement("div", { className: "ib-modal-card", style: { background: "var(--c-card)", border: "1px solid var(--c-border)", borderRadius: 12, padding: 18, width: 540, maxWidth: "100%", maxHeight: "92vh", overflow: "auto" }, onClick: e => e.stopPropagation() }, /*#__PURE__*/React.createElement("div", { style: { fontWeight: 800, fontSize: 15, marginBottom: 4 } }, "🔗 Add combined unit"), /*#__PURE__*/React.createElement("div", { style: { fontSize: 12, color: "var(--c-text5)" } }, "Any number of models of one brand become a single instrument under a REGISTERED model name (e.g. Atellica 1500, EPOC). Service visits are logged on that one name; every member is also registered individually."), /*#__PURE__*/React.createElement("label", { style: { fontSize: 11, color: "var(--c-text5)", display: "block", marginTop: 8 } }, "Brand"), /*#__PURE__*/React.createElement("select", { style: { ...inputSt(), width: "100%" }, value: acBrand, onChange: e => { setAcBrand(e.target.value); setAcRows(acRows.map(r => ({ model: "", serial: r.serial }))); setAcName(""); } }, /*#__PURE__*/React.createElement("option", { value: "" }, "\u2014 select brand \u2014"), catBrands.map(b => /*#__PURE__*/React.createElement("option", { key: b, value: b }, b))), /*#__PURE__*/React.createElement("label", { style: { fontSize: 11, color: "var(--c-text5)", display: "block", marginTop: 8 } }, "Member models (add as many as the unit combines)"), acRows.map((r, i) => /*#__PURE__*/React.createElement("div", { key: i, style: { display: "grid", gridTemplateColumns: "1fr 1fr auto", gap: 8, alignItems: "center", marginTop: 6 } }, /*#__PURE__*/React.createElement("select", { style: { ...inputSt(), width: "100%" }, disabled: !acBrand, value: r.model, onChange: e => setAcRows(acRows.map((x, j) => j === i ? { ...x, model: e.target.value } : x)) }, /*#__PURE__*/React.createElement("option", { value: "" }, acBrand ? "\u2014 model " + (i + 1) + " \u2014" : "pick a brand"), catModelsOf(acBrand).map(x => /*#__PURE__*/React.createElement("option", { key: x.model, value: x.model }, x.model + (x.itemCode ? " \u00b7 " + x.itemCode : "")))), /*#__PURE__*/React.createElement("input", { style: { ...inputSt(), width: "100%" }, placeholder: "serial " + (i + 1), value: r.serial, onChange: e => setAcRows(acRows.map((x, j) => j === i ? { ...x, serial: e.target.value } : x)) }), /*#__PURE__*/React.createElement("button", { title: "remove this row", disabled: acRows.length <= 2, style: { ...btnSt("var(--c-border)", "var(--c-text2)"), padding: "4px 8px", opacity: acRows.length <= 2 ? 0.4 : 1 }, onClick: () => setAcRows(acRows.filter((x, j) => j !== i)) }, "\u2212"))), /*#__PURE__*/React.createElement("button", { disabled: acRows.length >= 8, style: { ...btnSt("var(--c-border)", "var(--c-text2)"), padding: "4px 10px", fontSize: 11.5, marginTop: 6 }, onClick: () => setAcRows([...acRows, { model: "", serial: "" }]) }, "+ add another model"), /*#__PURE__*/React.createElement("label", { style: { fontSize: 11, color: "var(--c-text5)", display: "block", marginTop: 8 } }, "Name of the combined unit (registered model of this brand)"), /*#__PURE__*/React.createElement("select", { style: { ...inputSt(), width: "100%" }, value: acName, onChange: e => setAcName(e.target.value) }, /*#__PURE__*/React.createElement("option", { value: "" }, catModelsOf(acBrand).length ? "\u2014 choose the registered model \u2014" : "no registered models for this brand \u2014 add it in Settings first"), catModelsOf(acBrand).map(x => /*#__PURE__*/React.createElement("option", { key: x.model, value: x.model }, x.model + (x.itemCode ? " \u00b7 " + x.itemCode : "")))), /*#__PURE__*/React.createElement("div", { style: { display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 } }, /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("label", { style: { fontSize: 11, color: "var(--c-text5)", display: "block", marginTop: 8 } }, "Combined serial (optional)"), /*#__PURE__*/React.createElement("input", { style: { ...inputSt(), width: "100%" }, placeholder: "defaults to serials joined by +", value: acSerial, onChange: e => setAcSerial(e.target.value) })), /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("label", { style: { fontSize: 11, color: "var(--c-text5)", display: "block", marginTop: 8 } }, "Install date"), /*#__PURE__*/React.createElement("input", { type: "date", style: { ...inputSt(), width: "100%" }, value: acDate, onChange: e => setAcDate(e.target.value) }))), /*#__PURE__*/React.createElement("div", { style: { display: "flex", gap: 8, justifyContent: "flex-end", marginTop: 14 } }, /*#__PURE__*/React.createElement("button", { style: btnSt("var(--c-border)", "var(--c-text2)"), onClick: () => setAddCombo(false) }, "Cancel"), /*#__PURE__*/React.createElement("button", { disabled: acRows.filter(r => r.model).length < 2 || !acName, style: { ...btnSt("var(--c-key)", "var(--c-bg)"), opacity: acRows.filter(r => r.model).length < 2 || !acName ? 0.5 : 1 }, onClick: doAddCombo }, "🔗 Register")))), combineFor && /*#__PURE__*/React.createElement("div", { style: { position: "fixed", inset: 0, background: "rgba(0,0,0,.55)", zIndex: 300, display: "flex", alignItems: "center", justifyContent: "center", padding: 12 }, onClick: () => setCombineFor(null) }, /*#__PURE__*/React.createElement("div", { className: "ib-modal-card", style: { background: "var(--c-card)", border: "1px solid var(--c-border)", borderRadius: 12, padding: 18, width: 540, maxWidth: "100%", maxHeight: "92vh", overflow: "auto" }, onClick: e => e.stopPropagation() }, /*#__PURE__*/React.createElement("div", { style: { fontWeight: 800, fontSize: 15, marginBottom: 4 } }, "🔗 Combine into one unit"), /*#__PURE__*/React.createElement("div", { style: { fontSize: 12, color: "var(--c-text5)", marginBottom: 6 } }, combineFor.instrument + " (" + combineFor.serialNo + ")" + (brandOfM(combineFor) ? " \u00b7 " + brandOfM(combineFor) : "") + " \u2014 tick every partner of the same brand, then choose the combined unit's registered model name."), /*#__PURE__*/React.createElement("label", { style: { fontSize: 11, color: "var(--c-text5)", display: "block", marginTop: 8 } }, "Partner instruments"), /*#__PURE__*/React.createElement("div", { style: { maxHeight: 200, overflow: "auto", border: "1px solid var(--c-border)", borderRadius: 8, padding: "6px 10px" } }, (lab.machines || []).filter(x => x.id !== combineFor.id && !x.members && !x.partOf && (!brandOfM(combineFor) || !brandOfM(x) || brandOfM(x).toLowerCase() === brandOfM(combineFor).toLowerCase())).map(x => /*#__PURE__*/React.createElement("label", { key: x.id, style: { display: "flex", gap: 8, alignItems: "center", fontSize: 12.5, padding: "3px 0", cursor: "pointer" } }, /*#__PURE__*/React.createElement("input", { type: "checkbox", checked: cbPartners.indexOf(x.id) !== -1, onChange: e => setCbPartners(e.target.checked ? [...cbPartners, x.id] : cbPartners.filter(id => id !== x.id)) }), (x.instrument || "?") + " \u00b7 " + (x.serialNo || "no serial") + (brandOfM(x) ? " \u00b7 " + brandOfM(x) : "")))), /*#__PURE__*/React.createElement("label", { style: { fontSize: 11, color: "var(--c-text5)", display: "block", marginTop: 8 } }, "Name of the combined unit (registered model of this brand)"), /*#__PURE__*/React.createElement("select", { style: { ...inputSt(), width: "100%" }, value: cbName, onChange: e => setCbName(e.target.value) }, /*#__PURE__*/React.createElement("option", { value: "" }, catModelsOf(brandOfM(combineFor)).length ? "\u2014 choose the registered model \u2014" : "no registered models for this brand \u2014 add it in Settings first"), catModelsOf(brandOfM(combineFor)).map(x => /*#__PURE__*/React.createElement("option", { key: x.model, value: x.model }, x.model + (x.itemCode ? " \u00b7 " + x.itemCode : "")))), /*#__PURE__*/React.createElement("label", { style: { fontSize: 11, color: "var(--c-text5)", display: "block", marginTop: 8 } }, "Serial of the combined unit (optional)"), /*#__PURE__*/React.createElement("input", { style: { ...inputSt(), width: "100%" }, placeholder: "defaults to serials joined by +", value: cbSerial, onChange: e => setCbSerial(e.target.value) }), /*#__PURE__*/React.createElement("div", { style: { display: "flex", gap: 8, justifyContent: "flex-end", marginTop: 14 } }, /*#__PURE__*/React.createElement("button", { style: btnSt("var(--c-border)", "var(--c-text2)"), onClick: () => setCombineFor(null) }, "Cancel"), /*#__PURE__*/React.createElement("button", { disabled: !cbPartners.length || !cbName, style: { ...btnSt("var(--c-key)", "var(--c-bg)"), opacity: !cbPartners.length || !cbName ? 0.5 : 1 }, onClick: doCombine }, "🔗 Combine " + (cbPartners.length + 1) + " units")))), editVisit && /*#__PURE__*/React.createElement(VisitModal, {
     contacts: visitContactDirectory([lab]),
     canDlAtt: canDL(profile, "attachments", dl),
     labName: lab.name,
@@ -6157,97 +6369,7 @@ function MachineModal({
     software: "",
     firmware: ""
   });
-    // ─── 📝 DRAFTS (v353, relocated v356): if the user leaves WITHOUT saving, everything —
-  // typed fields, engineer chips, the scan results AND the stored photo
-  // copy — persists on this device, keyed to THIS instrument. Reopening the
-  // same laboratory + instrument restores it, until Save or Clear draft.
-  // Editing an EXISTING visit never touches drafts.
-  const __draftKey = "ibase_visitdraft_" + (auth.currentUser && auth.currentUser.uid || "anon") + "_" + (machine && machine.id || "m");
-  // (v356) This block MUST live BELOW the `const [f, setF]` declaration:
-  // the effect DEPENDENCY ARRAYS [f, engs, scanRes] are evaluated at
-  // RENDER time, so at the old position (above f) they threw the TDZ
-  // ReferenceError the moment + Visit opened.
-  const blankRef = React.useRef(null);
-  const draftTimerRef = React.useRef(null);
-  const [draftTs, setDraftTs] = useState(null);
-  React.useEffect(() => {
-    if (initial) return;
-    blankRef.current = {
-      f: f,
-      engs: []
-    };
-    try {
-      const raw = localStorage.getItem(__draftKey);
-      if (!raw) return;
-      const d = JSON.parse(raw);
-      if (!d || !d.f) return;
-      setF(d.f);
-      setEngs(Array.isArray(d.engs) ? d.engs : []);
-      if (d.scanRes) setScanRes(d.scanRes);
-      setDraftTs(d.ts || Date.now());
-    } catch (e) {}
-  }, []);
-  React.useEffect(() => {
-    if (initial || !blankRef.current) return;
-    if (draftTimerRef.current) clearTimeout(draftTimerRef.current);
-    draftTimerRef.current = setTimeout(() => {
-      try {
-        const pristine = JSON.stringify({
-          f: blankRef.current.f,
-          engs: []
-        }) === JSON.stringify({
-          f: f,
-          engs: engs
-        });
-        if (pristine) {
-          localStorage.removeItem(__draftKey);
-          setDraftTs(null);
-          return;
-        }
-        const cur = {
-          f: f,
-          engs: engs,
-          scanRes: scanRes ? {
-            filled: scanRes.filled,
-            skipped: scanRes.skipped,
-            filledKV: scanRes.filledKV || [],
-            warnings: scanRes.warnings,
-            stored: scanRes.stored,
-            note: scanRes.note
-          } : null,
-          ts: Date.now()
-        };
-        try {
-          localStorage.setItem(__draftKey, JSON.stringify(cur));
-        } catch (eq) {
-          // Storage quota: keep the draft, drop only the photo copy from it.
-          const slim = {
-            ...cur,
-            f: {
-              ...cur.f,
-              attachments: []
-            },
-            slim: true
-          };
-          localStorage.setItem(__draftKey, JSON.stringify(slim));
-        }
-        setDraftTs(cur.ts);
-      } catch (e) {}
-    }, 500);
-    return () => draftTimerRef.current && clearTimeout(draftTimerRef.current);
-  }, [f, engs, scanRes]);
-  const clearDraft = () => {
-    try {
-      localStorage.removeItem(__draftKey);
-    } catch (e) {}
-    if (blankRef.current) {
-      setF(blankRef.current.f);
-      setEngs([]);
-    }
-    setScanRes(null);
-    setDraftTs(null);
-  };
-  const set = (k, v) => setF(x => {
+    const set = (k, v) => setF(x => {
     const n = { ...x, [k]: v };
     // Auto-fill Next PM whenever Last PM + PM interval give a basis. The field
     // stays fully editable — typing into Next PM directly is never blocked.
@@ -7230,6 +7352,99 @@ function VisitModal({
     srcTimestamp: ""
   });
   const [sigOpen, setSigOpen] = useState(false);
+  // ─── 📝 DRAFTS (v353; relocated v364 INTO VisitModal, below f): if the user leaves WITHOUT saving, everything —
+  // typed fields, engineer chips, the scan results AND the stored photo
+  // copy — persists on this device, keyed to THIS instrument. Reopening the
+  // same laboratory + instrument restores it, until Save or Clear draft.
+  // Editing an EXISTING visit never touches drafts.
+  const __draftKey = "ibase_visitdraft_" + (auth.currentUser && auth.currentUser.uid || "anon") + "_" + (machine && machine.id || "m");
+  // (v364) This block MUST live in VisitModal BELOW `const [f, setF]`. In v356 it
+  // was mistakenly placed in MachineModal (same anchor text there), which
+  // crashed Add Machine ("machine is not defined") and starved visits of drafts.
+  // (v356) It must also stay below the declaration:
+  // the effect DEPENDENCY ARRAYS [f, engs, scanRes] are evaluated at
+  // RENDER time, so at the old position (above f) they threw the TDZ
+  // ReferenceError the moment + Visit opened.
+  const blankRef = React.useRef(null);
+  const draftTimerRef = React.useRef(null);
+  const [draftTs, setDraftTs] = useState(null);
+  React.useEffect(() => {
+    if (initial) return;
+    blankRef.current = {
+      f: f,
+      engs: []
+    };
+    try {
+      const raw = localStorage.getItem(__draftKey);
+      if (!raw) return;
+      const d = JSON.parse(raw);
+      if (!d || !d.f) return;
+      setF(d.f);
+      setEngs(Array.isArray(d.engs) ? d.engs : []);
+      if (d.scanRes) setScanRes(d.scanRes);
+      setDraftTs(d.ts || Date.now());
+    } catch (e) {}
+  }, []);
+  React.useEffect(() => {
+    if (initial || !blankRef.current) return;
+    if (draftTimerRef.current) clearTimeout(draftTimerRef.current);
+    draftTimerRef.current = setTimeout(() => {
+      try {
+        const pristine = JSON.stringify({
+          f: blankRef.current.f,
+          engs: []
+        }) === JSON.stringify({
+          f: f,
+          engs: engs
+        });
+        if (pristine) {
+          localStorage.removeItem(__draftKey);
+          setDraftTs(null);
+          return;
+        }
+        const cur = {
+          f: f,
+          engs: engs,
+          scanRes: scanRes ? {
+            filled: scanRes.filled,
+            skipped: scanRes.skipped,
+            filledKV: scanRes.filledKV || [],
+            warnings: scanRes.warnings,
+            stored: scanRes.stored,
+            note: scanRes.note
+          } : null,
+          ts: Date.now()
+        };
+        try {
+          localStorage.setItem(__draftKey, JSON.stringify(cur));
+        } catch (eq) {
+          // Storage quota: keep the draft, drop only the photo copy from it.
+          const slim = {
+            ...cur,
+            f: {
+              ...cur.f,
+              attachments: []
+            },
+            slim: true
+          };
+          localStorage.setItem(__draftKey, JSON.stringify(slim));
+        }
+        setDraftTs(cur.ts);
+      } catch (e) {}
+    }, 500);
+    return () => draftTimerRef.current && clearTimeout(draftTimerRef.current);
+  }, [f, engs, scanRes]);
+  const clearDraft = () => {
+    try {
+      localStorage.removeItem(__draftKey);
+    } catch (e) {}
+    if (blankRef.current) {
+      setF(blankRef.current.f);
+      setEngs([]);
+    }
+    setScanRes(null);
+    setDraftTs(null);
+  };
   const set = (k, v) => setF(x => ({
     ...x,
     [k]: v
@@ -15846,6 +16061,16 @@ function impLayoutFor(headerRow) {
   }
   return null;
 }
+// v366: order-independent signature of a header row (for remembered column
+// mappings) — compact alphanumeric key, safe as a Firestore map key.
+function impColSig(hdr) {
+  const norm = (hdr || []).map(h => String(h == null ? "" : h).trim().toLowerCase()).filter(Boolean).sort();
+  if (!norm.length) return "";
+  const str = norm.join("|");
+  let h = 5381;
+  for (let i = 0; i < str.length; i++) h = (h * 33 ^ str.charCodeAt(i)) >>> 0;
+  return "h" + h.toString(16) + "_" + norm.length;
+}
 function impMapHeaders(headerRow, exactOnly) {
   const map = {};
   const used = {};
@@ -17458,7 +17683,17 @@ function ImportExcel({
         Object.keys(guess).forEach(k => {
           assigns[guess[k]] = k;
         });
-        setMapUI({
+        const __rem = await impRememberedAssigns(grid[hr] || []);
+      if (__rem) {
+        setPlan(null);
+        setMeta(null);
+        setRawRows(null);
+        setInstPick({});
+        notify("\ud83e\udde0 Column mapping remembered from an earlier import (" + Object.keys(__rem).length + " column(s)) \u2014 applied automatically.", "ok");
+        await applyManualMap({ sheet: first, headerRow: hr, assigns: __rem, grid: grid, file: file.name });
+        return;
+      }
+      setMapUI({
           sheet: first,
           headerRow: hr,
           assigns
@@ -17568,7 +17803,7 @@ function ImportExcel({
       }
       const names = Object.keys(counts).sort((a, b) => a.localeCompare(b));
       if (names.length) {
-        setInstFix({ rows, metaBase, names, counts, fileBrands, choices: {}, brandChoices: {}, regNames: regInstruments, regEntries: regEntries, regBrands: regBrandsLive });
+        setInstFix({ rows, metaBase, names, counts, fileBrands, choices: Object.fromEntries(names.map(n => [n, "__ignore__"])), brandChoices: {}, regNames: regInstruments, regEntries: regEntries, regBrands: regBrandsLive });
         setPlan(null);
         setMeta(null);
         return;
@@ -17742,6 +17977,12 @@ function ImportExcel({
       headerRow: bh.hr,
       assigns
     });
+    impRememberedAssigns(((grids && grids.sheets[bh.sheet]) || [])[bh.hr] || []).then(rem => {
+      if (rem) {
+        setMapUI(prev => prev ? { ...prev, assigns: { ...prev.assigns, ...rem } } : prev);
+        notify("\ud83e\udde0 Prefilled from an earlier re-map of these headers \u2014 review and press Apply.", "ok");
+      }
+    });
     setInstFix(null);
   }
   function bestHeaderGuess() {
@@ -17901,12 +18142,13 @@ function ImportExcel({
       setInvPlan(null);
       setGrids(null);
     }
-  async function applyManualMap() {
-    const grid = grids.sheets[mapUI.sheet] || [];
+  async function applyManualMap(mu) {
+    const mUI = mu && mu.assigns ? mu : mapUI;
+    const grid = mUI.grid || (grids && grids.sheets[mUI.sheet]) || [];
     const map = {};
     const cand = {};
-    Object.keys(mapUI.assigns).forEach(ci => {
-      const f = mapUI.assigns[ci];
+    Object.keys(mUI.assigns).forEach(ci => {
+      const f = mUI.assigns[ci];
       if (f && f !== "ignore") (cand[f] = cand[f] || []).push(Number(ci));
     });
     // If the SAME field ended up on several columns (a prefill twin plus
@@ -17914,8 +18156,8 @@ function ImportExcel({
     // accident of a lower index.
     const dcnt = ci => {
       let c2 = 0;
-      const lim = Math.min(grid.length, mapUI.headerRow + 1 + 300);
-      for (let r2 = mapUI.headerRow + 1; r2 < lim; r2++) {
+      const lim = Math.min(grid.length, mUI.headerRow + 1 + 300);
+      for (let r2 = mUI.headerRow + 1; r2 < lim; r2++) {
         if (String((grid[r2] || [])[ci] == null ? "" : (grid[r2] || [])[ci]).trim()) c2++;
       }
       return c2;
@@ -17928,7 +18170,7 @@ function ImportExcel({
       notify("Assign at least one column first.", "error");
       return;
     }
-    const built = impRowsFromGrid(grid, mapUI.headerRow, map, { keepNoSerial: impKeepNoSerial });
+    const built = impRowsFromGrid(grid, mUI.headerRow, map, { keepNoSerial: impKeepNoSerial });
     if (!built.rows.length) {
       const rsn = built.reasons || {};
       if (built.skippedByRule > 0) {
@@ -17943,12 +18185,12 @@ function ImportExcel({
       return;
     }
     await proceedWithRows(built.rows, {
-      file: grids.file,
+      file: mUI.file || (grids && grids.file),
       rows: built.rows.length,
       skipped: built.skippedByRule || 0,
       reasons: built.reasons,
       sheets: [{
-        name: mapUI.sheet,
+        name: mUI.sheet,
         used: true,
         rows: built.rows.length,
         unmapped: built.unmapped
@@ -17956,7 +18198,44 @@ function ImportExcel({
       unmapped: built.unmapped,
       incomplete: built.rows.filter(r => r.missingBits.length).length
     });
+    // v366: remember this column mapping by HEADER TEXT (order-independent),
+    // so the next import with the same headers applies it automatically.
+    try {
+      const hdr = (grid[mUI.headerRow] || []).map(h => String(h == null ? "" : h).trim());
+      const byHeader = {};
+      Object.keys(map).forEach(f => {
+        const h = hdr[map[f]];
+        if (h) byHeader[h.toLowerCase()] = f;
+      });
+      const sig = impColSig(hdr);
+      if (sig && Object.keys(byHeader).length) {
+        const snapC = await db.doc("config/catalog").get();
+        const catC = snapC.data() || {};
+        const prev = catC.importColMaps && typeof catC.importColMaps === "object" ? catC.importColMaps : {};
+        await db.doc("config/catalog").set({ importColMaps: { ...prev, [sig]: byHeader } }, { merge: true });
+        logAudit(profile, "catalog.importColMaps", "column mapping remembered (" + Object.keys(byHeader).length + " column(s))");
+      }
+    } catch (e) {}
     setMapUI(null);
+  }
+  async function impRememberedAssigns(hdrRow) {
+    try {
+      const hdr = (hdrRow || []).map(h => String(h == null ? "" : h).trim());
+      const sig = impColSig(hdr);
+      if (!sig) return null;
+      const snap = await db.doc("config/catalog").get();
+      const cat = snap.data() || {};
+      const mem = cat.importColMaps && cat.importColMaps[sig];
+      if (!mem) return null;
+      const assigns = {};
+      hdr.forEach((h, ci) => {
+        const f = mem[String(h).toLowerCase()];
+        if (f) assigns[ci] = f;
+      });
+      return Object.keys(assigns).length ? assigns : null;
+    } catch (e) {
+      return null;
+    }
   }
   return /*#__PURE__*/React.createElement("div", {
     style: {
