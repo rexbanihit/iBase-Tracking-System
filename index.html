@@ -407,6 +407,18 @@
          collapse to one, inputs at 16px (stops iOS zoom-on-focus), tables
          tighten. Applies to phones and portrait tablets alike. */
       html { -webkit-text-size-adjust: 100%; text-size-adjust: 100%; }
+      /* v367: focus ring follows the chosen theme (browsers default to a black
+         ring — visible on the login fields); autofill keeps theme colors. */
+      input:focus, select:focus, textarea:focus, input:focus-visible, select:focus-visible, textarea:focus-visible {
+        outline: 2px solid var(--c-key) !important;
+        outline-offset: 1px;
+        border-color: var(--c-key) !important;
+      }
+      input:-webkit-autofill, input:-webkit-autofill:focus {
+        -webkit-box-shadow: 0 0 0 1000px var(--c-bg) inset !important;
+        -webkit-text-fill-color: var(--c-text) !important;
+        caret-color: var(--c-text);
+      }
       /* ── v357: PHONES AND TABLETS ALIKE (≤1024px — covers portrait
             tablets and landscape phones, which the old 760px missed; that is
             why the mobile fixes "didn't work"). The page itself never grows
@@ -615,7 +627,7 @@
 (function () {
   var okLibs = (typeof firebase !== "undefined") && (typeof React !== "undefined") && (typeof ReactDOM !== "undefined") && (typeof XLSX !== "undefined");
   window.__IBASE_LIBS_OK = okLibs;
-  window.__IBASE_BUILD = "v366";
+  window.__IBASE_BUILD = "v373";
   if (!okLibs) {
     document.getElementById("root").innerHTML =
       "<div style='max-width:520px;margin:90px auto;padding:30px;background:#16181d;border:1px solid #f8717155;border-radius:16px;font-family:system-ui,sans-serif;color:#e5e7eb;text-align:center'>" +
@@ -2634,6 +2646,13 @@ function pmComputedNextUncached(m) {
       if (d > latestPM) latestPM = d;
     }
   });
+  // v370: an admin's MANUAL Next PM wins — until a newer PM is performed
+  // after it was set (then it is stale and the computed schedule resumes).
+  const manualNext = m.nextPMManual ? String(m.nextPM || "").slice(0, 10) : "";
+  if (manualNext) {
+    const setOn = String(m.nextPMManualSetOn || "").slice(0, 10);
+    if (!setOn || !latestPM || latestPM <= setOn) return manualNext;
+  }
   // anchor also respects a later re-installation (pmAnchor handles that)
   const anchorM = {
     ...m,
@@ -3731,7 +3750,7 @@ function Login({
       letterSpacing: 2,
       textTransform: "uppercase"
     }
-  }, "version: v366"), /*#__PURE__*/React.createElement(React.Fragment, null,
+  }, "version: v373"), /*#__PURE__*/React.createElement(React.Fragment, null,
   /*#__PURE__*/React.createElement("label", {
     style: labelSt
   }, "Email"), /*#__PURE__*/React.createElement("input", {
@@ -4583,8 +4602,8 @@ function isPull(m) {
 }
 
 // ── Institutions (labs + machines + visits) ─────────────────────────────────
-const VISIT_TYPES = ["PM", "Corrective", "Installation", "Pull-out", "Validation", "Calibration", "Demo", "Training", "Travel", "Office Repair", "Documentation", "Pro-active Visit", "Site Survey", "Phone support", "Offset", "Vacation leave", "Sick leave", "Weekly visit", "Emergency leave", "Not Applicable", "Software update", "Firmware update"];
-const MACHINE_STATUSES = ["Active", "Under Repair", "For Follow-up", "Pulled-out", "Scrapped", "Travel", "Not Applicable"];
+const VISIT_TYPES = ["PM", "Corrective", "Installation", "Pull-out", "Validation", "Calibration", "Demo", "Training", "Travel", "Office Repair", "Documentation", "Pro-active Visit", "Site Survey", "Phone support", "Offset", "Vacation leave", "Sick leave", "Weekly visit", "Emergency leave", "Not Applicable", "Software / Firmware update"];
+const MACHINE_STATUSES = ["Active", "Ready for demo", "Under Repair", "For Follow-up", "Pulled-out", "Scrapped", "Travel", "Not Applicable"];
 // "Instrument after the visit" — the fixed iBase_v127 vocabulary. These exact
 // strings drive machine history and the PM scheduler: the pull-out chain
 // recognizes Pulled-out / Scrapped / Decommissioned / "Instrument is ready for
@@ -5178,7 +5197,7 @@ function LabsTab({
         }
       }), /*#__PURE__*/React.createElement("span", {
         style: {
-          color: accent,
+          color: /^(Overdue|Due )/.test(f) ? FLAG_COLORS[f] : "var(--c-text)",
           overflow: "hidden",
           textOverflow: "ellipsis",
           whiteSpace: "nowrap",
@@ -5494,7 +5513,7 @@ function LabDetail({
   // an Engineering / Specialist department (matched by display name).
   const canPMEdit = !!profile.isAdmin || isOwnerAcct(profile) || (engineerOptions || []).some(n => String(n).trim().toLowerCase() === String(profile.displayName || "").trim().toLowerCase());
   // machine-status suggestions: every status ever typed, across ALL laboratories
-  const statusOptions = React.useMemo(() => Array.from(new Set((labs || []).flatMap(l => (l.machines || []).flatMap(m => [m.status, ...(m.visits || []).map(v => v.machineStatus)])).map(x => String(x || "").trim()).filter(Boolean))).sort(), [labs]);
+  const statusOptions = React.useMemo(() => Array.from(new Set([...MACHINE_STATUSES, ...(labs || []).flatMap(l => (l.machines || []).flatMap(m => [m.status, ...(m.visits || []).map(v => v.machineStatus)]))].map(x => String(x || "").trim()).filter(Boolean))).sort(), [labs]);
   // "Service" rights (labs.edit): add a visit, update Last PM — NOT structural.
   // "Manage" rights (admins only): add/edit/delete laboratories and machines.
   const canService = pCanTab(profile, "labs", "edit");
@@ -5784,7 +5803,7 @@ function LabDetail({
       return /*#__PURE__*/React.createElement("span", {
         title: now ? "PM Kit is DUE (interval reached) — next PM must be With PM Kit" : req ? "The NEXT PM will require a PM Kit" : "PM Kit not required yet — due " + fmtDate(due),
         style: { fontSize: 11, fontWeight: 700, color: now ? "#ef4444" : req ? "#f59e0b" : "var(--c-text4)" }
-      }, "🧰 ", now ? "Kit DUE · " + fmtDate(due) : req ? "Next PM · " + fmtDate(due) : fmtDate(due));
+      }, "🧰 ", now ? "Kit DUE · " + fmtDate(due) : "Kit due " + fmtDate(due) + (req ? " · at next PM" : ""));
     })()), /*#__PURE__*/React.createElement("td", {
       style: tdSt
     }, m.status || "Active"), /*#__PURE__*/React.createElement("td", {
@@ -5947,6 +5966,8 @@ function LabDetail({
         if (oldD !== newD) chg.push("Last PM: \u201C" + (oldD || "—") + "\u201D \u2192 \u201C" + (newD || "—") + "\u201D");
         if (oldIv !== ivNew) chg.push("PM frequency: \u201C" + ivLbl(oldIv) + "\u201D \u2192 \u201C" + ivLbl(ivNew) + "\u201D");
         if (chg.length) {
+          nm.nextPMManual = false;
+          nm.nextPMManualSetOn = "";
           nm.pmUpdatedBy = scrubOwner(meEmail(profile));
           nm.pmUpdatedAt = auditNow();
           // the sole-owner leaves NO history entry at all — matching LOGS & Inventory.
@@ -6135,6 +6156,7 @@ function LabDetail({
     labName: lab.name,
     statusOptions: statusOptions,
     machine: visitFor,
+      profile: profile,
     engineerOptions: engineerOptions,
     notify: notify,
     onClose: () => setVisitFor(null),
@@ -6151,7 +6173,7 @@ function LabDetail({
         attachments: [...(v.attachments || []), ...attMetas],
         loggedBy: isOwnerAcct(profile) ? "" : meEmail(profile),
         loggedByAdmin: !!(profile && profile.isAdmin) && !isOwnerAcct(profile),
-        loggedAt: auditNow()
+      loggedAt: isOwnerAcct(profile) ? "" : auditNow()
       };
       const machines = (lab.machines || []).map(m => {
         if (m.id !== visitFor.id) return m;
@@ -6267,8 +6289,8 @@ function LastPMModal({
     style: { border: "1px dashed var(--c-border)", borderRadius: 8, padding: "8px 12px", marginBottom: 10, fontSize: 11.5, color: "var(--c-text3)" }
   }, /*#__PURE__*/React.createElement("div", { style: { fontWeight: 800, marginBottom: 4, color: "var(--c-text4)" } }, "🧰 PM Kit"),
      "Last kit: ", /*#__PURE__*/React.createElement("b", null, kitAnchor(machine) ? fmtDate(kitAnchor(machine)) : "—"),
-     "  ·  every ", /*#__PURE__*/React.createElement("b", null, kitRuleFor(machine).months, " month(s)"),
-     " (", kitRuleFor(machine).source, ")  ·  due ",
+     "  ·  every ", /*#__PURE__*/React.createElement("b", null, Number(machine.kitMonths) > 0 ? Number(machine.kitMonths) : kitRuleFor(machine).months, " month(s)"),
+     " (", String(machine.nextPMKit || "").trim() ? "manual date" : Number(machine.kitMonths) > 0 ? "machine override" : kitRuleFor(machine).source, machine.kitAnchorMode === "install" ? " · install anniversary" : "", ")  ·  due ",
      /*#__PURE__*/React.createElement("b", { style: { color: kitDueNow(machine) ? "#ef4444" : "var(--c-text2)" } }, kitDueDate(machine) ? fmtDate(kitDueDate(machine)) : "—"),
      /*#__PURE__*/React.createElement("div", { style: { marginTop: 3 } }, "Next PM: ", kitRequiredForNextPM(machine) ? /*#__PURE__*/React.createElement("b", { style: { color: "#f59e0b" } }, "PM Kit Required") : /*#__PURE__*/React.createElement("b", { style: { color: "var(--c-text4)" } }, "PM Kit Not Required"))), /*#__PURE__*/React.createElement("div", {
     style: {
@@ -6351,7 +6373,13 @@ function MachineModal({
     installedBy: initial.installedBy || "",
     lastPM: initial.lastPM || "",
     pmInterval: initial.pmInterval || "",
+    kitMonths: initial.kitMonths || "",
+    kitAnchorMode: initial.kitAnchorMode || "",
+    nextPMKit: initial.nextPMKit || "",
+    nextPMKitSetOn: initial.nextPMKitSetOn || "",
     nextPM: initial.nextPM || "",
+    nextPMManual: !!initial.nextPMManual,
+    nextPMManualSetOn: initial.nextPMManualSetOn || "",
     status: initial.status || "Active",
     software: initial.software || "",
     firmware: initial.firmware || ""
@@ -6375,7 +6403,11 @@ function MachineModal({
     // stays fully editable — typing into Next PM directly is never blocked.
     if (k === "lastPM" || k === "pmInterval") {
       const nx = typeof nextPMDate === "function" ? nextPMDate(n.lastPM, n.pmInterval) : null;
-      if (nx) n.nextPM = nx;
+      if (nx) {
+        n.nextPM = nx;
+        n.nextPMManual = false;
+        n.nextPMManualSetOn = "";
+      }
     }
     return n;
   });
@@ -6531,6 +6563,69 @@ function MachineModal({
     value: String(n)
   }, "Every ", n, " months"))), /*#__PURE__*/React.createElement("label", {
     style: labelSt
+  }, "PM Kit interval (months) \u2014 override"), /*#__PURE__*/React.createElement("input", {
+    type: "number",
+    min: 1,
+    max: 120,
+    placeholder: "blank = brand/model rule (" + kitRuleFor(f).months + " mo)",
+    style: {
+      ...inputSt(),
+      marginBottom: 10
+    },
+    value: f.kitMonths,
+    onChange: e => set("kitMonths", e.target.value)
+  }), /*#__PURE__*/React.createElement("label", {
+    style: labelSt
+  }, "Next PM Kit due \u2014 manual date"), /*#__PURE__*/React.createElement("input", {
+    type: "date",
+    style: {
+      ...inputSt(),
+      marginBottom: 4
+    },
+    value: f.nextPMKit,
+    onChange: e => setF(x => ({
+      ...x,
+      nextPMKit: e.target.value,
+      nextPMKitSetOn: e.target.value ? today() : ""
+    }))
+  }), /*#__PURE__*/React.createElement("div", {
+    style: {
+      fontSize: 10.5,
+      color: "var(--c-text5)",
+      marginBottom: 10
+    }
+  }, "Leave blank to schedule automatically (last kit + interval). A manual date stays in force until a newer PM Kit is fitted after it was set."), /*#__PURE__*/React.createElement("label", {
+    style: labelSt
+  }, "PM Kit cycle anchor"), (() => {
+    const prev = mode => {
+      try {
+        return kitDueDate({ ...(initial || {}), ...f, kitAnchorMode: mode, nextPMKit: "" }) || "";
+      } catch (e) {
+        return "";
+      }
+    };
+    const pLast = prev("last");
+    const pInst = prev("install");
+    return /*#__PURE__*/React.createElement(React.Fragment, null, /*#__PURE__*/React.createElement("select", {
+      style: {
+        ...inputSt(),
+        marginBottom: 4
+      },
+      value: f.kitAnchorMode,
+      onChange: e => set("kitAnchorMode", e.target.value)
+    }, /*#__PURE__*/React.createElement("option", {
+      value: ""
+    }, "From the last PM Kit date" + (pLast ? " \u2192 next " + fmtDate(pLast) : "")), /*#__PURE__*/React.createElement("option", {
+      value: "install"
+    }, "Keep the installation anniversary" + (pInst ? " \u2192 next " + fmtDate(pInst) : "") + (f.installDate ? "" : " (needs an install date)"))), /*#__PURE__*/React.createElement("div", {
+      style: {
+        fontSize: 10.5,
+        color: "var(--c-text5)",
+        marginBottom: 10
+      }
+    }, "Example: installed Sept 2024, 12-month kit, kit fitted late in Oct 2025 \u2014 \u201cFrom the last PM Kit date\u201d gives Oct 2026; \u201cKeep the installation anniversary\u201d returns the cycle to Sept 2026."));
+  })(), /*#__PURE__*/React.createElement("label", {
+    style: labelSt
   }, "Next PM date"), /*#__PURE__*/React.createElement("input", {
     type: "date",
     style: {
@@ -6538,8 +6633,29 @@ function MachineModal({
       marginBottom: 16
     },
     value: f.nextPM,
-    onChange: e => set("nextPM", e.target.value)
-  }), /*#__PURE__*/React.createElement("button", {
+    onChange: e => setF(x => ({
+      ...x,
+      nextPM: e.target.value,
+      nextPMManual: !!e.target.value,
+      nextPMManualSetOn: e.target.value ? today() : ""
+    }))
+  }), /*#__PURE__*/React.createElement("div", {
+    style: {
+      fontSize: 10.5,
+      color: "var(--c-text5)",
+      marginTop: -10,
+      marginBottom: 12
+    }
+  }, (() => {
+    try {
+      const mm = { ...(initial || {}), ...f, nextPMManual: !!f.nextPMManual };
+      const nx = f.nextPMManual && f.nextPM ? f.nextPM : typeof nextPMDate === "function" ? nextPMDate(f.lastPM, f.pmInterval) || "" : "";
+      const kd = kitDueDate(mm);
+      return "After saving, the table will show \u2014 Next PM: " + (nx ? fmtDate(nx) : "\u2014") + (f.nextPMManual && f.nextPM ? " (manual)" : " (automatic)") + " \u00b7 PM Kit due: " + (kd ? fmtDate(kd) : "\u2014");
+    } catch (e) {
+      return "";
+    }
+  })()), /*#__PURE__*/React.createElement("button", {
     style: btnSt("var(--c-key)", "var(--c-bg)"),
     disabled: !f.instrument.trim() || !f.serialNo.trim(),
     onClick: () => onSave(finalizeMachinePM(initial ? {
@@ -6551,7 +6667,13 @@ function MachineModal({
       installedBy: f.installedBy.trim(),
       lastPM: f.lastPM,
       pmInterval: f.pmInterval,
-      nextPM: "",
+      nextPM: f.nextPM,
+      nextPMManual: !!f.nextPMManual,
+      nextPMManualSetOn: f.nextPMManualSetOn || "",
+      kitMonths: f.kitMonths || "",
+      nextPMKit: f.nextPMKit || "",
+      nextPMKitSetOn: f.nextPMKitSetOn || "",
+      kitAnchorMode: f.kitAnchorMode || "",
       software: f.software.trim(),
       firmware: f.firmware.trim(),
       updatedAt: auditNow()
@@ -6564,7 +6686,13 @@ function MachineModal({
       installedBy: f.installedBy.trim(),
       lastPM: f.lastPM,
       pmInterval: f.pmInterval,
-      nextPM: "",
+      nextPM: f.nextPM,
+      nextPMManual: !!f.nextPMManual,
+      nextPMManualSetOn: f.nextPMManualSetOn || "",
+      kitMonths: f.kitMonths || "",
+      nextPMKit: f.nextPMKit || "",
+      nextPMKitSetOn: f.nextPMKitSetOn || "",
+      kitAnchorMode: f.kitAnchorMode || "",
       software: f.software.trim(),
       firmware: f.firmware.trim(),
       status: "Active",
@@ -7967,13 +8095,13 @@ function VisitModal({
     value: s2
   }, s2)))), /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("label", {
     style: labelSt
-  }, "Software version", f.type === "Software update" ? " — will update the machine record" : ""), /*#__PURE__*/React.createElement("input", {
+  }, "Software version", f.type === "Software / Firmware update" || f.type === "Software update" ? " — will update the machine record" : ""), /*#__PURE__*/React.createElement("input", {
     style: inputSt(),
     value: f.softwareVersion,
     onChange: e => set("softwareVersion", e.target.value)
   })), /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("label", {
     style: labelSt
-  }, "Firmware version", f.type === "Firmware update" ? " — will update the machine record" : ""), /*#__PURE__*/React.createElement("input", {
+  }, "Firmware version", f.type === "Software / Firmware update" || f.type === "Firmware update" ? " — will update the machine record" : ""), /*#__PURE__*/React.createElement("input", {
     style: inputSt(),
     value: f.firmwareVersion,
     onChange: e => set("firmwareVersion", e.target.value)
@@ -8229,7 +8357,9 @@ function VisitModal({
       // visit type (it was previously blocked outright).
       const LIGHT_TYPES = ["documentation", "emergency leave", "not applicable", "offset", "sick leave", "site survey", "training", "travel", "vacation leave"];
       const isLight = LIGHT_TYPES.indexOf(String(f.type || "").trim().toLowerCase()) !== -1;
-      const need = [[f.type, "Type of Visit"], [String(f.endorsedTo || "").trim(), "Contact person (endorsed to)"], [isLight || f.supportType, "Support Type"], [isLight || String(f.isrNo || "").trim(), "ISR number"], [f.dtWorkStarted, "Date & time work started"], [f.dtWorkEnded, "Date & time work ended"], [isLight || f.systemCondition, "System Condition"], [isLight || String(f.remarks || "").trim(), "Description of Work"], [isLight || f.machineStatus, "Instrument after the visit"], [f.type !== "PM" || f.pmType, "PM Type (With / Without PM Kit)"], [f.type !== "Installation" || (f.providedWith || []).length, "Provided with (tick the documents — or None)"], [f.type !== "PM" || !(f.providedWith || []).length || (f.attachments || []).length, "Attachment — upload proof of the ticked PM document(s)"]];
+      // v367: the sole owner may save a PM without attaching proof.
+      const __ownerNoProof = !!(profile && typeof isOwnerAcct === "function" && isOwnerAcct(profile));
+      const need = [[f.type, "Type of Visit"], [String(f.endorsedTo || "").trim(), "Contact person (endorsed to)"], [isLight || f.supportType, "Support Type"], [isLight || String(f.isrNo || "").trim(), "ISR number"], [f.dtWorkStarted, "Date & time work started"], [f.dtWorkEnded, "Date & time work ended"], [isLight || f.systemCondition, "System Condition"], [isLight || String(f.remarks || "").trim(), "Description of Work"], [isLight || f.machineStatus, "Instrument after the visit"], [f.type !== "PM" || f.pmType, "PM Type (With / Without PM Kit)"], [f.type !== "Installation" || (f.providedWith || []).length, "Provided with (tick the documents — or None)"], [__ownerNoProof || f.type !== "PM" || !(f.providedWith || []).length || (f.attachments || []).length, "Attachment — upload proof of the ticked PM document(s)"]];
       const missing = need.filter(x => !x[0]).map(x => x[1]);
       if (missing.length) {
         notify("Please complete the required field(s):\n• " + missing.join("\n• "), "error");
@@ -8857,7 +8987,7 @@ function HistoryModal({
   labs,
   onClose
 }) {
-  const mv = invMovements(labs, item.serialNo);
+  const mv = invMovements(labs, item.serialNo).slice().sort((a, b) => String(b.date || "").localeCompare(String(a.date || ""))); // v372: latest → oldest (newest on top)
   const ins = mv.filter(e => e.dir === "IN").length,
     outs = mv.filter(e => e.dir === "OUT").length;
   return /*#__PURE__*/React.createElement(Modal, {
@@ -11269,8 +11399,8 @@ function VisitsTab({
       if (m.id !== machine.id) return m;
       let nm = {
         ...m,
-        software: v.type === "Software update" && v.softwareVersion ? v.softwareVersion : m.software || "",
-        firmware: v.type === "Firmware update" && v.firmwareVersion ? v.firmwareVersion : m.firmware || "",
+        software: (v.type === "Software / Firmware update" || v.type === "Software update") && v.softwareVersion ? v.softwareVersion : m.software || "",
+        firmware: (v.type === "Software / Firmware update" || v.type === "Firmware update") && v.firmwareVersion ? v.firmwareVersion : m.firmware || "",
         visits: (m.visits || []).map(x => x.id === orig.id ? updated : x)
       };
       // status follows the most-recent visit AFTER the correction, so the PM flag updates
@@ -16543,11 +16673,47 @@ function kitAnchor(m) {
   if (!a) a = String(m && m.installDate || "").slice(0, 10);
   return a;
 }
+// v369: snap a computed due date to the installation ANNIVERSARY cycle —
+// the install date + k×months nearest to the target (ties → the later one),
+// never earlier than one full interval after installation.
+function snapToInstallAnniversary(targetISO, installISO, months) {
+  const T = new Date(String(targetISO || "").slice(0, 10) + "T00:00:00Z");
+  const I = new Date(String(installISO || "").slice(0, 10) + "T00:00:00Z");
+  if (isNaN(T) || isNaN(I) || !(months > 0)) return "";
+  const between = (T.getUTCFullYear() - I.getUTCFullYear()) * 12 + (T.getUTCMonth() - I.getUTCMonth());
+  const k0 = Math.floor(between / months);
+  let best = "";
+  let bestDiff = Infinity;
+  for (let k = k0 - 1; k <= k0 + 2; k++) {
+    if (k < 1) continue;
+    const d = new Date(Date.UTC(I.getUTCFullYear(), I.getUTCMonth() + k * months, I.getUTCDate()));
+    const diff = Math.abs(d - T);
+    if (diff < bestDiff || diff === bestDiff && d > T) {
+      bestDiff = diff;
+      best = d.toISOString().slice(0, 10);
+    }
+  }
+  return best;
+}
 function kitDueDate(m) {
   if (!m || typeof isPull === "function" && isPull(m) || typeof retiredStatus === "function" && retiredStatus(m.status)) return "";
   const a = kitAnchor(m);
+  // v368: an admin's MANUAL next-kit date wins — until a newer kit is fitted
+  // after it was set (then it is stale and the computed cycle resumes).
+  const manual = String(m.nextPMKit || "").slice(0, 10);
+  if (manual) {
+    const setOn = String(m.nextPMKitSetOn || "").slice(0, 10);
+    if (!setOn || !a || a <= setOn) return manual;
+  }
   if (!a) return "";
-  return nextPMDate(a, kitRuleFor(m).months) || "";
+  // v368: per-machine kit interval override (months) beats the brand/model rule.
+  const ov = Number(m.kitMonths);
+  const months = ov > 0 ? ov : kitRuleFor(m).months;
+  let due = nextPMDate(a, months) || "";
+  // v369: admins may anchor the kit cycle to the INSTALLATION anniversary —
+  // a late kit (Oct 2025 on a Sept 2024 install) still yields Sept 2026.
+  if (due && String(m.kitAnchorMode || "") === "install" && m.installDate) due = snapToInstallAnniversary(due, m.installDate, months) || due;
+  return due;
 }
 function kitRequiredForNextPM(m) {
   const due = kitDueDate(m);
@@ -16585,7 +16751,16 @@ function finalizeMachinePM(m, knownVisits) {
   if ((m.pmInterval === "" || m.pmInterval === undefined || m.pmInterval === null) && !m.pmNoSchedule) m.pmInterval = 12;
   const vs = Array.isArray(m.visits) && m.visits.length ? m.visits : knownVisits;
   if (m.pmInterval && m.installDate && !m.lastPM && !hasPMVisit(vs)) m.lastPM = String(m.installDate).slice(0, 10);
+  // v371: an admin's MANUAL Next PM (typed in the editor) survives saving;
+  // only an automatic date is recomputed from the best PM anchor.
+  const typed = String(m.nextPM || "").slice(0, 10);
+  if (m.nextPMManual && typed) {
+    if (!m.nextPMManualSetOn) m.nextPMManualSetOn = today();
+    return m;
+  }
   m.nextPM = "";
+  m.nextPMManual = false;
+  m.nextPMManualSetOn = "";
   if (m.pmInterval) { const nx = nextPMDate(bestPMAnchor(m, vs), m.pmInterval); if (nx) m.nextPM = nx; }
   return m;
 }
@@ -16599,14 +16774,26 @@ function normalizePMSchedules(machines) {
   const out = (machines || []).map(m => ({ ...m }));
   let changed = 0;
   out.forEach(m => {
-    const before = JSON.stringify([m.pmInterval, m.lastPM, m.nextPM]);
+    const before = JSON.stringify([m.pmInterval, m.lastPM, m.nextPM, !!m.nextPMManual]);
     if ((m.pmInterval === "" || m.pmInterval === undefined || m.pmInterval === null) && !m.pmNoSchedule) m.pmInterval = 12;
     if (m.pmInterval && m.installDate && !m.lastPM && !hasPMVisit(m.visits)) m.lastPM = String(m.installDate).slice(0, 10);
-    if (m.pmInterval && !(typeof isPull === "function" && isPull(m)) && !(typeof retiredStatus === "function" && retiredStatus(m.status))) {
+    // v373: an admin's MANUAL Next PM is never overwritten by this load-time sync
+    // while it is live (no newer PM evidence since it was set); once stale it is
+    // retired and the automatic schedule resumes — the same rule the displays use.
+    let manualLive = false;
+    if (m.nextPMManual && String(m.nextPM || "").slice(0, 10)) {
+      const setOn = String(m.nextPMManualSetOn || "").slice(0, 10);
+      const lp = String(bestPMAnchor(m, m.visits) || "").slice(0, 10);
+      if (!setOn || !lp || lp <= setOn) manualLive = true; else {
+        m.nextPMManual = false;
+        m.nextPMManualSetOn = "";
+      }
+    }
+    if (m.pmInterval && !manualLive && !(typeof isPull === "function" && isPull(m)) && !(typeof retiredStatus === "function" && retiredStatus(m.status))) {
       const nx = nextPMDate(bestPMAnchor(m, m.visits), m.pmInterval);
       if (nx && nx !== m.nextPM) m.nextPM = nx;
     }
-    if (JSON.stringify([m.pmInterval, m.lastPM, m.nextPM]) !== before) changed++;
+    if (JSON.stringify([m.pmInterval, m.lastPM, m.nextPM, !!m.nextPMManual]) !== before) changed++;
   });
   return { changed: changed, machines: out };
 }
