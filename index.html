@@ -627,7 +627,7 @@
 (function () {
   var okLibs = (typeof firebase !== "undefined") && (typeof React !== "undefined") && (typeof ReactDOM !== "undefined") && (typeof XLSX !== "undefined");
   window.__IBASE_LIBS_OK = okLibs;
-  window.__IBASE_BUILD = "v373";
+  window.__IBASE_BUILD = "v374";
   if (!okLibs) {
     document.getElementById("root").innerHTML =
       "<div style='max-width:520px;margin:90px auto;padding:30px;background:#16181d;border:1px solid #f8717155;border-radius:16px;font-family:system-ui,sans-serif;color:#e5e7eb;text-align:center'>" +
@@ -3750,7 +3750,7 @@ function Login({
       letterSpacing: 2,
       textTransform: "uppercase"
     }
-  }, "version: v373"), /*#__PURE__*/React.createElement(React.Fragment, null,
+  }, "version: v374"), /*#__PURE__*/React.createElement(React.Fragment, null,
   /*#__PURE__*/React.createElement("label", {
     style: labelSt
   }, "Email"), /*#__PURE__*/React.createElement("input", {
@@ -4320,7 +4320,7 @@ function DashboardTab({
     if (!cur || rd >= cd) bySerial[key] = r; // keep the most-recently-anchored record
   });
   const liveUnique = Object.values(bySerial);
-  const retiredN = rows.length - live.length;
+  const retiredN = retiredUnitsBySerial(rows); // v374: by serial (re-installed elsewhere = still active)
   const machines = liveUnique.length,
     activeN = liveUnique.length;
   const flagged = liveUnique.map(r => ({
@@ -6060,8 +6060,7 @@ function LabDetail({
         const pmDates = nm.visits.filter(x => (String(x.type || "").toUpperCase() === "PM" || /^pm completed$/i.test(String(x.machineStatus || ""))) && x.date).map(x => x.date).sort();
         if (pmDates.length && (!nm.lastPM || pmDates[pmDates.length - 1] !== nm.lastPM)) {
           nm.lastPM = pmDates[pmDates.length - 1];
-          const nx = nextPMDate(pmAnchor(nm), nm.pmInterval);
-          if (nx) nm.nextPM = nx;
+          pmResync(nm);
         }
         return nm;
       });
@@ -6141,8 +6140,7 @@ function LabDetail({
           pmUpdatedBy: scrubOwner(meEmail(profile)),
           pmUpdatedAt: auditNow()
         };
-        const nx = nextPMDate(pmAnchor(nm), nm.pmInterval);
-        if (nx) nm.nextPM = nx;
+        pmResync(nm);
         return nm;
       });
       if (await saveMachines(machines, "Last PM updated — schedule recomputed.")) {
@@ -6195,8 +6193,7 @@ function LabDetail({
         }
         if ((String(v.type).toUpperCase() === "PM" || /^pm completed$/i.test(String(v.machineStatus || ""))) && v.date && (!nm.lastPM || v.date > nm.lastPM)) {
           nm.lastPM = v.date;
-          const nx = nextPMDate(pmAnchor(nm), nm.pmInterval);
-          if (nx) nm.nextPM = nx;
+          pmResync(nm);
         }
         return nm;
       });
@@ -10775,10 +10772,11 @@ function AnalyticsTab({
   const anyFilter = brand !== "All" || instrument !== "All" || engineer !== "All" || from || to;
 
   // KPI numbers
+  const __liveSet = React.useMemo(() => new Set(activeUniqueMachineRows(labs).map(r => r.m)), [labs]); // v374: same active base as the Dashboard
   const machinesInScope = allMachines.filter(m => {
     if (instrument !== "All" && String(m.instrument || "").trim() !== instrument) return false;
     if (brand !== "All" && !String(m.instrument || "").toLowerCase().startsWith(String(brand).toLowerCase())) return false;
-    return !isPull(m);
+    return __liveSet.has(m);
   });
   const mTot = machinesInScope.length;
   const overdue = machinesInScope.filter(m => pmFlag(m) === "Overdue").length;
@@ -11408,8 +11406,7 @@ function VisitsTab({
       const pmDates = nm.visits.filter(x => (String(x.type || "").toUpperCase() === "PM" || /^pm completed$/i.test(String(x.machineStatus || ""))) && x.date).map(x => x.date).sort();
       if (pmDates.length && (!nm.lastPM || pmDates[pmDates.length - 1] !== nm.lastPM)) {
         nm.lastPM = pmDates[pmDates.length - 1];
-        const nx = nextPMDate(pmAnchor(nm), nm.pmInterval);
-        if (nx) nm.nextPM = nx;
+        pmResync(nm);
       }
       return nm;
     });
@@ -16747,6 +16744,63 @@ function sebiaPMPass(machines) {
   });
   return machines;
 }
+// v374: ONE rule for every place that re-syncs a Next PM. A manual date set
+// by an admin stays while it is live (no PM evidence newer than when it was
+// set); otherwise the schedule is recomputed and the manual flag cleared.
+function pmManualLive(m) {
+  if (!m || !m.nextPMManual) return false;
+  const nx = String(m.nextPM || "").slice(0, 10);
+  if (!nx) return false;
+  const setOn = String(m.nextPMManualSetOn || "").slice(0, 10);
+  const lp = String((typeof bestPMAnchor === "function" ? bestPMAnchor(m, m.visits) : m.lastPM) || "").slice(0, 10);
+  return !setOn || !lp || lp <= setOn;
+}
+function pmResync(nm) {
+  if (pmManualLive(nm)) return nm;
+  nm.nextPMManual = false;
+  nm.nextPMManualSetOn = "";
+  const nx = typeof nextPMDate === "function" ? nextPMDate(pmAnchor(nm), nm.pmInterval) : "";
+  if (nx) nm.nextPM = nx;
+  return nm;
+}
+// v374: the ACTIVE base counted by SERIAL — a pulled-out record whose serial is
+// live in another laboratory is one live instrument, not one retired; a serial
+// is retired only when NO record of it is live, or when it is scrapped /
+// decommissioned anywhere.
+function activeUniqueMachineRows(labs) {
+  const rows = (labs || []).flatMap(l => (l.machines || []).map(m => ({ m, lab: l })));
+  const isRet = r => isPull(r.m) || retiredStatus(r.m.status);
+  const bySerial = {};
+  rows.filter(r => !isRet(r)).forEach(r => {
+    const key = String(r.m.serialNo || "").trim().toLowerCase();
+    if (!key) {
+      bySerial["__nokey_" + (r.m.id || Math.random())] = r;
+      return;
+    }
+    const cur = bySerial[key];
+    const rd = pmAnchor(r.m) || "", cd = cur ? pmAnchor(cur.m) || "" : "";
+    if (!cur || rd >= cd) bySerial[key] = r;
+  });
+  return Object.values(bySerial);
+}
+function retiredUnitsBySerial(rows) {
+  const info = {};
+  let noKey = 0;
+  (rows || []).forEach(r => {
+    const st = String(r.m.status || "");
+    const ret = isPull(r.m) || retiredStatus(st);
+    const scrapped = /scrap|decommission/i.test(st);
+    const key = String(r.m.serialNo || "").trim().toLowerCase();
+    if (!key) {
+      if (ret) noKey++;
+      return;
+    }
+    const o = info[key] || (info[key] = { live: false, retired: false, scrapped: false });
+    if (ret) o.retired = true; else o.live = true;
+    if (scrapped) o.scrapped = true;
+  });
+  return Object.values(info).filter(o => o.scrapped || o.retired && !o.live).length + noKey;
+}
 function finalizeMachinePM(m, knownVisits) {
   if ((m.pmInterval === "" || m.pmInterval === undefined || m.pmInterval === null) && !m.pmNoSchedule) m.pmInterval = 12;
   const vs = Array.isArray(m.visits) && m.visits.length ? m.visits : knownVisits;
@@ -16984,10 +17038,7 @@ function impBuildPlan(rows, labs, importerEmail) {
       const pmDs = (m.visits || []).filter(v => String(v.type || "").toUpperCase() === "PM" && v.date).map(v => String(v.date).slice(0, 10)).sort();
       if (pmDs.length && (!m.lastPM || pmDs[pmDs.length - 1] > m.lastPM)) {
         m.lastPM = pmDs[pmDs.length - 1];
-        if (m.pmInterval) {
-          const nx = nextPMDate(pmAnchor(m), m.pmInterval);
-          if (nx) m.nextPM = nx;
-        }
+        if (m.pmInterval) pmResync(m);
       }
     });
     sebiaPMPass(machines);
